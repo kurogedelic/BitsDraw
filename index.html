@@ -35,9 +35,16 @@
         <div class="menu-dropdown-item" data-action="save-as">Save As...</div>
         <div class="menu-divider"></div>
         <div class="menu-dropdown-item" data-action="import-image">Import Image...</div>
-        <div class="menu-dropdown-item" data-action="export">
-            <span>Export .h Code</span>
-            <span class="menu-shortcut">Ctrl+E</span>
+        <div class="menu-dropdown-item has-submenu" data-action="export">
+            <span>Export</span>
+            <span class="menu-arrow">▶</span>
+        </div>
+        <div class="menu-submenu" id="submenu-export">
+            <div class="menu-dropdown-item" data-action="export-cpp">
+                <span>CPP header file (u8g2)</span>
+                <span class="menu-shortcut">Ctrl+E</span>
+            </div>
+            <div class="menu-dropdown-item" data-action="export-png">PNG</div>
         </div>
     </div>
 
@@ -324,14 +331,14 @@
                     <div class="about-info">
                         <h2>BitsDraw</h2>
                         <p class="version">Version 1.0.0</p>
-                        <p class="description">A bitmap editor for U8G2 displays</p>
+                        <p class="description">A bitmap editor for monochrome displays</p>
                         
                         <div class="about-section">
                             <h3>Features</h3>
                             <ul>
                                 <li>Pixel-perfect bitmap editing</li>
                                 <li>Multiple drawing tools and patterns</li>
-                                <li>U8G2 format export</li>
+                                <li>Multiple format export</li>
                                 <li>Image import and processing</li>
                                 <li>Undo/Redo functionality</li>
                                 <li>Multi-window interface</li>

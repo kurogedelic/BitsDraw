@@ -350,6 +350,35 @@ class BitsDraw {
             });
         });
 
+        // Submenu handling for items with has-submenu class
+        document.querySelectorAll('.menu-dropdown-item.has-submenu').forEach(item => {
+            item.addEventListener('mouseenter', (e) => {
+                const submenuId = item.dataset.action.replace('-', '') + '-submenu';
+                const submenu = document.getElementById(`submenu-${item.dataset.action}`);
+                if (submenu) {
+                    // Hide other submenus
+                    document.querySelectorAll('.menu-submenu').forEach(sm => {
+                        if (sm !== submenu) sm.classList.remove('show');
+                    });
+                    
+                    // Position and show this submenu
+                    const rect = item.getBoundingClientRect();
+                    submenu.style.left = (rect.right - 1) + 'px';
+                    submenu.style.top = rect.top + 'px';
+                    submenu.classList.add('show');
+                }
+            });
+        });
+
+        // Hide submenus when leaving the main dropdown
+        document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
+            dropdown.addEventListener('mouseleave', () => {
+                document.querySelectorAll('.menu-submenu').forEach(submenu => {
+                    submenu.classList.remove('show');
+                });
+            });
+        });
+
         // Hide menus when clicking outside
         document.addEventListener('click', () => {
             this.hideAllMenus();
@@ -376,6 +405,9 @@ class BitsDraw {
         document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
             dropdown.classList.remove('show');
         });
+        document.querySelectorAll('.menu-submenu').forEach(submenu => {
+            submenu.classList.remove('show');
+        });
         document.querySelectorAll('.menu-item').forEach(item => {
             item.classList.remove('active');
         });
@@ -396,8 +428,11 @@ class BitsDraw {
             case 'open':
                 this.loadBitmapFromStorage();
                 break;
-            case 'export':
+            case 'export-cpp':
                 this.exportCode();
+                break;
+            case 'export-png':
+                this.exportPNG();
                 break;
             case 'import-image':
                 document.getElementById('file-input').click();
@@ -1203,6 +1238,43 @@ class BitsDraw {
             console.error('Failed to copy to clipboard:', err);
             this.showNotification('Failed to copy to clipboard. Please copy manually.', 'error');
         }
+    }
+
+    exportPNG() {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const bitmapData = this.editor.getBitmapData();
+        
+        canvas.width = this.editor.width;
+        canvas.height = this.editor.height;
+        
+        // Fill with white background
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw bitmap data
+        ctx.fillStyle = '#000000';
+        for (let y = 0; y < this.editor.height; y++) {
+            for (let x = 0; x < this.editor.width; x++) {
+                if (bitmapData[y][x] === 1) {
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+        
+        // Download the PNG
+        canvas.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const projectName = document.getElementById('project-name').value || 'my_bitmap';
+            a.href = url;
+            a.download = `${projectName}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.showNotification('PNG exported successfully!', 'success');
+        }, 'image/png');
     }
 
     showNotification(message, type = 'info') {
