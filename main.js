@@ -242,7 +242,7 @@ class BitsDraw {
                 return;
             }
 
-            const isCtrl = e.ctrlKey || e.metaKey;
+            const isCtrl = e.ctrlKey;
             
             // File operations
             if (isCtrl && e.key === 'n') {
