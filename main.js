@@ -13,6 +13,7 @@ class BitsDraw {
         this.showGrid = true;
         this.selectionClipboard = null;
         this.isDraggingSelection = false;
+        this.isDraggingSelectionGraphics = false;
         this.selectionDragStart = null;
         
         this.initializeEventListeners();
@@ -39,7 +40,13 @@ class BitsDraw {
             
             // Check if clicking on existing selection for dragging
             if (this.selection && this.editor.isInSelection(coords.x, coords.y, this.selection)) {
-                this.isDraggingSelection = true;
+                if (e.shiftKey) {
+                    // Shift+drag = move selection graphics
+                    this.isDraggingSelectionGraphics = true;
+                } else {
+                    // Normal drag = move selection bounds
+                    this.isDraggingSelection = true;
+                }
                 this.selectionDragStart = coords;
                 return;
             }
@@ -58,6 +65,9 @@ class BitsDraw {
             if (this.isDraggingSelection) {
                 const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
                 this.updateSelectionPosition(coords);
+            } else if (this.isDraggingSelectionGraphics) {
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                this.moveSelectionGraphics(coords);
             } else if (this.isDrawing) {
                 this.handleCanvasClick(e);
             }
@@ -66,6 +76,10 @@ class BitsDraw {
         this.canvas.addEventListener('mouseup', (e) => {
             if (this.isDraggingSelection) {
                 this.isDraggingSelection = false;
+                this.selectionDragStart = null;
+                this.editor.saveState();
+            } else if (this.isDraggingSelectionGraphics) {
+                this.isDraggingSelectionGraphics = false;
                 this.selectionDragStart = null;
                 this.editor.saveState();
             } else if (this.isDrawing && ['rect-tool', 'circle-tool', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
@@ -955,16 +969,11 @@ class BitsDraw {
     drawSelectionOverlay() {
         if (!this.selection) return;
         
-        // Redraw the canvas first
+        // Only redraw once when selection is created or updated
         this.editor.redraw();
-        
-        // Draw selection overlay on top
         this.editor.drawSelectionOverlay(this.editor.ctx, this.selection, this.editor.zoom);
         
-        // Continue animation if selection is active
-        if (this.selection && this.selection.active) {
-            requestAnimationFrame(() => this.drawSelectionOverlay());
-        }
+        // Animation is handled by CSS, no need for continuous redraw
     }
 
     setTool(tool) {
@@ -1117,18 +1126,91 @@ class BitsDraw {
         const deltaX = coords.x - this.selectionDragStart.x;
         const deltaY = coords.y - this.selectionDragStart.y;
         
+        // Bounds checking to prevent selection from going off-canvas
+        let newX1, newY1, newX2, newY2;
+        
         if (this.selection.type === 'rect') {
-            this.selection.x1 += deltaX;
-            this.selection.x2 += deltaX;
-            this.selection.y1 += deltaY;
-            this.selection.y2 += deltaY;
+            newX1 = Math.max(0, Math.min(this.editor.width - 1, this.selection.x1 + deltaX));
+            newX2 = Math.max(0, Math.min(this.editor.width - 1, this.selection.x2 + deltaX));
+            newY1 = Math.max(0, Math.min(this.editor.height - 1, this.selection.y1 + deltaY));
+            newY2 = Math.max(0, Math.min(this.editor.height - 1, this.selection.y2 + deltaY));
+            
+            // Only update if the entire selection fits within bounds
+            if (newX2 - newX1 === this.selection.x2 - this.selection.x1 && 
+                newY2 - newY1 === this.selection.y2 - this.selection.y1) {
+                this.selection.x1 = newX1;
+                this.selection.x2 = newX2;
+                this.selection.y1 = newY1;
+                this.selection.y2 = newY2;
+                this.selectionDragStart = coords;
+            }
         } else if (this.selection.type === 'circle') {
-            this.selection.centerX += deltaX;
-            this.selection.centerY += deltaY;
+            const newCenterX = Math.max(this.selection.radius, Math.min(this.editor.width - 1 - this.selection.radius, this.selection.centerX + deltaX));
+            const newCenterY = Math.max(this.selection.radius, Math.min(this.editor.height - 1 - this.selection.radius, this.selection.centerY + deltaY));
+            
+            this.selection.centerX = newCenterX;
+            this.selection.centerY = newCenterY;
+            this.selectionDragStart = coords;
         }
         
-        this.selectionDragStart = coords;
+        // Only redraw if position actually changed
         this.drawSelectionOverlay();
+    }
+
+    moveSelectionGraphics(coords) {
+        if (!this.selection || !this.selectionDragStart) return;
+        
+        const deltaX = coords.x - this.selectionDragStart.x;
+        const deltaY = coords.y - this.selectionDragStart.y;
+        
+        if (deltaX === 0 && deltaY === 0) return; // No movement
+        
+        // Copy current selection data
+        const selectionData = this.copySelectionData();
+        if (!selectionData || selectionData.length === 0) return;
+        
+        // Clear the current selection area
+        this.deleteSelection();
+        
+        // Paste the data at the new position
+        this.pasteSelectionData(selectionData, deltaX, deltaY);
+        
+        // Update selection bounds
+        this.updateSelectionPosition(coords);
+        
+        this.editor.redraw();
+        this.updateOutput();
+    }
+
+    copySelectionData() {
+        if (!this.selection) return null;
+        
+        const data = [];
+        for (let y = 0; y < this.editor.height; y++) {
+            for (let x = 0; x < this.editor.width; x++) {
+                if (this.editor.isInSelection(x, y, this.selection)) {
+                    data.push({
+                        x: x,
+                        y: y,
+                        value: this.editor.pixels[y][x]
+                    });
+                }
+            }
+        }
+        return data;
+    }
+
+    pasteSelectionData(data, deltaX, deltaY) {
+        data.forEach(pixel => {
+            const newX = pixel.x + deltaX;
+            const newY = pixel.y + deltaY;
+            
+            // Only paste if within canvas bounds
+            if (newX >= 0 && newX < this.editor.width && 
+                newY >= 0 && newY < this.editor.height) {
+                this.editor.pixels[newY][newX] = pixel.value;
+            }
+        });
     }
 
     deleteSelection() {

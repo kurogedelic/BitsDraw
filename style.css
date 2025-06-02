@@ -683,6 +683,13 @@ body {
     margin: 0 auto;
 }
 
+.app-icon-image {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
 .about-info h2 {
     font-size: 24px;
     font-weight: 600;
