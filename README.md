@@ -1,8 +1,10 @@
 # BitsDraw
 
+[🚀 Launch BitsDraw](https://kurogedelic.github.io/BitsDraw/)
+
 A web-based bitmap editor for creating graphics compatible with U8G2 monochrome displays.
 
-![BitsDraw](icons/BitsDraw.png)
+<img src="icons/BitsDraw.png" alt="BitsDraw" width="128">
 
 ## Features
 
