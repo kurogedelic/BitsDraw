@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BitsDraw - U8G2 Bitmap Editor</title>
+    <title>BitsDraw</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
 <body>
     <!-- Menu Bar -->
     <div class="menu-bar">
         <div class="menu-item" data-menu="file">File</div>
         <div class="menu-item" data-menu="edit">Edit</div>
+        <div class="menu-item" data-menu="effects">Effects</div>
         <div class="menu-item" data-menu="view">View</div>
         <div class="menu-item" data-menu="window">Window</div>
         <div class="menu-item" data-menu="help">Help</div>
@@ -75,10 +77,16 @@
             <span class="menu-shortcut">⌃A</span>
         </div>
         <div class="menu-divider"></div>
-        <div class="menu-dropdown-item" data-action="clear">Clear Canvas</div>
+        <div class="menu-dropdown-item" data-action="rescale">Rescale Canvas...</div>
         <div class="menu-dropdown-item" data-action="clear-selection">
             <span>Clear Selection</span>
             <span class="menu-shortcut">Delete</span>
+        </div>
+    </div>
+
+    <div class="menu-dropdown" id="menu-effects">
+        <div class="menu-dropdown-item" data-action="invert-bitmap">
+            <span>Invert</span>
         </div>
     </div>
 
@@ -104,9 +112,9 @@
 
     <div class="menu-dropdown" id="menu-window">
         <div class="menu-dropdown-item" data-action="show-tools">Tools</div>
-        <div class="menu-dropdown-item" data-action="show-colors">Colors</div>
+        <div class="menu-dropdown-item" data-action="show-colors">Patterns</div>
         <div class="menu-dropdown-item" data-action="show-options">Options</div>
-        <div class="menu-dropdown-item" data-action="show-canvas-info">Canvas Info</div>
+        <div class="menu-dropdown-item" data-action="show-layers">Layers</div>
         <div class="menu-dropdown-item" data-action="show-preview">Preview</div>
         <div class="menu-dropdown-item" data-action="show-code">Generated Code</div>
     </div>
@@ -122,9 +130,9 @@
         <div class="window" id="canvas-window" style="left: 300px; top: 50px; width: 600px; height: 500px;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
-                    <div class="window-control minimize">−</div>
-                    <div class="window-control zoom">□</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
+                    <div class="window-control zoom"><i class="ph ph-square"></i></div>
                 </div>
                 <div class="window-title">Canvas - my_bitmap (128x64)</div>
             </div>
@@ -132,50 +140,78 @@
                 <div class="canvas-area">
                     <canvas id="bitmap-canvas"></canvas>
                 </div>
+                <div class="canvas-controls">
+                    <div class="control-group">
+                        <label>
+                            Zoom:
+                            <select id="zoom-select">
+                                <option value="1">1x</option>
+                                <option value="2">2x</option>
+                                <option value="4" selected>4x</option>
+                                <option value="8">8x</option>
+                                <option value="16">16x</option>
+                                <option value="32">32x</option>
+                            </select>
+                        </label>
+                        <button id="zoom-out-btn" title="Zoom Out"><i class="ph ph-magnifying-glass-minus"></i></button>
+                        <button id="zoom-in-btn" title="Zoom In"><i class="ph ph-magnifying-glass-plus"></i></button>
+                    </div>
+                    <div class="control-group">
+                        <button id="invert-display-btn" title="Invert Display"><i class="ph ph-subtract-square"></i></button>
+                        <button id="show-grid-btn" title="Show Grid" class="active"><i class="ph ph-grid-four"></i></button>
+                    </div>
+                </div>
             </div>
+            <div class="window-resize-handle"></div>
         </div>
 
         <!-- Tools Window -->
         <div class="window" id="tools-window" style="left: 20px; top: 50px; width: 200px; height: auto;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
-                    <div class="window-control minimize">−</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
                 </div>
                 <div class="window-title">Tools</div>
             </div>
             <div class="window-content">
                 <div class="tool-palette">
                     <div class="tool-row">
-                        <button id="pencil-tool" class="tool-icon active" title="Pencil"><img src="" class="icon" alt="Pencil" data-icon="tools.pencil"></button>
-                        <button id="brush-tool" class="tool-icon" title="Brush"><img src="" class="icon" alt="Brush" data-icon="tools.brush"></button>
-                        <button id="bucket-tool" class="tool-icon" title="Bucket Fill"><img src="" class="icon" alt="Bucket" data-icon="tools.bucket"></button>
-                        <button id="eraser-tool" class="tool-icon" title="Eraser"><img src="" class="icon" alt="Eraser" data-icon="tools.eraser"></button>
+                        <button id="pencil-tool" class="tool-icon active" title="Pencil"><i class="ph ph-pencil-simple"></i></button>
+                        <button id="brush-tool" class="tool-icon" title="Brush"><i class="ph ph-paint-brush"></i></button>
                     </div>
                     <div class="tool-row">
-                        <button id="select-rect-tool" class="tool-icon" title="Rectangle Select"><img src="" class="icon" alt="Rectangle Select" data-icon="tools.select-rect"></button>
-                        <button id="select-circle-tool" class="tool-icon" title="Circle Select"><img src="" class="icon" alt="Circle Select" data-icon="tools.select-circle"></button>
-                        <button id="line-tool" class="tool-icon" title="Line"><img src="" class="icon" alt="Line" data-icon="tools.line"></button>
-                        <button id="text-tool" class="tool-icon" title="Text"><img src="" class="icon" alt="Text" data-icon="tools.text"></button>
+                        <button id="bucket-tool" class="tool-icon" title="Bucket Fill"><i class="ph ph-paint-bucket"></i></button>
+                        <button id="eraser-tool" class="tool-icon" title="Eraser"><i class="ph ph-eraser"></i></button>
                     </div>
                     <div class="tool-row">
-                        <button id="rect-tool" class="tool-icon" title="Rectangle"><img src="" class="icon" alt="Rectangle" data-icon="tools.rect"></button>
-                        <button id="circle-tool" class="tool-icon" title="Circle"><img src="" class="icon" alt="Circle" data-icon="tools.circle"></button>
-                        <button id="spray-tool" class="tool-icon" title="Spray"><img src="" class="icon" alt="Spray" data-icon="tools.spray"></button>
-                        <button id="eyedropper-tool" class="tool-icon" title="Eyedropper"><img src="" class="icon" alt="Eyedropper" data-icon="tools.eyedropper"></button>
+                        <button id="select-rect-tool" class="tool-icon" title="Rectangle Select"><i class="ph ph-selection"></i></button>
+                        <button id="select-circle-tool" class="tool-icon" title="Circle Select"><i class="ph ph-circle-dashed"></i></button>
+                    </div>
+                    <div class="tool-row">
+                        <button id="line-tool" class="tool-icon" title="Line"><i class="ph ph-line-segment"></i></button>
+                        <button id="text-tool" class="tool-icon" title="Text"><i class="ph ph-text-aa"></i></button>
+                    </div>
+                    <div class="tool-row">
+                        <button id="rect-tool" class="tool-icon" title="Rectangle"><i class="ph ph-rectangle"></i></button>
+                        <button id="circle-tool" class="tool-icon" title="Circle"><i class="ph ph-circle"></i></button>
+                    </div>
+                    <div class="tool-row">
+                        <button id="spray-tool" class="tool-icon" title="Spray"><i class="ph ph-spray-bottle"></i></button>
+                        <button id="eyedropper-tool" class="tool-icon" title="Eyedropper"><i class="ph ph-eyedropper"></i></button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Colors Window -->
+        <!-- Patterns Window -->
         <div class="window" id="colors-window" style="left: 20px; top: 250px; width: 180px; height: auto;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
-                    <div class="window-control minimize">−</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
                 </div>
-                <div class="window-title">Colors</div>
+                <div class="window-title">Patterns</div>
             </div>
             <div class="window-content">
                 <div class="color-palette">
@@ -194,101 +230,66 @@
         </div>
 
         <!-- Options Window -->
-        <div class="window" id="options-window" style="left: 20px; top: 380px; width: 200px; height: auto;">
+        <div class="window" id="options-window" style="left: 20px; top: 380px; width: 600px; height: 60px;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
-                    <div class="window-control minimize">−</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
                 </div>
-                <div class="window-title">Options</div>
+                <div class="window-title">Tool Options</div>
             </div>
             <div class="window-content">
-                <div class="option-group">
-                    <h4>Draw Mode</h4>
-                    <label><input type="checkbox" id="draw-border" checked> Border</label>
-                    <label><input type="checkbox" id="draw-fill"> Fill</label>
-                </div>
-                <div class="option-group">
-                    <h4>Edit</h4>
-                    <button id="undo-btn">Undo</button>
-                    <button id="redo-btn">Redo</button>
-                </div>
-                <div class="option-group">
-                    <h4>Selection</h4>
-                    <button id="clear-selection-btn">Clear Selection</button>
-                </div>
-                <div class="option-group">
-                    <h4>Text</h4>
-                    <input type="text" id="text-input" placeholder="Enter text..." style="width: 100%; margin-bottom: 4px;">
-                    <button id="add-text-btn">Add Text</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Canvas Info Window -->
-        <div class="window" id="canvas-info-window" style="left: 230px; top: 380px; width: 250px; height: auto;">
-            <div class="window-title-bar">
-                <div class="window-controls">
-                    <div class="window-control close">×</div>
-                    <div class="window-control minimize">−</div>
-                </div>
-                <div class="window-title">Canvas Info</div>
-            </div>
-            <div class="window-content">
-                <div class="option-group">
-                    <h4>View</h4>
-                    <label>
-                        Zoom:
-                        <select id="zoom-select">
-                            <option value="1">1x</option>
-                            <option value="2">2x</option>
-                            <option value="4" selected>4x</option>
-                            <option value="8">8x</option>
-                            <option value="16">16x</option>
-                            <option value="32">32x</option>
-                        </select>
-                    </label>
-                    <label>
-                        <input type="checkbox" id="invert-display">
-                        Invert Display
-                    </label>
-                    <label>
-                        <input type="checkbox" id="show-grid" checked>
-                        Show Grid
-                    </label>
-                </div>
-                <div class="option-group">
-                    <h4>Size</h4>
-                    <label>
-                        Width: <input type="number" id="canvas-width" value="128" min="1" max="256">
-                    </label>
-                    <label>
-                        Height: <input type="number" id="canvas-height" value="64" min="1" max="256">
-                    </label>
-                    <button id="resize-canvas">Resize</button>
-                </div>
-                <div class="option-group">
-                    <h4>Actions</h4>
-                    <button id="clear-btn">Clear Canvas</button>
-                </div>
-                <div class="option-group">
-                    <h4>Import</h4>
-                    <div id="drop-zone" class="drop-zone">
-                        Drop PNG here<br>
-                        or <button type="button" id="file-input-btn">Browse</button>
-                        <input type="file" id="file-input" accept="image/png,image/jpg,image/jpeg,image/gif" style="display: none;">
+                <div class="tool-options" id="tool-options">
+                    <!-- Pencil/Brush options -->
+                    <div class="option-section" id="pencil-options" style="display: none;">
+                        <label>Size: <input type="range" id="brush-size" min="1" max="10" value="1"> <span id="brush-size-value">1</span>px</label>
+                        <label><input type="checkbox" id="smooth-drawing"> Smooth</label>
+                    </div>
+                    
+                    <!-- Shape tools options -->
+                    <div class="option-section" id="shape-options" style="display: none;">
+                        <label><input type="checkbox" id="draw-border" checked> <i class="ph ph-square"></i> Border</label>
+                        <label><input type="checkbox" id="draw-fill"> <i class="ph ph-square-fill"></i> Fill</label>
+                    </div>
+                    
+                    <!-- Spray options -->
+                    <div class="option-section" id="spray-options" style="display: none;">
+                        <label>Size: <input type="range" id="spray-radius" min="2" max="15" value="5"> <span id="spray-radius-value">5</span>px</label>
+                        <label>Density: <input type="range" id="spray-density" min="10" max="100" value="30"> <span id="spray-density-value">30</span>%</label>
+                    </div>
+                    
+                    <!-- Selection options -->
+                    <div class="option-section" id="selection-options" style="display: none;">
+                        <button id="clear-selection-btn"><i class="ph ph-selection"></i> Clear Selection</button>
+                        <button id="select-all-btn"><i class="ph ph-selection-all"></i> Select All</button>
+                    </div>
+                    
+                    <!-- Text options -->
+                    <div class="option-section" id="text-options" style="display: none;">
+                        <span class="option-label">Click on canvas to add text</span>
+                    </div>
+                    
+                    <!-- Bucket fill options -->
+                    <div class="option-section" id="bucket-options" style="display: none;">
+                        <label><input type="checkbox" id="fill-contiguous" checked> Contiguous</label>
+                    </div>
+                    
+                    <!-- No options for other tools -->
+                    <div class="option-section" id="no-options" style="display: block;">
+                        <span class="option-label">Select a tool to view options</span>
                     </div>
                 </div>
             </div>
         </div>
 
+
         <!-- Generated Code Window -->
         <div class="window" id="code-window" style="left: 920px; top: 50px; width: 400px; height: 600px;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
-                    <div class="window-control minimize">−</div>
-                    <div class="window-control zoom">□</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
+                    <div class="window-control zoom"><i class="ph ph-square"></i></div>
                 </div>
                 <div class="window-title">Generated Code</div>
             </div>
@@ -319,7 +320,7 @@
         <div class="window hidden" id="about-window" style="left: 400px; top: 200px; width: 450px; height: 350px;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
                 </div>
                 <div class="window-title">About BitsDraw</div>
             </div>
@@ -363,7 +364,7 @@
         <div class="window hidden" id="shortcuts-window" style="left: 450px; top: 150px; width: 400px; height: 450px;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
                 </div>
                 <div class="window-title">Keyboard Shortcuts</div>
             </div>
@@ -489,12 +490,33 @@
         </div>
 
 
+        <!-- Layers Window -->
+        <div class="window" id="layers-window" style="left: 240px; top: 250px; width: 220px; height: 300px;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
+                </div>
+                <div class="window-title">Layers</div>
+            </div>
+            <div class="window-content">
+                <div class="layer-controls">
+                    <button id="add-layer-btn" title="Add Layer"><i class="ph ph-plus"></i></button>
+                    <button id="delete-layer-btn" title="Delete Layer"><i class="ph ph-trash"></i></button>
+                    <button id="duplicate-layer-btn" title="Duplicate Layer"><i class="ph ph-copy"></i></button>
+                </div>
+                <div class="layer-list" id="layer-list">
+                    <!-- Layers will be dynamically added here -->
+                </div>
+            </div>
+        </div>
+
         <!-- Preview Window -->
         <div class="window" id="preview-window" style="left: 20px; top: 420px; width: 180px; height: 140px;">
             <div class="window-title-bar">
                 <div class="window-controls">
-                    <div class="window-control close">×</div>
-                    <div class="window-control minimize">−</div>
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
                 </div>
                 <div class="window-title">Preview (1:1)</div>
             </div>
@@ -506,6 +528,21 @@
         </div>
     </div>
 
+    <!-- Text Input Balloon -->
+    <div class="text-balloon" id="text-balloon" style="display: none;">
+        <div class="balloon-content">
+            <input type="text" id="text-input-balloon" placeholder="Enter text..." maxlength="50">
+            <div class="balloon-buttons">
+                <button id="add-text-balloon-btn"><i class="ph ph-check"></i></button>
+                <button id="cancel-text-balloon-btn"><i class="ph ph-x"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Brush Cursor Overlay -->
+    <div class="brush-cursor-overlay" id="brush-cursor-overlay"></div>
+
+    <script src="utils/optimizedBitmap.js"></script>
     <script src="utils/bitmap.js"></script>
     <script src="utils/export.js"></script>
     <script src="utils/imageImport.js"></script>

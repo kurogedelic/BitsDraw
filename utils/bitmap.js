@@ -8,7 +8,18 @@ class BitmapEditor {
         this.inverted = false;
         this.showGrid = true;
         
-        this.pixels = this.createEmptyBitmap();
+        // Layer system
+        this.layers = [];
+        this.activeLayerIndex = 0;
+        this.layerIdCounter = 1;
+        this.compositePixels = this.createEmptyBitmap();
+        
+        // Create initial layer
+        this.addLayer('Background');
+        
+        // Legacy pixels reference for compatibility
+        this.pixels = this.layers[0].pixels;
+        
         this.history = [];
         this.historyIndex = -1;
         this.maxHistory = 50;
@@ -77,7 +88,7 @@ class BitmapEditor {
             } else {
                 this.pixels[y][x] = value;
             }
-            this.drawPixel(x, y);
+            this.compositeAllLayers();
         }
     }
 
@@ -112,10 +123,26 @@ class BitmapEditor {
         this.ctx.fillStyle = this.inverted ? '#000000' : '#ffffff';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
+        // Draw composite pixels instead of active layer only
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
-                this.drawPixel(x, y);
+                this.drawCompositePixel(x, y);
             }
+        }
+    }
+
+    drawCompositePixel(x, y) {
+        const pixelValue = this.compositePixels[y][x];
+        const displayValue = this.inverted ? (1 - pixelValue) : pixelValue;
+        
+        this.ctx.fillStyle = displayValue ? '#000000' : '#ffffff';
+        this.ctx.fillRect(x * this.zoom, y * this.zoom, this.zoom, this.zoom);
+        
+        // Draw grid lines only if showGrid is enabled
+        if (this.showGrid) {
+            this.ctx.strokeStyle = '#cccccc';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(x * this.zoom, y * this.zoom, this.zoom, this.zoom);
         }
     }
 
@@ -234,7 +261,7 @@ class BitmapEditor {
                 }
             }
         }
-        this.redraw();
+        this.compositeAllLayers();
     }
 
     drawCircle(centerX, centerY, radius, filled = false, borderOnly = false, pattern = null) {
@@ -270,7 +297,7 @@ class BitmapEditor {
                 }
             }
         }
-        this.redraw();
+        this.compositeAllLayers();
     }
 
     drawLine(x1, y1, x2, y2, pattern = null) {
@@ -307,6 +334,7 @@ class BitmapEditor {
 
     spray(centerX, centerY, radius = 5, density = 0.3, pattern = null) {
         const radiusSquared = radius * radius;
+        let pixelsChanged = false;
         
         for (let i = 0; i < 20; i++) { // 20 random points per spray
             if (Math.random() > density) continue;
@@ -322,9 +350,13 @@ class BitmapEditor {
                 } else {
                     this.pixels[y][x] = 1;
                 }
+                pixelsChanged = true;
             }
         }
-        this.redraw();
+        
+        if (pixelsChanged) {
+            this.compositeAllLayers();
+        }
     }
 
     createSelection(x1, y1, x2, y2, type = 'rect') {
@@ -391,6 +423,142 @@ class BitmapEditor {
         }
         
         ctx.restore();
+    }
+
+    // Layer Management Methods
+    addLayer(name = 'Layer') {
+        const layer = {
+            id: this.layerIdCounter++,
+            name: name,
+            visible: true,
+            blendMode: 'normal',
+            pixels: this.createEmptyBitmap()
+        };
+        this.layers.push(layer);
+        this.activeLayerIndex = this.layers.length - 1;
+        this.updatePixelsReference();
+        this.compositeAllLayers();
+        return layer;
+    }
+
+    deleteLayer(index) {
+        if (this.layers.length <= 1 || index < 0 || index >= this.layers.length) return false;
+        
+        this.layers.splice(index, 1);
+        if (this.activeLayerIndex >= this.layers.length) {
+            this.activeLayerIndex = this.layers.length - 1;
+        } else if (this.activeLayerIndex > index) {
+            this.activeLayerIndex--;
+        }
+        this.updatePixelsReference();
+        this.compositeAllLayers();
+        return true;
+    }
+
+    setActiveLayer(index) {
+        if (index >= 0 && index < this.layers.length) {
+            this.activeLayerIndex = index;
+            this.updatePixelsReference();
+            return true;
+        }
+        return false;
+    }
+
+    moveLayer(fromIndex, toIndex) {
+        if (fromIndex < 0 || fromIndex >= this.layers.length || 
+            toIndex < 0 || toIndex >= this.layers.length) return false;
+        
+        const layer = this.layers.splice(fromIndex, 1)[0];
+        this.layers.splice(toIndex, 0, layer);
+        
+        if (this.activeLayerIndex === fromIndex) {
+            this.activeLayerIndex = toIndex;
+        } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
+            this.activeLayerIndex--;
+        } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
+            this.activeLayerIndex++;
+        }
+        
+        this.updatePixelsReference();
+        this.compositeAllLayers();
+        return true;
+    }
+
+    toggleLayerVisibility(index) {
+        if (index >= 0 && index < this.layers.length) {
+            this.layers[index].visible = !this.layers[index].visible;
+            this.compositeAllLayers();
+            return true;
+        }
+        return false;
+    }
+
+
+    updatePixelsReference() {
+        if (this.layers.length > 0) {
+            this.pixels = this.layers[this.activeLayerIndex].pixels;
+        }
+    }
+
+    compositeAllLayers() {
+        // Clear composite
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                this.compositePixels[y][x] = 0;
+            }
+        }
+
+        // Composite all visible layers
+        for (let i = 0; i < this.layers.length; i++) {
+            const layer = this.layers[i];
+            if (!layer.visible) continue;
+
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const layerPixel = layer.pixels[y][x];
+                    if (layerPixel > 0) {
+                        // Simple blend for monochrome - OR operation
+                        this.compositePixels[y][x] = 1;
+                    }
+                }
+            }
+        }
+        this.redraw();
+    }
+
+    getActiveLayer() {
+        return this.layers[this.activeLayerIndex];
+    }
+
+    getLayerCount() {
+        return this.layers.length;
+    }
+
+    getLayerInfo(index) {
+        if (index >= 0 && index < this.layers.length) {
+            const layer = this.layers[index];
+            return {
+                id: layer.id,
+                name: layer.name,
+                visible: layer.visible,
+                blendMode: layer.blendMode,
+                isActive: index === this.activeLayerIndex
+            };
+        }
+        return null;
+    }
+
+    invertBitmap() {
+        const activeLayer = this.getActiveLayer();
+        if (activeLayer) {
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    activeLayer.pixels[y][x] = activeLayer.pixels[y][x] ? 0 : 1;
+                }
+            }
+            this.compositeAllLayers();
+            this.saveState();
+        }
     }
 
     loadBitmapData(data) {

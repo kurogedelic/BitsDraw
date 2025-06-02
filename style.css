@@ -149,6 +149,19 @@ body {
     border: 1px solid #cccccc;
     min-width: 200px;
     min-height: 100px;
+    resize: both;
+    overflow: hidden;
+}
+
+.window-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nw-resize;
+    background: linear-gradient(-45deg, transparent 30%, #cccccc 30%, #cccccc 35%, transparent 35%, transparent 65%, #cccccc 65%, #cccccc 70%, transparent 70%);
+    z-index: 10;
 }
 
 .window-title-bar {
@@ -222,7 +235,7 @@ body {
 }
 
 .window-content {
-    padding: 12px;
+    padding: 4px;
     height: calc(100% - 33px);
     overflow: auto;
 }
@@ -231,7 +244,7 @@ body {
 .tool-palette {
     background: #f8f8f8;
     border: 1px solid #e0e0e0;
-    padding: 12px;
+    padding: 6px;
 }
 
 .tool-row {
@@ -274,7 +287,7 @@ body {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 4px;
-    padding: 8px;
+    padding: 4px;
     background: #f8f8f8;
     border: 1px solid #e0e0e0;
 }
@@ -356,7 +369,7 @@ body {
     font-size: 12px;
     font-weight: 600;
     border-bottom: 1px solid #e0e0e0;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
 }
 
 .option-group label {
@@ -428,7 +441,7 @@ body {
 .canvas-area {
     background: #ffffff;
     border: 1px solid #e0e0e0;
-    padding: 16px;
+    padding: 8px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -454,7 +467,7 @@ body {
 .preview-area {
     background: #ffffff;
     border: 1px solid #e0e0e0;
-    padding: 8px;
+    padding: 4px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -796,4 +809,577 @@ body {
     flex: 1;
     margin-left: 12px;
 }
+
+/* Canvas Controls */
+.canvas-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: #f8f8f8;
+    border-top: 1px solid #e0e0e0;
+    font-size: 12px;
+    min-height: 36px;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    border-right: 1px solid #e0e0e0;
+}
+
+.control-group:last-child {
+    border-right: none;
+}
+
+.control-group label {
+    color: #666666;
+    font-size: 11px;
+    margin-right: 4px;
+    font-weight: 600;
+}
+
+/* Canvas control buttons */
+#zoom-out-btn,
+#zoom-in-btn,
+#invert-display-btn,
+#show-grid-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #cccccc;
+    background: #ffffff;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: all 0.2s;
+    border-radius: 4px;
+    color: #333333;
+    user-select: none;
+}
+
+#zoom-out-btn:hover,
+#zoom-in-btn:hover,
+#invert-display-btn:hover,
+#show-grid-btn:hover {
+    background: #f0f0f0;
+    border-color: #999999;
+}
+
+#zoom-out-btn:active,
+#zoom-in-btn:active,
+#invert-display-btn:active,
+#show-grid-btn:active {
+    background: #e0e0e0;
+    transform: translateY(1px);
+}
+
+/* Active state for toggle buttons */
+#invert-display-btn.active,
+#show-grid-btn.active {
+    background: #0078d4;
+    color: #ffffff;
+    border-color: #005a9e;
+}
+
+#invert-display-btn.active:hover,
+#show-grid-btn.active:hover {
+    background: #106ebe;
+}
+
+/* Zoom level display */
+.zoom-level {
+    color: #666666;
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 30px;
+    text-align: center;
+}
+
+/* Layer Panel Styles */
+.layer-controls {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding: 4px;
+    background: #f8f8f8;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.layer-controls button {
+    padding: 6px 12px;
+    border: 1px solid #cccccc;
+    background: #ffffff;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    transition: background-color 0.2s;
+    border-radius: 4px;
+}
+
+.layer-controls button:hover {
+    background: #f0f0f0;
+}
+
+.layer-controls button:active {
+    background: #e0e0e0;
+}
+
+.layer-list {
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.layer-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+    font-size: 12px;
+}
+
+.layer-item:last-child {
+    border-bottom: none;
+}
+
+.layer-item:hover {
+    background: #f8f8f8;
+}
+
+.layer-item.active {
+    background: #e3f2fd;
+    border-color: #2196f3;
+    color: #1976d2;
+}
+
+.layer-item.active:hover {
+    background: #bbdefb;
+}
+
+.layer-visibility {
+    width: 20px;
+    height: 20px;
+    border: 1px solid #cccccc;
+    background: #ffffff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+    font-size: 14px;
+    color: #333333;
+    transition: background-color 0.2s;
+    border-radius: 2px;
+}
+
+.layer-visibility:hover {
+    background: #f0f0f0;
+}
+
+.layer-visibility.hidden {
+    background: #f0f0f0;
+    color: #999999;
+}
+
+.layer-name {
+    flex: 1;
+    font-weight: 600;
+    color: #333333;
+    margin-right: 8px;
+}
+
+.layer-item.active .layer-name {
+    color: #1976d2;
+}
+
+/* Tool Options Bar - Photoshop Style */
+.tool-options {
+    position: fixed;
+    top: 28px;
+    left: 0;
+    right: 0;
+    height: 42px;
+    background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 16px;
+    z-index: 999;
+    font-size: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.tool-options::-webkit-scrollbar {
+    height: 6px;
+}
+
+.tool-options::-webkit-scrollbar-track {
+    background: #f0f0f0;
+}
+
+.tool-options::-webkit-scrollbar-thumb {
+    background: #cccccc;
+    border-radius: 3px;
+}
+
+.tool-options::-webkit-scrollbar-thumb:hover {
+    background: #999999;
+}
+
+.option-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-right: 1px solid #e0e0e0;
+    height: 32px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.option-section:last-child {
+    border-right: none;
+}
+
+.option-section label {
+    color: #666666;
+    font-size: 11px;
+    font-weight: 600;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.option-section input[type="number"],
+.option-section input[type="text"],
+.option-section select {
+    width: 60px;
+    height: 24px;
+    padding: 2px 6px;
+    border: 1px solid #cccccc;
+    background: #ffffff;
+    font-size: 11px;
+    font-family: inherit;
+    border-radius: 3px;
+    margin: 0;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.option-section input[type="text"] {
+    width: 100px;
+}
+
+.option-section input[type="number"]:focus,
+.option-section input[type="text"]:focus,
+.option-section select:focus {
+    outline: none;
+    border-color: #0078d4;
+    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+}
+
+.option-section select {
+    width: 80px;
+    appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%23666666" d="M6 8L2 4h8z"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 8px;
+    padding-right: 24px;
+}
+
+.option-section button {
+    height: 24px;
+    padding: 2px 8px;
+    border: 1px solid #cccccc;
+    background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
+    color: #333333;
+    font-size: 11px;
+    font-family: inherit;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.option-section button:hover {
+    background: linear-gradient(to bottom, #f8f8f8 0%, #f0f0f0 100%);
+    border-color: #999999;
+}
+
+.option-section button:active {
+    background: linear-gradient(to bottom, #e8e8e8 0%, #e0e0e0 100%);
+    transform: translateY(1px);
+}
+
+.option-section button.active {
+    background: linear-gradient(to bottom, #0078d4 0%, #005a9e 100%);
+    color: #ffffff;
+    border-color: #005a9e;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.option-section button.active:hover {
+    background: linear-gradient(to bottom, #106ebe 0%, #0066cc 100%);
+}
+
+/* Text Balloon for Text Tool */
+.text-balloon {
+    position: fixed;
+    background: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: 6px;
+    min-width: 250px;
+    max-width: 400px;
+    z-index: 2000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    font-size: 12px;
+    transform: translateY(-100%);
+    margin-top: -8px;
+}
+
+.text-balloon::before {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 20px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid #ffffff;
+    z-index: 2001;
+}
+
+.text-balloon::after {
+    content: '';
+    position: absolute;
+    bottom: -9px;
+    left: 19px;
+    width: 0;
+    height: 0;
+    border-left: 9px solid transparent;
+    border-right: 9px solid transparent;
+    border-top: 9px solid #cccccc;
+    z-index: 2000;
+}
+
+.balloon-content {
+    padding: 12px;
+    background: #ffffff;
+    border-radius: 6px;
+}
+
+.balloon-content label {
+    display: block;
+    color: #333333;
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.balloon-content textarea {
+    width: 100%;
+    min-height: 60px;
+    max-height: 120px;
+    padding: 8px;
+    border: 1px solid #cccccc;
+    background: #ffffff;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 4px;
+    resize: vertical;
+    margin-bottom: 8px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.balloon-content textarea:focus {
+    outline: none;
+    border-color: #0078d4;
+    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+}
+
+.balloon-content .font-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+.balloon-content .font-controls label {
+    margin: 0;
+    margin-right: 4px;
+    text-transform: none;
+    font-weight: normal;
+    font-size: 11px;
+}
+
+.balloon-content .font-controls select,
+.balloon-content .font-controls input[type="number"] {
+    height: 24px;
+    padding: 2px 6px;
+    border: 1px solid #cccccc;
+    background: #ffffff;
+    font-size: 11px;
+    border-radius: 3px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.balloon-content .font-controls select {
+    width: 80px;
+    appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%23666666" d="M6 8L2 4h8z"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    background-size: 8px;
+    padding-right: 24px;
+}
+
+.balloon-content .font-controls input[type="number"] {
+    width: 50px;
+}
+
+.balloon-content .font-controls select:focus,
+.balloon-content .font-controls input[type="number"]:focus {
+    outline: none;
+    border-color: #0078d4;
+    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+}
+
+.balloon-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 12px;
+    margin-top: 12px;
+}
+
+.balloon-buttons button {
+    height: 28px;
+    padding: 0 16px;
+    border: 1px solid #cccccc;
+    background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
+    color: #333333;
+    font-size: 11px;
+    font-family: inherit;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 600;
+}
+
+.balloon-buttons button:hover {
+    background: linear-gradient(to bottom, #f8f8f8 0%, #f0f0f0 100%);
+    border-color: #999999;
+}
+
+.balloon-buttons button:active {
+    background: linear-gradient(to bottom, #e8e8e8 0%, #e0e0e0 100%);
+    transform: translateY(1px);
+}
+
+.balloon-buttons button.primary {
+    background: linear-gradient(to bottom, #0078d4 0%, #005a9e 100%);
+    color: #ffffff;
+    border-color: #005a9e;
+}
+
+.balloon-buttons button.primary:hover {
+    background: linear-gradient(to bottom, #106ebe 0%, #0066cc 100%);
+}
+
+.balloon-buttons button.cancel {
+    background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
+    color: #666666;
+}
+
+/* Adjust desktop top margin to account for tool options bar */
+.desktop {
+    top: 70px; /* 28px menu + 42px tool options */
+}
+
+/* Hide tool options by default, show only when tools are active */
+.tool-options.hidden {
+    display: none;
+}
+
+/* Tool-specific option sections */
+.option-section.brush-options,
+.option-section.pencil-options,
+.option-section.eraser-options {
+    /* Brush/pencil/eraser specific styling if needed */
+}
+
+.option-section.text-options {
+    /* Text tool specific styling */
+}
+
+.option-section.selection-options {
+    /* Selection tool specific styling */
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .tool-options {
+        position: relative;
+        top: auto;
+        height: auto;
+        min-height: 42px;
+        padding: 8px 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .option-section {
+        border-right: none;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 8px;
+        height: auto;
+        min-height: 24px;
+    }
+    
+    .option-section:last-child {
+        border-bottom: none;
+    }
+    
+    .desktop {
+        top: 28px; /* Only menu bar on mobile */
+    }
+}
+
+/* Brush Cursor Overlay */
+.brush-cursor-overlay {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    border: 1px solid #000000;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    display: none;
+}
+
+.brush-cursor-overlay.square {
+    border-radius: 0;
+}
+
+.brush-cursor-overlay.eraser {
+    border-color: #ff0000;
+    background: rgba(255, 0, 0, 0.2);
+}
+
 

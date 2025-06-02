@@ -1,7 +1,7 @@
 class BitsDraw {
     constructor() {
         this.canvas = document.getElementById('bitmap-canvas');
-        this.editor = new BitmapEditor(this.canvas, 128, 64);
+        this.editor = new OptimizedBitmapEditor(this.canvas, 128, 64);
         this.previewCanvas = document.getElementById('preview-canvas');
         this.isDrawing = false;
         this.currentTool = 'pencil';
@@ -15,16 +15,27 @@ class BitsDraw {
         this.isDraggingSelection = false;
         this.isDraggingSelectionGraphics = false;
         this.selectionDragStart = null;
+        this.previewOverlay = null;
+        this.textBalloonPos = null;
+        this.brushSize = 1;
+        this.sprayRadius = 5;
+        this.sprayDensity = 0.3;
         
         this.initializeEventListeners();
-        this.setupImageImport();
         this.setupColorPalette();
         this.setupMenuBar();
         this.setupWindowManagement();
         this.setupPreview();
+        this.setupLayers();
+        this.setupTextBalloon();
+        this.setupToolOptions();
         this.loadWindowStates();
         this.updateWindowMenu();
         this.updateOutput();
+        this.setupBrushCursor();
+        
+        // Initialize tool options display
+        this.updateToolOptions('pencil');
     }
 
     initializeEventListeners() {
@@ -53,10 +64,13 @@ class BitsDraw {
             
             if (this.currentTool === 'bucket' || this.currentTool === 'eyedropper') {
                 this.handleCanvasClick(e);
-            } else if (['rect-tool', 'circle-tool', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
+            } else if (['rect', 'circle', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
                 this.isDrawing = true;
             } else {
                 this.isDrawing = true;
+                if (['pencil', 'brush', 'eraser'].includes(this.currentTool)) {
+                    this.hideBrushCursor();
+                }
                 this.handleCanvasClick(e);
             }
         });
@@ -69,7 +83,18 @@ class BitsDraw {
                 const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
                 this.moveSelectionGraphics(coords);
             } else if (this.isDrawing) {
-                this.handleCanvasClick(e);
+                if (this.currentTool === 'line' && this.startPos) {
+                    const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                    this.drawLinePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                } else if (this.currentTool === 'rect' && this.startPos) {
+                    const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                    this.drawRectPreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                } else if (this.currentTool === 'circle' && this.startPos) {
+                    const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                    this.drawCirclePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                } else if (!['rect', 'circle', 'select-rect', 'select-circle', 'line'].includes(this.currentTool)) {
+                    this.handleCanvasClick(e);
+                }
             }
         });
 
@@ -82,19 +107,24 @@ class BitsDraw {
                 this.isDraggingSelectionGraphics = false;
                 this.selectionDragStart = null;
                 this.editor.saveState();
-            } else if (this.isDrawing && ['rect-tool', 'circle-tool', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
+            } else if (this.isDrawing && ['rect', 'circle', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
                 const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
                 
-                if (this.currentTool === 'rect-tool') {
-                    this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, this.drawFill, this.drawBorder, this.currentPattern);
+                if (this.currentTool === 'rect') {
+                    this.clearShapePreview();
+                    this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, this.drawFill, false, this.currentPattern);
                     this.editor.saveState();
-                } else if (this.currentTool === 'circle-tool') {
+                    this.updateOutput();
+                } else if (this.currentTool === 'circle') {
+                    this.clearShapePreview();
                     const radius = Math.round(Math.sqrt(
                         Math.pow(coords.x - this.startPos.x, 2) + Math.pow(coords.y - this.startPos.y, 2)
                     ));
-                    this.editor.drawCircle(this.startPos.x, this.startPos.y, radius, this.drawFill, this.drawBorder, this.currentPattern);
+                    this.editor.drawCircle(this.startPos.x, this.startPos.y, radius, this.drawFill, false, this.currentPattern);
                     this.editor.saveState();
+                    this.updateOutput();
                 } else if (this.currentTool === 'line') {
+                    this.clearLinePreview();
                     this.editor.drawLine(this.startPos.x, this.startPos.y, coords.x, coords.y, this.currentPattern);
                     this.editor.saveState();
                 } else if (this.currentTool === 'select-rect') {
@@ -107,6 +137,9 @@ class BitsDraw {
             }
             
             this.isDrawing = false;
+            if (['pencil', 'brush', 'eraser'].includes(this.currentTool)) {
+                this.showBrushCursor();
+            }
             this.updateOutput();
         });
 
@@ -151,53 +184,40 @@ class BitsDraw {
             this.drawFill = e.target.checked;
         });
 
-        // Undo/Redo buttons
-        document.getElementById('undo-btn').addEventListener('click', () => {
-            if (this.editor.undo()) {
-                this.updateOutput();
-            }
-        });
-
-        document.getElementById('redo-btn').addEventListener('click', () => {
-            if (this.editor.redo()) {
-                this.updateOutput();
-            }
-        });
 
         document.getElementById('zoom-select').addEventListener('change', (e) => {
             const zoom = parseInt(e.target.value);
             this.editor.setZoom(zoom);
             this.updateGridDisplay();
+            this.updateBrushCursorSize();
         });
 
-        document.getElementById('invert-display').addEventListener('change', (e) => {
-            this.editor.setInverted(e.target.checked);
+
+        // Canvas controls
+        document.getElementById('zoom-out-btn').addEventListener('click', () => {
+            this.zoomOut();
         });
 
-        document.getElementById('show-grid').addEventListener('change', (e) => {
-            this.showGrid = e.target.checked;
+        document.getElementById('zoom-in-btn').addEventListener('click', () => {
+            this.zoomIn();
+        });
+
+        document.getElementById('invert-display-btn').addEventListener('click', () => {
+            const currentInverted = this.editor.inverted;
+            this.editor.setInverted(!currentInverted);
+            this.updateInvertButton();
+        });
+
+        document.getElementById('show-grid-btn').addEventListener('click', () => {
+            this.showGrid = !this.showGrid;
             this.updateGridDisplay();
-        });
-
-        document.getElementById('canvas-width').addEventListener('change', () => {
-            this.updateCanvasSize();
-        });
-
-        document.getElementById('canvas-height').addEventListener('change', () => {
-            this.updateCanvasSize();
-        });
-
-        document.getElementById('resize-canvas').addEventListener('click', () => {
-            this.resizeCanvas();
+            this.updateGridButton();
         });
 
         document.getElementById('export-btn').addEventListener('click', () => {
             this.exportCode();
         });
 
-        document.getElementById('clear-btn').addEventListener('click', () => {
-            this.clearCanvas();
-        });
 
         document.getElementById('project-name').addEventListener('input', () => {
             this.updateOutput();
@@ -209,16 +229,6 @@ class BitsDraw {
             this.editor.redraw();
         });
 
-        // Text tool
-        document.getElementById('add-text-btn').addEventListener('click', () => {
-            this.addText();
-        });
-
-        document.getElementById('text-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.addText();
-            }
-        });
 
         // Save/Load buttons
         document.getElementById('save-btn').addEventListener('click', () => {
@@ -461,12 +471,6 @@ class BitsDraw {
                     this.updateOutput();
                 }
                 break;
-            case 'clear':
-                if (confirm('Clear the entire canvas?')) {
-                    this.editor.clear();
-                    this.updateOutput();
-                }
-                break;
             case 'clear-selection':
                 this.selection = null;
                 this.editor.redraw();
@@ -497,11 +501,11 @@ class BitsDraw {
             case 'show-options':
                 this.toggleWindow('options-window');
                 break;
-            case 'show-canvas-info':
-                this.toggleWindow('canvas-info-window');
-                break;
             case 'show-code':
                 this.toggleWindow('code-window');
+                break;
+            case 'show-layers':
+                this.toggleWindow('layers-window');
                 break;
             case 'show-preview':
                 this.toggleWindow('preview-window');
@@ -529,6 +533,13 @@ class BitsDraw {
                 gridCheckbox.checked = !gridCheckbox.checked;
                 this.showGrid = gridCheckbox.checked;
                 this.updateGridDisplay();
+                break;
+            case 'invert-bitmap':
+                this.editor.invertBitmap();
+                this.updateOutput();
+                break;
+            case 'rescale':
+                this.rescaleCanvas();
                 break;
         }
     }
@@ -575,9 +586,9 @@ class BitsDraw {
         const windows = [
             { id: 'canvas-window', name: 'Canvas' },
             { id: 'tools-window', name: 'Tools' },
-            { id: 'colors-window', name: 'Colors' },
+            { id: 'colors-window', name: 'Patterns' },
             { id: 'options-window', name: 'Options' },
-            { id: 'canvas-info-window', name: 'Canvas Info' },
+            { id: 'layers-window', name: 'Layers' },
             { id: 'preview-window', name: 'Preview' },
             { id: 'code-window', name: 'Generated Code' },
             { id: 'about-window', name: 'About BitsDraw' },
@@ -616,6 +627,7 @@ class BitsDraw {
         windows.forEach(window => {
             this.makeWindowDraggable(window);
             this.setupWindowControls(window);
+            this.setupWindowResize(window);
         });
     }
 
@@ -722,80 +734,104 @@ class BitsDraw {
         return maxZ;
     }
 
-    addText() {
-        const textInput = document.getElementById('text-input');
-        const text = textInput.value.trim();
-        
-        if (!text) {
-            this.showNotification('Please enter some text', 'error');
-            return;
-        }
-        
-        // Calculate text position (center or at last click)
-        let x = Math.floor(this.editor.width / 2 - TextRenderer.getTextWidth(text) / 2);
-        let y = Math.floor(this.editor.height / 2 - TextRenderer.getTextHeight() / 2);
-        
-        if (this.startPos) {
-            x = this.startPos.x;
-            y = this.startPos.y;
-        }
-        
-        // Render text
-        TextRenderer.renderText(text, x, y, this.editor, this.currentPattern);
-        this.editor.redraw();
-        this.editor.saveState();
-        this.updateOutput();
-        
-        // Clear text input
-        textInput.value = '';
-        
-        this.showNotification('Text added!', 'success');
+    setupWindowResize(window) {
+        const resizeHandle = window.querySelector('.window-resize-handle');
+        if (!resizeHandle) return;
+
+        let isResizing = false;
+        let startX, startY, startWidth, startHeight;
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = parseInt(window.offsetWidth);
+            startHeight = parseInt(window.offsetHeight);
+            
+            window.style.zIndex = this.getTopZIndex() + 1;
+            e.preventDefault();
+            e.stopPropagation(); // Prevent window dragging
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            
+            const newWidth = Math.max(200, startWidth + deltaX);
+            const newHeight = Math.max(100, startHeight + deltaY);
+            
+            window.style.width = newWidth + 'px';
+            window.style.height = newHeight + 'px';
+            
+            // Special handling for canvas window
+            if (window.id === 'canvas-window') {
+                this.updateCanvasSize();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                this.saveWindowStates();
+            }
+            isResizing = false;
+        });
     }
 
-    setupImageImport() {
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
-        const fileInputBtn = document.getElementById('file-input-btn');
+    updateCanvasSize() {
+        // Canvas automatically adjusts to its container
+        // No special handling needed for the optimized editor
+    }
 
-        // File input button
-        fileInputBtn.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        // File input change
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                this.handleImageFile(e.target.files[0]);
+    setupBrushCursor() {
+        this.brushCursorOverlay = document.getElementById('brush-cursor-overlay');
+        
+        // Track mouse movement over canvas
+        this.canvas.addEventListener('mouseenter', () => {
+            if (['pencil', 'brush', 'eraser'].includes(this.currentTool)) {
+                this.showBrushCursor();
             }
         });
-
-        // Drag and drop events
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
+        
+        this.canvas.addEventListener('mouseleave', () => {
+            this.hideBrushCursor();
         });
-
-        dropZone.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.handleImageFile(files[0]);
+        
+        this.canvas.addEventListener('mousemove', (e) => {
+            if (['pencil', 'brush', 'eraser'].includes(this.currentTool)) {
+                this.updateBrushCursor(e.clientX, e.clientY);
             }
         });
+    }
 
-        // Click to browse
-        dropZone.addEventListener('click', (e) => {
-            if (e.target === dropZone) {
-                fileInput.click();
-            }
-        });
+    showBrushCursor() {
+        this.brushCursorOverlay.style.display = 'block';
+        this.updateBrushCursorSize();
+    }
+
+    hideBrushCursor() {
+        this.brushCursorOverlay.style.display = 'none';
+    }
+
+    updateBrushCursor(clientX, clientY) {
+        this.brushCursorOverlay.style.left = clientX + 'px';
+        this.brushCursorOverlay.style.top = clientY + 'px';
+    }
+
+    updateBrushCursorSize() {
+        const size = this.brushSize * this.editor.zoom;
+        this.brushCursorOverlay.style.width = size + 'px';
+        this.brushCursorOverlay.style.height = size + 'px';
+        
+        // Update appearance based on tool
+        this.brushCursorOverlay.className = 'brush-cursor-overlay';
+        if (this.currentTool === 'eraser') {
+            this.brushCursorOverlay.classList.add('eraser');
+        }
+        if (this.currentTool === 'pencil' && this.brushSize === 1) {
+            this.brushCursorOverlay.classList.add('square');
+        }
     }
 
     setupColorPalette() {
@@ -812,6 +848,287 @@ class BitsDraw {
             });
         });
     }
+
+    setupLayers() {
+        // Add layer button
+        document.getElementById('add-layer-btn').addEventListener('click', () => {
+            const layerName = `Layer ${this.editor.getLayerCount() + 1}`;
+            this.editor.addLayer(layerName);
+            this.updateLayersList();
+            this.updateOutput();
+        });
+
+        // Delete layer button
+        document.getElementById('delete-layer-btn').addEventListener('click', () => {
+            if (this.editor.getLayerCount() > 1) {
+                if (confirm('Delete the active layer?')) {
+                    this.editor.deleteLayer(this.editor.activeLayerIndex);
+                    this.updateLayersList();
+                    this.updateOutput();
+                }
+            } else {
+                this.showNotification('Cannot delete the last layer', 'error');
+            }
+        });
+
+        // Duplicate layer button
+        document.getElementById('duplicate-layer-btn').addEventListener('click', () => {
+            const activeLayer = this.editor.getActiveLayer();
+            if (activeLayer) {
+                const newLayer = this.editor.addLayer(`${activeLayer.name} Copy`);
+                // Copy pixels from active layer
+                for (let y = 0; y < this.editor.height; y++) {
+                    for (let x = 0; x < this.editor.width; x++) {
+                        newLayer.pixels[y][x] = activeLayer.pixels[y][x];
+                    }
+                }
+                this.editor.compositeAllLayers();
+                this.updateLayersList();
+                this.updateOutput();
+            }
+        });
+
+        this.updateLayersList();
+    }
+
+    updateLayersList() {
+        const layerList = document.getElementById('layer-list');
+        layerList.innerHTML = '';
+
+        // Create layers in reverse order (top to bottom display)
+        for (let i = this.editor.getLayerCount() - 1; i >= 0; i--) {
+            const layerInfo = this.editor.getLayerInfo(i);
+            if (!layerInfo) continue;
+
+            const layerItem = document.createElement('div');
+            layerItem.className = `layer-item ${layerInfo.isActive ? 'active' : ''}`;
+            layerItem.dataset.layerIndex = i;
+
+            layerItem.innerHTML = `
+                <div class="layer-visibility" data-action="toggle-visibility">
+                    <i class="ph ${layerInfo.visible ? 'ph-eye' : 'ph-eye-slash'}"></i>
+                </div>
+                <div class="layer-name">${layerInfo.name}</div>
+            `;
+
+            // Layer click to select
+            layerItem.addEventListener('click', (e) => {
+                if (!e.target.dataset.action) {
+                    this.editor.setActiveLayer(i);
+                    this.updateLayersList();
+                }
+            });
+
+            // Visibility toggle
+            layerItem.querySelector('.layer-visibility').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.editor.toggleLayerVisibility(i);
+                this.updateLayersList();
+                this.updateOutput();
+            });
+
+            layerList.appendChild(layerItem);
+        }
+    }
+
+    updateInvertButton() {
+        const btn = document.getElementById('invert-display-btn');
+        if (this.editor.inverted) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    }
+
+    updateGridButton() {
+        const btn = document.getElementById('show-grid-btn');
+        if (this.showGrid) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    }
+
+    rescaleCanvas() {
+        const width = prompt('New width:', this.editor.width);
+        const height = prompt('New height:', this.editor.height);
+        
+        if (width !== null && height !== null) {
+            const newWidth = parseInt(width);
+            const newHeight = parseInt(height);
+            
+            if (newWidth > 0 && newHeight > 0 && newWidth <= 256 && newHeight <= 256) {
+                this.editor.resize(newWidth, newHeight);
+                this.updateOutput();
+                this.showNotification('Canvas rescaled successfully!', 'success');
+            } else {
+                this.showNotification('Invalid dimensions (1-256 pixels)', 'error');
+            }
+        }
+    }
+
+    setupTextBalloon() {
+        document.getElementById('add-text-balloon-btn').addEventListener('click', () => {
+            this.addTextFromBalloon();
+        });
+
+        document.getElementById('cancel-text-balloon-btn').addEventListener('click', () => {
+            this.hideTextBalloon();
+        });
+
+        document.getElementById('text-input-balloon').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.addTextFromBalloon();
+            } else if (e.key === 'Escape') {
+                this.hideTextBalloon();
+            }
+        });
+    }
+
+    setupToolOptions() {
+        // Brush size
+        const brushSizeSlider = document.getElementById('brush-size');
+        const brushSizeValue = document.getElementById('brush-size-value');
+        brushSizeSlider.addEventListener('input', (e) => {
+            this.brushSize = parseInt(e.target.value);
+            brushSizeValue.textContent = this.brushSize;
+            this.updateBrushCursorSize();
+        });
+
+        // Spray radius
+        const sprayRadiusSlider = document.getElementById('spray-radius');
+        const sprayRadiusValue = document.getElementById('spray-radius-value');
+        sprayRadiusSlider.addEventListener('input', (e) => {
+            this.sprayRadius = parseInt(e.target.value);
+            sprayRadiusValue.textContent = this.sprayRadius;
+        });
+
+        // Spray density
+        const sprayDensitySlider = document.getElementById('spray-density');
+        const sprayDensityValue = document.getElementById('spray-density-value');
+        sprayDensitySlider.addEventListener('input', (e) => {
+            this.sprayDensity = parseInt(e.target.value) / 100;
+            sprayDensityValue.textContent = e.target.value;
+        });
+
+        // Select All button
+        document.getElementById('select-all-btn').addEventListener('click', () => {
+            this.selectAll();
+        });
+    }
+
+    updateToolOptions(tool) {
+        // Hide all option sections
+        document.querySelectorAll('.option-section').forEach(section => {
+            section.style.display = 'none';
+        });
+
+        // Show relevant options based on tool
+        switch(tool) {
+            case 'pencil':
+            case 'brush':
+                document.getElementById('pencil-options').style.display = 'block';
+                break;
+            case 'rect':
+            case 'circle':
+                document.getElementById('shape-options').style.display = 'block';
+                break;
+            case 'spray':
+                document.getElementById('spray-options').style.display = 'block';
+                break;
+            case 'select-rect':
+            case 'select-circle':
+                document.getElementById('selection-options').style.display = 'block';
+                break;
+            case 'text':
+                document.getElementById('text-options').style.display = 'block';
+                break;
+            case 'bucket':
+                document.getElementById('bucket-options').style.display = 'block';
+                break;
+            case 'eraser':
+                document.getElementById('pencil-options').style.display = 'block';
+                break;
+            default:
+                document.getElementById('no-options').style.display = 'block';
+                break;
+        }
+    }
+
+    showTextBalloonAt(clientX, clientY, pixelX, pixelY) {
+        const balloon = document.getElementById('text-balloon');
+        const input = document.getElementById('text-input-balloon');
+        
+        this.textBalloonPos = { x: pixelX, y: pixelY };
+        
+        balloon.style.left = (clientX + 10) + 'px';
+        balloon.style.top = (clientY - 30) + 'px';
+        balloon.style.display = 'block';
+        
+        input.value = '';
+        input.focus();
+    }
+
+    hideTextBalloon() {
+        document.getElementById('text-balloon').style.display = 'none';
+        this.textBalloonPos = null;
+    }
+
+    addTextFromBalloon() {
+        const text = document.getElementById('text-input-balloon').value.trim();
+        
+        if (!text) {
+            this.hideTextBalloon();
+            return;
+        }
+        
+        if (this.textBalloonPos) {
+            TextRenderer.renderText(text, this.textBalloonPos.x, this.textBalloonPos.y, this.editor, this.currentPattern);
+            this.editor.redraw();
+            this.editor.saveState();
+            this.updateOutput();
+            this.showNotification('Text added!', 'success');
+        }
+        
+        this.hideTextBalloon();
+    }
+
+    drawWithBrush(centerX, centerY, draw) {
+        const radius = Math.floor(this.brushSize / 2);
+        let pixelsChanged = false;
+        
+        for (let y = centerY - radius; y <= centerY + radius; y++) {
+            for (let x = centerX - radius; x <= centerX + radius; x++) {
+                if (x >= 0 && x < this.editor.width && y >= 0 && y < this.editor.height) {
+                    let shouldDraw = false;
+                    
+                    // For size 1, just draw center pixel
+                    if (this.brushSize === 1) {
+                        if (x === centerX && y === centerY) {
+                            shouldDraw = true;
+                        }
+                    } else {
+                        // For larger sizes, draw circle/square brush
+                        const dx = x - centerX;
+                        const dy = y - centerY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance <= radius) {
+                            shouldDraw = true;
+                        }
+                    }
+                    
+                    if (shouldDraw) {
+                        this.editor.setPixel(x, y, draw ? 1 : 0, draw ? this.currentPattern : null);
+                        pixelsChanged = true;
+                    }
+                }
+            }
+        }
+        
+        // The OptimizedBitmapEditor handles rendering automatically
+    }
+
 
     saveWindowStates() {
         const windowStates = {};
@@ -969,11 +1286,31 @@ class BitsDraw {
     drawSelectionOverlay() {
         if (!this.selection) return;
         
-        // Only redraw once when selection is created or updated
+        // Redraw and show selection overlay
         this.editor.redraw();
         this.editor.drawSelectionOverlay(this.editor.ctx, this.selection, this.editor.zoom);
         
-        // Animation is handled by CSS, no need for continuous redraw
+        // Start continuous animation if not already running
+        if (!this.selectionAnimationRunning) {
+            this.startSelectionAnimation();
+        }
+    }
+
+    startSelectionAnimation() {
+        this.selectionAnimationRunning = true;
+        
+        const animate = () => {
+            if (this.selection && this.selection.active) {
+                // Redraw canvas and overlay for animation
+                this.editor.redraw();
+                this.editor.drawSelectionOverlay(this.editor.ctx, this.selection, this.editor.zoom);
+                requestAnimationFrame(animate);
+            } else {
+                this.selectionAnimationRunning = false;
+            }
+        };
+        
+        requestAnimationFrame(animate);
     }
 
     setTool(tool) {
@@ -989,39 +1326,51 @@ class BitsDraw {
             this.canvas.classList.add('bucket-cursor');
         }
         
+        // Update brush cursor visibility
+        if (['pencil', 'brush', 'eraser'].includes(tool)) {
+            this.updateBrushCursorSize();
+        } else {
+            this.hideBrushCursor();
+        }
+        
         // Clear selection when switching tools (except for selection tools)
         if (!['select-rect', 'select-circle'].includes(tool)) {
             this.selection = null;
+            this.selectionAnimationRunning = false;
             this.editor.redraw();
         }
+        
+        // Hide text balloon if switching away from text tool
+        if (tool !== 'text') {
+            this.hideTextBalloon();
+        }
+        
+        // Update tool options display
+        this.updateToolOptions(tool);
     }
 
     handleCanvasClick(e) {
         const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
         
         if (this.currentTool === 'pencil' || this.currentTool === 'brush') {
-            if (e.button === 0) { // Left click = draw with current pattern
-                this.editor.setPixel(coords.x, coords.y, 1, this.currentPattern);
-            } else { // Right click = erase (white)
-                this.editor.setPixel(coords.x, coords.y, 0);
-            }
+            this.drawWithBrush(coords.x, coords.y, e.button === 0);
             if (this.isDrawing && e.type === 'mouseup') {
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'eraser') {
-            this.editor.setPixel(coords.x, coords.y, 0);
+            this.drawWithBrush(coords.x, coords.y, false);
             if (this.isDrawing && e.type === 'mouseup') {
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'bucket') {
             if (e.button === 0) { // Left click = fill with current pattern
-                this.editor.bucketFill(coords.x, coords.y, 1, this.currentPattern);
+                this.editor.floodFill(coords.x, coords.y, 1, this.currentPattern);
             } else { // Right click = fill with white
-                this.editor.bucketFill(coords.x, coords.y, 0);
+                this.editor.floodFill(coords.x, coords.y, 0);
             }
             this.editor.saveState();
         } else if (this.currentTool === 'spray') {
-            this.editor.spray(coords.x, coords.y, 5, 0.3, this.currentPattern);
+            this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern);
             if (e.type === 'mouseup') {
                 this.editor.saveState();
             }
@@ -1030,6 +1379,8 @@ class BitsDraw {
             // Set current pattern based on picked pixel
             const newPattern = pixelValue ? 'solid-black' : 'solid-white';
             this.setPattern(newPattern);
+        } else if (this.currentTool === 'text') {
+            this.showTextBalloonAt(e.clientX, e.clientY, coords.x, coords.y);
         }
     }
 
@@ -1053,30 +1404,6 @@ class BitsDraw {
         }
     }
 
-    updateCanvasSize() {
-        const width = parseInt(document.getElementById('canvas-width').value);
-        const height = parseInt(document.getElementById('canvas-height').value);
-        
-        if (width > 0 && height > 0 && width <= 256 && height <= 256) {
-            document.getElementById('canvas-width').style.borderColor = '';
-            document.getElementById('canvas-height').style.borderColor = '';
-        } else {
-            document.getElementById('canvas-width').style.borderColor = '#e74c3c';
-            document.getElementById('canvas-height').style.borderColor = '#e74c3c';
-        }
-    }
-
-    resizeCanvas() {
-        const width = parseInt(document.getElementById('canvas-width').value);
-        const height = parseInt(document.getElementById('canvas-height').value);
-        
-        if (width > 0 && height > 0 && width <= 256 && height <= 256) {
-            this.editor.resize(width, height);
-            this.updateOutput();
-        } else {
-            alert('Please enter valid dimensions (1-256 pixels)');
-        }
-    }
 
     clearCanvas() {
         if (confirm('Are you sure you want to clear the canvas?')) {
@@ -1099,9 +1426,10 @@ class BitsDraw {
         const imageData = previewCtx.createImageData(this.editor.width, this.editor.height);
         const data = imageData.data;
         
+        const bitmapData = this.editor.getBitmapData();
         for (let y = 0; y < this.editor.height; y++) {
             for (let x = 0; x < this.editor.width; x++) {
-                const pixelValue = this.editor.pixels[y][x];
+                const pixelValue = bitmapData.pixels[y][x];
                 const displayValue = this.editor.inverted ? (1 - pixelValue) : pixelValue;
                 const color = displayValue ? 0 : 255;
                 const index = (y * this.editor.width + x) * 4;
@@ -1192,7 +1520,7 @@ class BitsDraw {
                     data.push({
                         x: x,
                         y: y,
-                        value: this.editor.pixels[y][x]
+                        value: this.editor.getPixel(x, y)
                     });
                 }
             }
@@ -1208,7 +1536,7 @@ class BitsDraw {
             // Only paste if within canvas bounds
             if (newX >= 0 && newX < this.editor.width && 
                 newY >= 0 && newY < this.editor.height) {
-                this.editor.pixels[newY][newX] = pixel.value;
+                this.editor.setPixel(newX, newY, pixel.value);
             }
         });
     }
@@ -1219,7 +1547,7 @@ class BitsDraw {
         for (let y = 0; y < this.editor.height; y++) {
             for (let x = 0; x < this.editor.width; x++) {
                 if (this.editor.isInSelection(x, y, this.selection)) {
-                    this.editor.pixels[y][x] = 0;
+                    this.editor.setPixel(x, y, 0);
                 }
             }
         }
@@ -1253,7 +1581,7 @@ class BitsDraw {
             this.selectionClipboard.pixels[y] = [];
             for (let x = 0; x < this.editor.width; x++) {
                 if (this.editor.isInSelection(x, y, this.selection)) {
-                    this.selectionClipboard.pixels[y][x] = this.editor.pixels[y][x];
+                    this.selectionClipboard.pixels[y][x] = this.editor.getPixel(x, y);
                 } else {
                     this.selectionClipboard.pixels[y][x] = null;
                 }
@@ -1272,7 +1600,7 @@ class BitsDraw {
         for (let y = 0; y < this.editor.height; y++) {
             for (let x = 0; x < this.editor.width; x++) {
                 if (this.selectionClipboard.pixels[y] && this.selectionClipboard.pixels[y][x] !== null) {
-                    this.editor.pixels[y][x] = this.selectionClipboard.pixels[y][x];
+                    this.editor.setPixel(x, y, this.selectionClipboard.pixels[y][x]);
                 }
             }
         }
@@ -1290,6 +1618,7 @@ class BitsDraw {
         zoomSelect.value = zoomLevels[nextIndex];
         this.editor.setZoom(zoomLevels[nextIndex]);
         this.updateGridDisplay();
+        this.updateBrushCursorSize();
     }
 
     zoomOut() {
@@ -1300,6 +1629,101 @@ class BitsDraw {
         zoomSelect.value = zoomLevels[prevIndex];
         this.editor.setZoom(zoomLevels[prevIndex]);
         this.updateGridDisplay();
+        this.updateBrushCursorSize();
+    }
+
+    drawLinePreview(x1, y1, x2, y2) {
+        // Clear previous preview
+        this.editor.redraw();
+        
+        // Draw selection overlay if exists
+        if (this.selection) {
+            this.drawSelectionOverlay();
+        }
+        
+        // Draw line preview
+        const ctx = this.editor.ctx;
+        ctx.save();
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        
+        const zoom = this.editor.zoom;
+        ctx.beginPath();
+        ctx.moveTo(x1 * zoom + zoom/2, y1 * zoom + zoom/2);
+        ctx.lineTo(x2 * zoom + zoom/2, y2 * zoom + zoom/2);
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+
+    clearLinePreview() {
+        this.editor.redraw();
+        if (this.selection) {
+            this.drawSelectionOverlay();
+        }
+    }
+
+    drawRectPreview(x1, y1, x2, y2) {
+        // Clear previous preview
+        this.editor.redraw();
+        
+        // Draw selection overlay if exists
+        if (this.selection) {
+            this.drawSelectionOverlay();
+        }
+        
+        // Draw rect preview
+        const ctx = this.editor.ctx;
+        ctx.save();
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        
+        const zoom = this.editor.zoom;
+        const startX = Math.min(x1, x2) * zoom;
+        const startY = Math.min(y1, y2) * zoom;
+        const width = (Math.abs(x2 - x1) + 1) * zoom;
+        const height = (Math.abs(y2 - y1) + 1) * zoom;
+        
+        ctx.strokeRect(startX, startY, width, height);
+        
+        ctx.restore();
+    }
+
+    drawCirclePreview(centerX, centerY, endX, endY) {
+        // Clear previous preview
+        this.editor.redraw();
+        
+        // Draw selection overlay if exists
+        if (this.selection) {
+            this.drawSelectionOverlay();
+        }
+        
+        // Draw circle preview
+        const ctx = this.editor.ctx;
+        ctx.save();
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        
+        const zoom = this.editor.zoom;
+        const radius = Math.round(Math.sqrt(
+            Math.pow(endX - centerX, 2) + Math.pow(endY - centerY, 2)
+        )) * zoom;
+        
+        ctx.beginPath();
+        ctx.arc(centerX * zoom + zoom/2, centerY * zoom + zoom/2, radius, 0, 2 * Math.PI);
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+
+    clearShapePreview() {
+        this.editor.redraw();
+        if (this.selection) {
+            this.drawSelectionOverlay();
+        }
     }
 
     updateOutput() {
@@ -1338,7 +1762,7 @@ class BitsDraw {
         ctx.fillStyle = '#000000';
         for (let y = 0; y < this.editor.height; y++) {
             for (let x = 0; x < this.editor.width; x++) {
-                if (bitmapData[y][x] === 1) {
+                if (bitmapData.pixels[y][x] === 1) {
                     ctx.fillRect(x, y, 1, 1);
                 }
             }

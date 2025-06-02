@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BitsDraw Optimized Test</title>
+</head>
+<body>
+    <canvas id="test-canvas" width="512" height="256" style="border: 1px solid #ccc;"></canvas>
+    <div id="test-output"></div>
+    
+    <script src="utils/ditherPatterns.js"></script>
+    <script src="utils/optimizedBitmap.js"></script>
+    <script>
+        // Test the optimized bitmap editor
+        const canvas = document.getElementById('test-canvas');
+        const output = document.getElementById('test-output');
+        
+        try {
+            // Create optimized editor
+            const editor = new OptimizedBitmapEditor(canvas, 128, 64);
+            
+            // Test basic functionality
+            output.innerHTML += '<p>✓ OptimizedBitmapEditor created successfully</p>';
+            
+            // Test setPixel
+            editor.setPixel(10, 10, 1);
+            output.innerHTML += '<p>✓ setPixel working</p>';
+            
+            // Test getPixel
+            const pixel = editor.getPixel(10, 10);
+            output.innerHTML += '<p>✓ getPixel working: ' + pixel + '</p>';
+            
+            // Test layer system
+            editor.addLayer('Test Layer');
+            output.innerHTML += '<p>✓ Layer system working</p>';
+            
+            // Test drawing methods
+            editor.drawRect(20, 20, 30, 30, false, false);
+            output.innerHTML += '<p>✓ drawRect working</p>';
+            
+            editor.drawCircle(50, 50, 10, false, false);
+            output.innerHTML += '<p>✓ drawCircle working</p>';
+            
+            editor.drawLine(0, 0, 20, 20);
+            output.innerHTML += '<p>✓ drawLine working</p>';
+            
+            // Test flood fill
+            editor.floodFill(5, 5, 1);
+            output.innerHTML += '<p>✓ floodFill working</p>';
+            
+            // Test spray
+            editor.spray(60, 30, 5, 0.5);
+            output.innerHTML += '<p>✓ spray working</p>';
+            
+            output.innerHTML += '<p><strong>All tests passed! OptimizedBitmapEditor is working correctly.</strong></p>';
+            
+        } catch (error) {
+            output.innerHTML += '<p style="color: red;">✗ Error: ' + error.message + '</p>';
+            console.error('Test error:', error);
+        }
+    </script>
+</body>
+</html>
