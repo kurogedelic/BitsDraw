@@ -2,8 +2,6 @@
 
 A web-based bitmap editor for creating graphics compatible with U8G2 monochrome displays.
 
-![BitsDraw](https://github.com/user-attachments/assets/136f4cda-aa8d-4c0e-bc1c-6ea703501106)
-
 
 ## Features
 
