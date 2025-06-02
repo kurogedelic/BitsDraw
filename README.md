@@ -2,7 +2,7 @@
 
 A web-based bitmap editor for creating graphics compatible with U8G2 monochrome displays.
 
-![BitsDraw](https://github.com/user-attachments/assets/5b964a29-4411-47e1-959c-dd5688e79d51)
+![BitsDraw](https://github.com/user-attachments/assets/136f4cda-aa8d-4c0e-bc1c-6ea703501106)
 
 
 ## Features
@@ -63,3 +63,4 @@ Works in modern browsers with HTML5 Canvas support. Tested in Chrome, Firefox, S
 ## License
 
 MIT License - see LICENSE file for details.
+
