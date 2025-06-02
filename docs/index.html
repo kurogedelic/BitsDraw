@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BitsDraw - U8G2 Bitmap Editor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Menu Bar -->
+    <div class="menu-bar">
+        <div class="menu-item" data-menu="file">File</div>
+        <div class="menu-item" data-menu="edit">Edit</div>
+        <div class="menu-item" data-menu="view">View</div>
+        <div class="menu-item" data-menu="window">Window</div>
+        <div class="menu-item" data-menu="help">Help</div>
+    </div>
+
+    <!-- Menus -->
+
+    <div class="menu-dropdown" id="menu-file">
+        <div class="menu-dropdown-item" data-action="new">
+            <span>New</span>
+            <span class="menu-shortcut">Ctrl+N</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="open">
+            <span>Open...</span>
+            <span class="menu-shortcut">Ctrl+O</span>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="save">
+            <span>Save</span>
+            <span class="menu-shortcut">Ctrl+S</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="save-as">Save As...</div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="import-image">Import Image...</div>
+        <div class="menu-dropdown-item" data-action="export">
+            <span>Export .h Code</span>
+            <span class="menu-shortcut">Ctrl+E</span>
+        </div>
+    </div>
+
+    <div class="menu-dropdown" id="menu-edit">
+        <div class="menu-dropdown-item" data-action="undo">
+            <span>Undo</span>
+            <span class="menu-shortcut">Ctrl+Z</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="redo">
+            <span>Redo</span>
+            <span class="menu-shortcut">Ctrl+Y</span>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="cut">
+            <span>Cut</span>
+            <span class="menu-shortcut">Ctrl+X</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="copy">
+            <span>Copy</span>
+            <span class="menu-shortcut">Ctrl+C</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="paste">
+            <span>Paste</span>
+            <span class="menu-shortcut">Ctrl+V</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="select-all">
+            <span>Select All</span>
+            <span class="menu-shortcut">Ctrl+A</span>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="clear">Clear Canvas</div>
+        <div class="menu-dropdown-item" data-action="clear-selection">
+            <span>Clear Selection</span>
+            <span class="menu-shortcut">Delete</span>
+        </div>
+    </div>
+
+    <div class="menu-dropdown" id="menu-view">
+        <div class="menu-dropdown-item" data-action="zoom-in">
+            <span>Zoom In</span>
+            <span class="menu-shortcut">Ctrl+=</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="zoom-out">
+            <span>Zoom Out</span>
+            <span class="menu-shortcut">Ctrl+-</span>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="show-grid">
+            <span>Show Grid</span>
+            <span class="menu-shortcut">Ctrl+G</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="invert">
+            <span>Invert Display</span>
+            <span class="menu-shortcut">Ctrl+I</span>
+        </div>
+    </div>
+
+    <div class="menu-dropdown" id="menu-window">
+        <div class="menu-dropdown-item" data-action="show-tools">Tools</div>
+        <div class="menu-dropdown-item" data-action="show-colors">Colors</div>
+        <div class="menu-dropdown-item" data-action="show-options">Options</div>
+        <div class="menu-dropdown-item" data-action="show-canvas-info">Canvas Info</div>
+        <div class="menu-dropdown-item" data-action="show-preview">Preview</div>
+        <div class="menu-dropdown-item" data-action="show-code">Generated Code</div>
+    </div>
+
+    <div class="menu-dropdown" id="menu-help">
+        <div class="menu-dropdown-item" data-action="about">About BitsDraw...</div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="shortcuts">Keyboard Shortcuts</div>
+    </div>
+
+    <div class="desktop">
+        <!-- Canvas Window -->
+        <div class="window" id="canvas-window" style="left: 300px; top: 50px; width: 600px; height: 500px;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                    <div class="window-control minimize">−</div>
+                    <div class="window-control zoom">□</div>
+                </div>
+                <div class="window-title">Canvas - my_bitmap (128x64)</div>
+            </div>
+            <div class="window-content">
+                <div class="canvas-area">
+                    <canvas id="bitmap-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tools Window -->
+        <div class="window" id="tools-window" style="left: 20px; top: 50px; width: 200px; height: auto;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                    <div class="window-control minimize">−</div>
+                </div>
+                <div class="window-title">Tools</div>
+            </div>
+            <div class="window-content">
+                <div class="tool-palette">
+                    <div class="tool-row">
+                        <button id="pencil-tool" class="tool-icon active" title="Pencil"><img src="" class="icon" alt="Pencil" data-icon="tools.pencil"></button>
+                        <button id="brush-tool" class="tool-icon" title="Brush"><img src="" class="icon" alt="Brush" data-icon="tools.brush"></button>
+                        <button id="bucket-tool" class="tool-icon" title="Bucket Fill"><img src="" class="icon" alt="Bucket" data-icon="tools.bucket"></button>
+                        <button id="eraser-tool" class="tool-icon" title="Eraser"><img src="" class="icon" alt="Eraser" data-icon="tools.eraser"></button>
+                    </div>
+                    <div class="tool-row">
+                        <button id="select-rect-tool" class="tool-icon" title="Rectangle Select"><img src="" class="icon" alt="Rectangle Select" data-icon="tools.select-rect"></button>
+                        <button id="select-circle-tool" class="tool-icon" title="Circle Select"><img src="" class="icon" alt="Circle Select" data-icon="tools.select-circle"></button>
+                        <button id="line-tool" class="tool-icon" title="Line"><img src="" class="icon" alt="Line" data-icon="tools.line"></button>
+                        <button id="text-tool" class="tool-icon" title="Text"><img src="" class="icon" alt="Text" data-icon="tools.text"></button>
+                    </div>
+                    <div class="tool-row">
+                        <button id="rect-tool" class="tool-icon" title="Rectangle"><img src="" class="icon" alt="Rectangle" data-icon="tools.rect"></button>
+                        <button id="circle-tool" class="tool-icon" title="Circle"><img src="" class="icon" alt="Circle" data-icon="tools.circle"></button>
+                        <button id="spray-tool" class="tool-icon" title="Spray"><img src="" class="icon" alt="Spray" data-icon="tools.spray"></button>
+                        <button id="eyedropper-tool" class="tool-icon" title="Eyedropper"><img src="" class="icon" alt="Eyedropper" data-icon="tools.eyedropper"></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Colors Window -->
+        <div class="window" id="colors-window" style="left: 20px; top: 250px; width: 180px; height: auto;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                    <div class="window-control minimize">−</div>
+                </div>
+                <div class="window-title">Colors</div>
+            </div>
+            <div class="window-content">
+                <div class="color-palette">
+                    <div class="color-swatch selected" data-pattern="solid-black" style="background: #000000;" title="Black"></div>
+                    <div class="color-swatch" data-pattern="solid-white" style="background: #ffffff; border: 1px solid #808080;" title="White"></div>
+                    <div class="color-swatch" data-pattern="dither-50" title="50% Dither"></div>
+                    <div class="color-swatch" data-pattern="dither-25" title="25% Dither"></div>
+                    <div class="color-swatch" data-pattern="dither-75" title="75% Dither"></div>
+                    <div class="color-swatch" data-pattern="lines-horizontal" title="Horizontal Lines"></div>
+                    <div class="color-swatch" data-pattern="lines-vertical" title="Vertical Lines"></div>
+                    <div class="color-swatch" data-pattern="cross-hatch" title="Cross Hatch"></div>
+                    <div class="color-swatch" data-pattern="dots" title="Dots"></div>
+                    <div class="color-swatch" data-pattern="diagonal" title="Diagonal"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Options Window -->
+        <div class="window" id="options-window" style="left: 20px; top: 380px; width: 200px; height: auto;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                    <div class="window-control minimize">−</div>
+                </div>
+                <div class="window-title">Options</div>
+            </div>
+            <div class="window-content">
+                <div class="option-group">
+                    <h4>Draw Mode</h4>
+                    <label><input type="checkbox" id="draw-border" checked> Border</label>
+                    <label><input type="checkbox" id="draw-fill"> Fill</label>
+                </div>
+                <div class="option-group">
+                    <h4>Edit</h4>
+                    <button id="undo-btn">Undo</button>
+                    <button id="redo-btn">Redo</button>
+                </div>
+                <div class="option-group">
+                    <h4>Selection</h4>
+                    <button id="clear-selection-btn">Clear Selection</button>
+                </div>
+                <div class="option-group">
+                    <h4>Text</h4>
+                    <input type="text" id="text-input" placeholder="Enter text..." style="width: 100%; margin-bottom: 4px;">
+                    <button id="add-text-btn">Add Text</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas Info Window -->
+        <div class="window" id="canvas-info-window" style="left: 230px; top: 380px; width: 250px; height: auto;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                    <div class="window-control minimize">−</div>
+                </div>
+                <div class="window-title">Canvas Info</div>
+            </div>
+            <div class="window-content">
+                <div class="option-group">
+                    <h4>View</h4>
+                    <label>
+                        Zoom:
+                        <select id="zoom-select">
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="4" selected>4x</option>
+                            <option value="8">8x</option>
+                            <option value="16">16x</option>
+                            <option value="32">32x</option>
+                        </select>
+                    </label>
+                    <label>
+                        <input type="checkbox" id="invert-display">
+                        Invert Display
+                    </label>
+                    <label>
+                        <input type="checkbox" id="show-grid" checked>
+                        Show Grid
+                    </label>
+                </div>
+                <div class="option-group">
+                    <h4>Size</h4>
+                    <label>
+                        Width: <input type="number" id="canvas-width" value="128" min="1" max="256">
+                    </label>
+                    <label>
+                        Height: <input type="number" id="canvas-height" value="64" min="1" max="256">
+                    </label>
+                    <button id="resize-canvas">Resize</button>
+                </div>
+                <div class="option-group">
+                    <h4>Actions</h4>
+                    <button id="clear-btn">Clear Canvas</button>
+                </div>
+                <div class="option-group">
+                    <h4>Import</h4>
+                    <div id="drop-zone" class="drop-zone">
+                        Drop PNG here<br>
+                        or <button type="button" id="file-input-btn">Browse</button>
+                        <input type="file" id="file-input" accept="image/png,image/jpg,image/jpeg,image/gif" style="display: none;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generated Code Window -->
+        <div class="window" id="code-window" style="left: 920px; top: 50px; width: 400px; height: 600px;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                    <div class="window-control minimize">−</div>
+                    <div class="window-control zoom">□</div>
+                </div>
+                <div class="window-title">Generated Code</div>
+            </div>
+            <div class="window-content">
+                <div class="option-group">
+                    <label>
+                        Project Name: <input type="text" id="project-name" value="my_bitmap">
+                    </label>
+                    <button id="export-btn">Copy .h Code</button>
+                </div>
+                <div class="option-group">
+                    <h4>Data</h4>
+                    <button id="save-btn">Save to Browser</button>
+                    <button id="load-btn">Load from Browser</button>
+                </div>
+                <div class="option-group">
+                    <h4>Import Code</h4>
+                    <textarea id="import-code" placeholder="Paste .h code here..." rows="3" style="width: 100%; font-family: monospace; font-size: 10px;"></textarea>
+                    <button id="import-btn">Import .h Code</button>
+                </div>
+                <div class="output-area">
+                    <textarea id="output-code" readonly placeholder="Generated C code will appear here..."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- About BitsDraw Window -->
+        <div class="window hidden" id="about-window" style="left: 400px; top: 200px; width: 450px; height: 350px;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                </div>
+                <div class="window-title">About BitsDraw</div>
+            </div>
+            <div class="window-content">
+                <div class="about-content">
+                    <div class="about-icon">
+                        <div class="app-icon">🎨</div>
+                    </div>
+                    <div class="about-info">
+                        <h2>BitsDraw</h2>
+                        <p class="version">Version 1.0.0</p>
+                        <p class="description">A bitmap editor for U8G2 displays</p>
+                        
+                        <div class="about-section">
+                            <h3>Features</h3>
+                            <ul>
+                                <li>Pixel-perfect bitmap editing</li>
+                                <li>Multiple drawing tools and patterns</li>
+                                <li>U8G2 format export</li>
+                                <li>Image import and processing</li>
+                                <li>Undo/Redo functionality</li>
+                                <li>Multi-window interface</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="about-section">
+                            <h3>Built with</h3>
+                            <p>HTML5 Canvas, JavaScript, CSS3</p>
+                        </div>
+                        
+                        <div class="about-section">
+                            <h3>Copyright</h3>
+                            <p>© 2024 BitsDraw. All rights reserved.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Window -->
+        <div class="window hidden" id="shortcuts-window" style="left: 450px; top: 150px; width: 400px; height: 450px;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                </div>
+                <div class="window-title">Keyboard Shortcuts</div>
+            </div>
+            <div class="window-content">
+                <div class="shortcuts-content">
+                    <div class="shortcuts-section">
+                        <h3>File Operations</h3>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+N</span>
+                            <span class="shortcut-desc">New Canvas</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+S</span>
+                            <span class="shortcut-desc">Save</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+O</span>
+                            <span class="shortcut-desc">Open</span>
+                        </div>
+                    </div>
+                    
+                    <div class="shortcuts-section">
+                        <h3>Edit Operations</h3>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+Z</span>
+                            <span class="shortcut-desc">Undo</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+Y</span>
+                            <span class="shortcut-desc">Redo</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+A</span>
+                            <span class="shortcut-desc">Select All</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+C</span>
+                            <span class="shortcut-desc">Copy Selection</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+X</span>
+                            <span class="shortcut-desc">Cut Selection</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+V</span>
+                            <span class="shortcut-desc">Paste Selection</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Delete</span>
+                            <span class="shortcut-desc">Delete Selection</span>
+                        </div>
+                    </div>
+                    
+                    <div class="shortcuts-section">
+                        <h3>Tools</h3>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">P</span>
+                            <span class="shortcut-desc">Pencil Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">B</span>
+                            <span class="shortcut-desc">Brush Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">F</span>
+                            <span class="shortcut-desc">Bucket Fill</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">E</span>
+                            <span class="shortcut-desc">Eraser Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">L</span>
+                            <span class="shortcut-desc">Line Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">T</span>
+                            <span class="shortcut-desc">Text Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">R</span>
+                            <span class="shortcut-desc">Rectangle Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">C</span>
+                            <span class="shortcut-desc">Circle Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">S</span>
+                            <span class="shortcut-desc">Spray Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">I</span>
+                            <span class="shortcut-desc">Eyedropper Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">M</span>
+                            <span class="shortcut-desc">Select Tool</span>
+                        </div>
+                    </div>
+                    
+                    <div class="shortcuts-section">
+                        <h3>View</h3>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+=</span>
+                            <span class="shortcut-desc">Zoom In</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+-</span>
+                            <span class="shortcut-desc">Zoom Out</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+G</span>
+                            <span class="shortcut-desc">Toggle Grid</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">Ctrl+I</span>
+                            <span class="shortcut-desc">Invert Display</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Preview Window -->
+        <div class="window" id="preview-window" style="left: 20px; top: 420px; width: 180px; height: 140px;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close">×</div>
+                    <div class="window-control minimize">−</div>
+                </div>
+                <div class="window-title">Preview (1:1)</div>
+            </div>
+            <div class="window-content">
+                <div class="preview-area">
+                    <canvas id="preview-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="utils/bitmap.js"></script>
+    <script src="utils/export.js"></script>
+    <script src="utils/imageImport.js"></script>
+    <script src="utils/ditherPatterns.js"></script>
+    <script src="utils/textRenderer.js"></script>
+    <script src="utils/pngIconLoader.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
