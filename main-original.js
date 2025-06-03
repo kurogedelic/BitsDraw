@@ -11,6 +11,7 @@ class BitsDraw {
         this.currentPattern = 'solid-black';
         this.selection = null;
         this.showGrid = false;
+        this.gradientStartPos = null;
         this.selectionClipboard = null;
         this.isDraggingSelection = false;
         this.isDraggingSelectionGraphics = false;
@@ -231,7 +232,7 @@ class BitsDraw {
     setupToolbarEvents() {
         // Tool palette events
         const tools = ['pencil', 'bucket', 'select-rect', 'select-circle', 
-                      'line', 'text', 'rect', 'circle', 'spray'];
+                      'line', 'text', 'rect', 'circle', 'spray', 'gradient'];
         
         tools.forEach(tool => {
             const btn = document.getElementById(`${tool}-tool`);

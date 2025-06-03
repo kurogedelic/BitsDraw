@@ -2,6 +2,20 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+/* Allow text selection in input fields */
+input,
+textarea,
+[contenteditable] {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
 }
 
 body {
@@ -235,22 +249,72 @@ body {
 }
 
 .window-content {
-    padding: 4px;
-    height: calc(100% - 33px);
+    min-height: 20px;
     overflow: auto;
+    position: relative;
+}
+
+/* For windows with fixed height */
+.window[style*="height:"][style*="px"] .window-content {
+    height: calc(100% - 33px);
+}
+
+/* Canvas window specific adjustments */
+#canvas-window .window-content {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Small Title Bar - Photoshop Style */
+.window.small-titlebar {
+    height: auto !important;
+}
+
+.window.small-titlebar .window-title-bar {
+    height: 16px;
+    min-height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+}
+
+.window.small-titlebar .window-title {
+    font-size: 10px;
+    font-weight: 600;
+    margin: 0 4px;
+}
+
+.window.small-titlebar .window-controls {
+    gap: 4px;
+    margin-right: 4px;
+}
+
+.window.small-titlebar .window-control {
+    width: 12px;
+    height: 12px;
+    font-size: 10px;
+}
+
+.window.small-titlebar .window-content {
+    height: auto;
+}
+
+.window.small-titlebar.minimized {
+    height: 17px !important;
+    min-height: 17px !important;
 }
 
 /* Tool Palette */
 .tool-palette {
     background: #f8f8f8;
     border: 1px solid #e0e0e0;
-    padding: 6px;
+    padding: 2px;
 }
 
 .tool-row {
     display: flex;
-    gap: 6px;
-    margin-bottom: 6px;
+    gap: 2px;
+    margin-bottom: 2px;
 }
 
 .tool-row:last-child {
@@ -285,16 +349,18 @@ body {
 /* Color Palette */
 .color-palette {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(32px, 1fr));
     gap: 4px;
-    padding: 4px;
+    padding: 6px;
     background: #f8f8f8;
     border: 1px solid #e0e0e0;
+    max-width: 100%;
 }
 
 .color-swatch {
-    width: 24px;
-    height: 24px;
+    width: 100%;
+    height: 32px;
+    aspect-ratio: 1;
     border: 1px solid #cccccc;
     cursor: pointer;
     position: relative;
@@ -417,6 +483,7 @@ body {
     background: #e0e0e0;
 }
 
+
 #export-btn {
     background: #28a745;
     color: #ffffff;
@@ -445,7 +512,7 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: calc(100% - 32px);
+    flex: 1;
     overflow: auto;
 }
 
@@ -471,7 +538,6 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: calc(100% - 16px);
     overflow: hidden;
 }
 
@@ -820,6 +886,7 @@ body {
     border-top: 1px solid #e0e0e0;
     font-size: 12px;
     min-height: 36px;
+    flex-shrink: 0;
 }
 
 .control-group {
@@ -836,15 +903,15 @@ body {
 
 .control-group label {
     color: #666666;
-    font-size: 11px;
-    margin-right: 4px;
-    font-weight: 600;
+    font-size: 14px;
+    margin-right: 6px;
+    display: flex;
+    align-items: center;
 }
 
 /* Canvas control buttons */
 #zoom-out-btn,
 #zoom-in-btn,
-#invert-display-btn,
 #show-grid-btn {
     width: 28px;
     height: 28px;
@@ -864,7 +931,6 @@ body {
 
 #zoom-out-btn:hover,
 #zoom-in-btn:hover,
-#invert-display-btn:hover,
 #show-grid-btn:hover {
     background: #f0f0f0;
     border-color: #999999;
@@ -872,24 +938,139 @@ body {
 
 #zoom-out-btn:active,
 #zoom-in-btn:active,
-#invert-display-btn:active,
 #show-grid-btn:active {
     background: #e0e0e0;
     transform: translateY(1px);
 }
 
 /* Active state for toggle buttons */
-#invert-display-btn.active,
 #show-grid-btn.active {
     background: #0078d4;
     color: #ffffff;
     border-color: #005a9e;
 }
 
-#invert-display-btn.active:hover,
 #show-grid-btn.active:hover {
     background: #106ebe;
 }
+
+/* Dropdown buttons for canvas controls */
+.dropdown-button {
+    height: 28px;
+    padding: 4px 8px;
+    border: 1px solid #cccccc;
+    border-radius: 3px;
+    background: #ffffff;
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #333333;
+    transition: all 0.2s;
+}
+
+.dropdown-button:hover {
+    border-color: #999999;
+    background-color: #f0f0f0;
+}
+
+.dropdown-button:active {
+    background-color: #e0e0e0;
+    transform: translateY(1px);
+}
+
+.dropdown-button i:first-child {
+    font-size: 12px;
+}
+
+.dropdown-button i:last-child {
+    font-size: 10px;
+    opacity: 0.6;
+}
+
+/* Hidden selects */
+#zoom-select,
+#display-mode-select {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Custom dropdown */
+.custom-dropdown {
+    background: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: 3px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.dropdown-item {
+    padding: 6px 12px;
+    font-size: 11px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.2s;
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-item:hover {
+    background-color: #f0f8ff;
+}
+
+.dropdown-item.selected {
+    background-color: #0078d4;
+    color: #ffffff;
+}
+
+.dropdown-item.selected:hover {
+    background-color: #106ebe;
+}
+
+/* View controls in tool options */
+.view-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.view-controls button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #cccccc;
+    border-radius: 3px;
+    background: #ffffff;
+    color: #333333;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.view-controls button:hover {
+    background: #f0f0f0;
+    border-color: #999999;
+}
+
+.view-controls button:active {
+    background: #e0e0e0;
+    transform: translateY(1px);
+}
+
+/* Override text color for dropdown options */
+#zoom-select option {
+    color: #333333;
+    text-indent: 0;
+}
+
 
 /* Zoom level display */
 .zoom-level {
@@ -932,7 +1113,8 @@ body {
 .layer-list {
     background: #ffffff;
     border: 1px solid #e0e0e0;
-    max-height: 200px;
+    min-height: 80px;
+    max-height: 300px;
     overflow-y: auto;
 }
 
@@ -1001,84 +1183,56 @@ body {
     color: #1976d2;
 }
 
-/* Tool Options Bar - Photoshop Style */
+/* Tool Options in Window */
 .tool-options {
-    position: fixed;
-    top: 28px;
-    left: 0;
-    right: 0;
-    height: 42px;
-    background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
-    border-bottom: 1px solid #e0e0e0;
-    display: flex;
-    align-items: center;
-    padding: 0 12px;
-    gap: 16px;
-    z-index: 999;
-    font-size: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow-x: auto;
-    overflow-y: hidden;
-}
-
-.tool-options::-webkit-scrollbar {
-    height: 6px;
-}
-
-.tool-options::-webkit-scrollbar-track {
-    background: #f0f0f0;
-}
-
-.tool-options::-webkit-scrollbar-thumb {
-    background: #cccccc;
-    border-radius: 3px;
-}
-
-.tool-options::-webkit-scrollbar-thumb:hover {
-    background: #999999;
+    padding: 8px;
+    background: #f8f8f8;
+    border: 1px solid #e0e0e0;
 }
 
 .option-section {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    border-right: 1px solid #e0e0e0;
-    height: 32px;
-    flex-shrink: 0;
-    white-space: nowrap;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
 }
 
 .option-section:last-child {
-    border-right: none;
+    margin-bottom: 0;
 }
 
 .option-section label {
-    color: #666666;
-    font-size: 11px;
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
     font-weight: 600;
-    margin: 0;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    color: #333333;
+}
+
+.option-section input[type="range"] {
+    width: 120px;
+    margin-right: 8px;
 }
 
 .option-section input[type="number"],
 .option-section input[type="text"],
 .option-section select {
-    width: 60px;
-    height: 24px;
-    padding: 2px 6px;
+    padding: 4px 8px;
     border: 1px solid #cccccc;
     background: #ffffff;
-    font-size: 11px;
+    font-size: 12px;
     font-family: inherit;
     border-radius: 3px;
-    margin: 0;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
+.option-section input[type="number"] {
+    width: 60px;
+}
+
 .option-section input[type="text"] {
-    width: 100px;
+    width: 140px;
 }
 
 .option-section input[type="number"]:focus,
@@ -1089,49 +1243,281 @@ body {
     box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
 }
 
-.option-section select {
-    width: 80px;
-    appearance: none;
-    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><path fill="%23666666" d="M6 8L2 4h8z"/></svg>');
-    background-repeat: no-repeat;
-    background-position: right 6px center;
-    background-size: 8px;
-    padding-right: 24px;
+.option-section input[type="checkbox"] {
+    margin-right: 6px;
 }
 
 .option-section button {
-    height: 24px;
-    padding: 2px 8px;
+    padding: 6px 12px;
+    margin: 4px 4px 4px 0;
     border: 1px solid #cccccc;
-    background: linear-gradient(to bottom, #ffffff 0%, #f8f8f8 100%);
+    background: #ffffff;
     color: #333333;
-    font-size: 11px;
+    font-size: 12px;
     font-family: inherit;
     border-radius: 3px;
     cursor: pointer;
     transition: all 0.2s;
-    white-space: nowrap;
 }
 
 .option-section button:hover {
-    background: linear-gradient(to bottom, #f8f8f8 0%, #f0f0f0 100%);
+    background: #f0f0f0;
     border-color: #999999;
 }
 
 .option-section button:active {
-    background: linear-gradient(to bottom, #e8e8e8 0%, #e0e0e0 100%);
+    background: #e0e0e0;
     transform: translateY(1px);
 }
 
-.option-section button.active {
-    background: linear-gradient(to bottom, #0078d4 0%, #005a9e 100%);
-    color: #ffffff;
-    border-color: #005a9e;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+.option-label {
+    color: #666666;
+    font-style: italic;
+    font-size: 11px;
 }
 
-.option-section button.active:hover {
-    background: linear-gradient(to bottom, #106ebe 0%, #0066cc 100%);
+/* CPP Export/Import Dialog Styles */
+.input-section,
+.code-section,
+.import-section {
+    margin-bottom: 16px;
+}
+
+.input-section label,
+.code-section label,
+.import-section label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #333;
+}
+
+.input-section input[type="text"] {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.code-section textarea,
+.import-section textarea {
+    width: 100%;
+    min-height: 300px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    background: #f8f9fa;
+    resize: vertical;
+}
+
+.import-section input[type="file"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-bottom: 12px;
+}
+
+.help-text {
+    font-size: 11px;
+    color: #666;
+    margin: 8px 0 4px 0;
+    font-style: italic;
+}
+
+/* Dithering Dialog Styles */
+.input-section select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+    background: #ffffff;
+    cursor: pointer;
+}
+
+.input-section input[type="range"] {
+    width: 70%;
+    margin-right: 8px;
+}
+
+.input-section span {
+    display: inline-block;
+    min-width: 20px;
+    font-weight: 600;
+    color: #333;
+}
+
+/* Dialog Overlay */
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.dialog {
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    width: 480px;
+    max-width: 90vw;
+    max-height: 80vh;
+    overflow: hidden;
+}
+
+.dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #f8f9fa;
+}
+
+.dialog-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+}
+
+.dialog-close {
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: #666;
+}
+
+.dialog-close:hover {
+    background: #e9ecef;
+    color: #333;
+}
+
+.dialog-content {
+    padding: 20px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid #e0e0e0;
+    background: #f8f9fa;
+}
+
+.dialog-btn {
+    padding: 8px 16px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.dialog-btn-cancel {
+    background: #ffffff;
+    color: #666;
+}
+
+.dialog-btn-cancel:hover {
+    background: #f8f9fa;
+}
+
+.dialog-btn-primary {
+    background: #0078d4;
+    color: #ffffff;
+    border-color: #0078d4;
+}
+
+.dialog-btn-primary:hover {
+    background: #106ebe;
+}
+
+/* New Canvas Dialog */
+.preset-section, .custom-section {
+    margin-bottom: 24px;
+}
+
+.preset-section:last-child, .custom-section:last-child {
+    margin-bottom: 0;
+}
+
+.preset-section h4, .custom-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+}
+
+#preset-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+    background: #ffffff;
+    cursor: pointer;
+}
+
+.size-inputs {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.size-inputs label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.size-inputs input {
+    width: 80px;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+#swap-dimensions-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #ffffff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    transition: all 0.2s;
+}
+
+#swap-dimensions-btn:hover {
+    background: #f0f8ff;
+    border-color: #0078d4;
+    color: #0078d4;
 }
 
 /* Text Balloon for Text Tool */
@@ -1307,59 +1693,11 @@ body {
     color: #666666;
 }
 
-/* Adjust desktop top margin to account for tool options bar */
+/* Desktop positioning */
 .desktop {
-    top: 70px; /* 28px menu + 42px tool options */
+    top: 28px; /* Only menu bar */
 }
 
-/* Hide tool options by default, show only when tools are active */
-.tool-options.hidden {
-    display: none;
-}
-
-/* Tool-specific option sections */
-.option-section.brush-options,
-.option-section.pencil-options,
-.option-section.eraser-options {
-    /* Brush/pencil/eraser specific styling if needed */
-}
-
-.option-section.text-options {
-    /* Text tool specific styling */
-}
-
-.option-section.selection-options {
-    /* Selection tool specific styling */
-}
-
-/* Responsive adjustments */
-@media (max-width: 1200px) {
-    .tool-options {
-        position: relative;
-        top: auto;
-        height: auto;
-        min-height: 42px;
-        padding: 8px 12px;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-    
-    .option-section {
-        border-right: none;
-        border-bottom: 1px solid #e0e0e0;
-        padding-bottom: 8px;
-        height: auto;
-        min-height: 24px;
-    }
-    
-    .option-section:last-child {
-        border-bottom: none;
-    }
-    
-    .desktop {
-        top: 28px; /* Only menu bar on mobile */
-    }
-}
 
 /* Brush Cursor Overlay */
 .brush-cursor-overlay {

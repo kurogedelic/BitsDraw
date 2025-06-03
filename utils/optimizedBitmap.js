@@ -17,7 +17,9 @@ class OptimizedBitmapEditor {
         this.height = height;
         this.zoom = 4;
         this.inverted = false;
-        this.showGrid = true;
+        this.showGrid = false;
+        this.drawColor = '#000000';
+        this.backgroundColor = '#FFFFFF';
         
         // Core data structures
         this.layers = [];
@@ -37,7 +39,7 @@ class OptimizedBitmapEditor {
         this.maxHistory = 50;
         
         // Create initial layer and setup
-        this.addLayer('Background');
+        this.addLayer('Layer 1');
         this.setupCanvas();
         this.saveState();
     }
@@ -205,10 +207,10 @@ class OptimizedBitmapEditor {
         
         // Scanline flood fill algorithm - much faster than recursive
         const stack = [{ x: startX, y: startY }];
-        const minX = Math.max(0, startX - 50); // Limit fill area for performance
-        const maxX = Math.min(this.width - 1, startX + 50);
-        const minY = Math.max(0, startY - 50);
-        const maxY = Math.min(this.height - 1, startY + 50);
+        const minX = 0;
+        const maxX = this.width - 1;
+        const minY = 0;
+        const maxY = this.height - 1;
         
         const operation = (pixels) => {
             while (stack.length > 0) {
@@ -256,7 +258,7 @@ class OptimizedBitmapEditor {
         };
         
         this.batchPixelOperation(operation);
-        this.addDirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        this.addDirtyRect(0, 0, this.width, this.height);
     }
 
     // ===== OPTIMIZED SHAPE DRAWING =====
@@ -393,7 +395,7 @@ class OptimizedBitmapEditor {
     }
 
     renderFull() {
-        this.ctx.fillStyle = this.inverted ? '#000000' : '#ffffff';
+        this.ctx.fillStyle = this.backgroundColor;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
         const composite = this.compositeAllLayers();
@@ -413,7 +415,7 @@ class OptimizedBitmapEditor {
         const canvasWidth = dirtyRect.width * this.zoom;
         const canvasHeight = dirtyRect.height * this.zoom;
         
-        this.ctx.fillStyle = this.inverted ? '#000000' : '#ffffff';
+        this.ctx.fillStyle = this.backgroundColor;
         this.ctx.fillRect(canvasX, canvasY, canvasWidth, canvasHeight);
         
         // Render pixels in dirty area
@@ -437,7 +439,7 @@ class OptimizedBitmapEditor {
                 const displayValue = this.inverted ? (1 - pixelValue) : pixelValue;
                 
                 if (displayValue) {
-                    this.ctx.fillStyle = this.inverted ? '#ffffff' : '#000000';
+                    this.ctx.fillStyle = this.drawColor;
                     this.ctx.fillRect(pixelX * this.zoom, pixelY * this.zoom, this.zoom, this.zoom);
                 }
             }
@@ -509,6 +511,12 @@ class OptimizedBitmapEditor {
         this.scheduleRender();
     }
 
+    setDisplayColors(drawColor, backgroundColor) {
+        this.drawColor = drawColor;
+        this.backgroundColor = backgroundColor;
+        this.scheduleRender();
+    }
+
     clear() {
         const activeLayer = this.getActiveLayer();
         if (activeLayer) {
@@ -517,6 +525,44 @@ class OptimizedBitmapEditor {
             this.addDirtyRect(0, 0, this.width, this.height);
             this.scheduleRender();
         }
+    }
+
+    resize(newWidth, newHeight) {
+        const oldWidth = this.width;
+        const oldHeight = this.height;
+        
+        // Update dimensions
+        this.width = newWidth;
+        this.height = newHeight;
+        
+        // Resize all layers
+        this.layers.forEach(layer => {
+            const oldPixels = layer.pixels;
+            layer.pixels = new Uint8Array(newWidth * newHeight);
+            
+            // Copy existing pixels to new array
+            const minWidth = Math.min(oldWidth, newWidth);
+            const minHeight = Math.min(oldHeight, newHeight);
+            
+            for (let y = 0; y < minHeight; y++) {
+                for (let x = 0; x < minWidth; x++) {
+                    const oldIndex = y * oldWidth + x;
+                    const newIndex = y * newWidth + x;
+                    layer.pixels[newIndex] = oldPixels[oldIndex];
+                }
+            }
+        });
+        
+        // Update canvas size
+        this.setupCanvas();
+        
+        // Mark everything as dirty and redraw
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        
+        // Save state for undo
+        this.saveState();
     }
 
     getActiveLayer() {
@@ -746,5 +792,36 @@ class OptimizedBitmapEditor {
         }
         
         ctx.restore();
+    }
+
+    invertBitmap() {
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const currentValue = this.getPixel(x, y);
+                this.setPixel(x, y, currentValue ? 0 : 1);
+            }
+        }
+        this.addDirtyRect(0, 0, this.width, this.height);
+    }
+
+    loadBitmapData(data) {
+        // Update canvas dimensions if they changed
+        if (data.width !== this.width || data.height !== this.height) {
+            this.width = data.width;
+            this.height = data.height;
+            this.setupCanvas();
+        }
+
+        // Load data using setPixel method
+        if (data.pixels) {
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    if (data.pixels[y] && data.pixels[y][x] !== undefined) {
+                        this.setPixel(x, y, data.pixels[y][x]);
+                    }
+                }
+            }
+            this.addDirtyRect(0, 0, this.width, this.height);
+        }
     }
 }

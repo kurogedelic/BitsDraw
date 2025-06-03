@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BitsDraw</title>
+    <title>BitsDraw v1.0.1</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
@@ -36,7 +36,14 @@
         </div>
         <div class="menu-dropdown-item" data-action="save-as">Save As...</div>
         <div class="menu-divider"></div>
-        <div class="menu-dropdown-item" data-action="import-image">Import Image...</div>
+        <div class="menu-dropdown-item has-submenu" data-action="import">
+            <span>Import</span>
+            <span class="menu-arrow">▶</span>
+        </div>
+        <div class="menu-submenu" id="submenu-import">
+            <div class="menu-dropdown-item" data-action="import-image">Image...</div>
+            <div class="menu-dropdown-item" data-action="import-cpp">CPP Header File...</div>
+        </div>
         <div class="menu-dropdown-item has-submenu" data-action="export">
             <span>Export</span>
             <span class="menu-arrow">▶</span>
@@ -142,23 +149,42 @@
                 </div>
                 <div class="canvas-controls">
                     <div class="control-group">
-                        <label>
-                            Zoom:
-                            <select id="zoom-select">
-                                <option value="1">1x</option>
-                                <option value="2">2x</option>
-                                <option value="4" selected>4x</option>
-                                <option value="8">8x</option>
-                                <option value="16">16x</option>
-                                <option value="32">32x</option>
-                            </select>
-                        </label>
+                        <button class="dropdown-button" id="zoom-dropdown-btn" title="Zoom Level">
+                            <i class="ph ph-magnifying-glass"></i>
+                            <span id="zoom-current-value">4x</span>
+                            <i class="ph ph-caret-down"></i>
+                        </button>
+                        <select id="zoom-select" style="display: none;">
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="4" selected>4x</option>
+                            <option value="8">8x</option>
+                            <option value="16">16x</option>
+                            <option value="32">32x</option>
+                        </select>
                         <button id="zoom-out-btn" title="Zoom Out"><i class="ph ph-magnifying-glass-minus"></i></button>
                         <button id="zoom-in-btn" title="Zoom In"><i class="ph ph-magnifying-glass-plus"></i></button>
                     </div>
                     <div class="control-group">
-                        <button id="invert-display-btn" title="Invert Display"><i class="ph ph-subtract-square"></i></button>
-                        <button id="show-grid-btn" title="Show Grid" class="active"><i class="ph ph-grid-four"></i></button>
+                        <button class="dropdown-button" id="display-dropdown-btn" title="Display Mode">
+                            <i class="ph ph-monitor"></i>
+                            <span id="display-current-value">White</span>
+                            <i class="ph ph-caret-down"></i>
+                        </button>
+                        <select id="display-mode-select" style="display: none;">
+                            <option value="black">Black</option>
+                            <option value="white" selected>White</option>
+                            <option value="lcd-classic">LCD Classic</option>
+                            <option value="lcd-inverted">LCD Inverted</option>
+                            <option value="night-blue">Night Blue</option>
+                            <option value="night-green">Night Green</option>
+                            <option value="amber">Amber</option>
+                            <option value="terminal">Terminal</option>
+                            <option value="blue">Blue</option>
+                            <option value="paper-white">Paper White</option>
+                            <option value="e-ink-gray">E-Ink Gray</option>
+                        </select>
+                        <button id="show-grid-btn" title="Show Grid"><i class="ph ph-grid-four"></i></button>
                     </div>
                 </div>
             </div>
@@ -166,7 +192,7 @@
         </div>
 
         <!-- Tools Window -->
-        <div class="window" id="tools-window" style="left: 20px; top: 50px; width: 200px; height: auto;">
+        <div class="window small-titlebar" id="tools-window" style="left: 20px; top: 50px; width: 84px; min-width: 84px; max-width: 84px; resize: none;">
             <div class="window-title-bar">
                 <div class="window-controls">
                     <div class="window-control close"><i class="ph ph-x"></i></div>
@@ -178,11 +204,7 @@
                 <div class="tool-palette">
                     <div class="tool-row">
                         <button id="pencil-tool" class="tool-icon active" title="Pencil"><i class="ph ph-pencil-simple"></i></button>
-                        <button id="brush-tool" class="tool-icon" title="Brush"><i class="ph ph-paint-brush"></i></button>
-                    </div>
-                    <div class="tool-row">
                         <button id="bucket-tool" class="tool-icon" title="Bucket Fill"><i class="ph ph-paint-bucket"></i></button>
-                        <button id="eraser-tool" class="tool-icon" title="Eraser"><i class="ph ph-eraser"></i></button>
                     </div>
                     <div class="tool-row">
                         <button id="select-rect-tool" class="tool-icon" title="Rectangle Select"><i class="ph ph-selection"></i></button>
@@ -198,14 +220,13 @@
                     </div>
                     <div class="tool-row">
                         <button id="spray-tool" class="tool-icon" title="Spray"><i class="ph ph-spray-bottle"></i></button>
-                        <button id="eyedropper-tool" class="tool-icon" title="Eyedropper"><i class="ph ph-eyedropper"></i></button>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Patterns Window -->
-        <div class="window" id="colors-window" style="left: 20px; top: 250px; width: 180px; height: auto;">
+        <div class="window small-titlebar" id="colors-window" style="left: 20px; top: 250px; width: 124px;">
             <div class="window-title-bar">
                 <div class="window-controls">
                     <div class="window-control close"><i class="ph ph-x"></i></div>
@@ -230,7 +251,7 @@
         </div>
 
         <!-- Options Window -->
-        <div class="window" id="options-window" style="left: 20px; top: 380px; width: 600px; height: 60px;">
+        <div class="window small-titlebar" id="options-window" style="left: 20px; top: 380px; width: 600px;">
             <div class="window-title-bar">
                 <div class="window-controls">
                     <div class="window-control close"><i class="ph ph-x"></i></div>
@@ -274,8 +295,13 @@
                         <label><input type="checkbox" id="fill-contiguous" checked> Contiguous</label>
                     </div>
                     
+                    <!-- Project settings -->
+                    <div class="option-section" id="project-options" style="display: block;">
+                        <label>Project Name: <input type="text" id="project-name" value="my_bitmap" placeholder="my_bitmap"></label>
+                    </div>
+                    
                     <!-- No options for other tools -->
-                    <div class="option-section" id="no-options" style="display: block;">
+                    <div class="option-section" id="no-options" style="display: none;">
                         <span class="option-label">Select a tool to view options</span>
                     </div>
                 </div>
@@ -283,38 +309,6 @@
         </div>
 
 
-        <!-- Generated Code Window -->
-        <div class="window" id="code-window" style="left: 920px; top: 50px; width: 400px; height: 600px;">
-            <div class="window-title-bar">
-                <div class="window-controls">
-                    <div class="window-control close"><i class="ph ph-x"></i></div>
-                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
-                    <div class="window-control zoom"><i class="ph ph-square"></i></div>
-                </div>
-                <div class="window-title">Generated Code</div>
-            </div>
-            <div class="window-content">
-                <div class="option-group">
-                    <label>
-                        Project Name: <input type="text" id="project-name" value="my_bitmap">
-                    </label>
-                    <button id="export-btn">Copy .h Code</button>
-                </div>
-                <div class="option-group">
-                    <h4>Data</h4>
-                    <button id="save-btn">Save to Browser</button>
-                    <button id="load-btn">Load from Browser</button>
-                </div>
-                <div class="option-group">
-                    <h4>Import Code</h4>
-                    <textarea id="import-code" placeholder="Paste .h code here..." rows="3" style="width: 100%; font-family: monospace; font-size: 10px;"></textarea>
-                    <button id="import-btn">Import .h Code</button>
-                </div>
-                <div class="output-area">
-                    <textarea id="output-code" readonly placeholder="Generated C code will appear here..."></textarea>
-                </div>
-            </div>
-        </div>
 
         <!-- About BitsDraw Window -->
         <div class="window hidden" id="about-window" style="left: 400px; top: 200px; width: 450px; height: 350px;">
@@ -331,25 +325,7 @@
                     </div>
                     <div class="about-info">
                         <h2>BitsDraw</h2>
-                        <p class="version">Version 1.0.0</p>
-                        <p class="description">A bitmap editor for monochrome displays</p>
-                        
-                        <div class="about-section">
-                            <h3>Features</h3>
-                            <ul>
-                                <li>Pixel-perfect bitmap editing</li>
-                                <li>Multiple drawing tools and patterns</li>
-                                <li>Multiple format export</li>
-                                <li>Image import and processing</li>
-                                <li>Undo/Redo functionality</li>
-                                <li>Multi-window interface</li>
-                            </ul>
-                        </div>
-                        
-                        <div class="about-section">
-                            <h3>Built with</h3>
-                            <p>HTML5 Canvas, JavaScript, CSS3</p>
-                        </div>
+                        <p class="version">Version 1.0.1</p>
                         
                         <div class="about-section">
                             <h3>Copyright</h3>
@@ -491,7 +467,7 @@
 
 
         <!-- Layers Window -->
-        <div class="window" id="layers-window" style="left: 240px; top: 250px; width: 220px; height: 300px;">
+        <div class="window small-titlebar" id="layers-window" style="left: 240px; top: 250px; width: 220px; max-height: 400px;">
             <div class="window-title-bar">
                 <div class="window-controls">
                     <div class="window-control close"><i class="ph ph-x"></i></div>
@@ -512,7 +488,7 @@
         </div>
 
         <!-- Preview Window -->
-        <div class="window" id="preview-window" style="left: 20px; top: 420px; width: 180px; height: 140px;">
+        <div class="window small-titlebar" id="preview-window" style="left: 20px; top: 420px; width: 180px;">
             <div class="window-title-bar">
                 <div class="window-controls">
                     <div class="window-control close"><i class="ph ph-x"></i></div>
@@ -524,6 +500,53 @@
                 <div class="preview-area">
                     <canvas id="preview-canvas"></canvas>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Canvas Dialog -->
+    <div class="dialog-overlay" id="new-canvas-dialog" style="display: none;">
+        <div class="dialog">
+            <div class="dialog-header">
+                <h3>New Canvas</h3>
+                <button class="dialog-close" id="new-canvas-close-btn"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="dialog-content">
+                <div class="preset-section">
+                    <h4>Preset</h4>
+                    <select id="preset-select">
+                        <option value="">Custom Size</option>
+                        <option value="128,64" selected>OLED 128×64</option>
+                        <option value="128,32">OLED 128×32</option>
+                        <option value="72,40">OLED 72×40</option>
+                        <option value="400,240">Playdate 400×240</option>
+                        <option value="512,342">Classic Mac 512×342</option>
+                        <option value="640,480">VGA 640×480</option>
+                        <option value="720,350">MDA 720×350</option>
+                        <option value="800,600">SVGA 800×600</option>
+                        <option value="1024,768">XGA 1024×768</option>
+                        <option value="160,144">Game Boy 160×144</option>
+                        <option value="576,720">Mac Paint 576×720</option>
+                    </select>
+                </div>
+                <div class="custom-section">
+                    <h4>Size</h4>
+                    <div class="size-inputs">
+                        <label>
+                            Width: <input type="number" id="canvas-width" min="1" max="2048" value="128">
+                        </label>
+                        <label>
+                            Height: <input type="number" id="canvas-height" min="1" max="2048" value="64">
+                        </label>
+                        <button id="swap-dimensions-btn" type="button" title="Swap Width/Height">
+                            <i class="ph ph-arrow-bend-up-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn dialog-btn-cancel" id="new-canvas-cancel-btn">Cancel</button>
+                <button class="dialog-btn dialog-btn-primary" id="new-canvas-create-btn">Create</button>
             </div>
         </div>
     </div>
@@ -542,13 +565,71 @@
     <!-- Brush Cursor Overlay -->
     <div class="brush-cursor-overlay" id="brush-cursor-overlay"></div>
 
+    <!-- Hidden file input for image import -->
+    <input type="file" id="file-input" accept=".png,.jpg,.jpeg,.gif" style="display: none;">
+
+    <!-- CPP Export Dialog -->
+    <div class="dialog-overlay" id="cpp-export-dialog" style="display: none;">
+        <div class="dialog">
+            <div class="dialog-header">
+                <h3>Export CPP Header File</h3>
+                <button class="dialog-close" id="cpp-export-close-btn"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="dialog-content">
+                <div class="input-section">
+                    <label for="array-name-input">Array Name:</label>
+                    <input type="text" id="array-name-input" value="my_bitmap" placeholder="my_bitmap">
+                </div>
+                <div class="code-section">
+                    <label for="cpp-export-code">Generated Code:</label>
+                    <textarea id="cpp-export-code" readonly rows="15"></textarea>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn dialog-btn-cancel" id="cpp-export-cancel-btn">Cancel</button>
+                <button class="dialog-btn dialog-btn-primary" id="cpp-export-copy-btn">Copy .h Code</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CPP Import Dialog -->
+    <div class="dialog-overlay" id="cpp-import-dialog" style="display: none;">
+        <div class="dialog">
+            <div class="dialog-header">
+                <h3>Import CPP Header File</h3>
+                <button class="dialog-close" id="cpp-import-close-btn"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="dialog-content">
+                <div class="import-section">
+                    <label for="cpp-import-file">Select .h file:</label>
+                    <input type="file" id="cpp-import-file" accept=".h,.txt">
+                    <p class="help-text">Or paste code below:</p>
+                    <textarea id="cpp-import-code" placeholder="Paste .h code here..." rows="10"></textarea>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn dialog-btn-cancel" id="cpp-import-cancel-btn">Cancel</button>
+                <button class="dialog-btn dialog-btn-primary" id="cpp-import-load-btn">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core utilities -->
     <script src="utils/optimizedBitmap.js"></script>
-    <script src="utils/bitmap.js"></script>
     <script src="utils/export.js"></script>
     <script src="utils/imageImport.js"></script>
     <script src="utils/ditherPatterns.js"></script>
+    <script src="utils/ditheringEffects.js"></script>
     <script src="utils/textRenderer.js"></script>
     <script src="utils/pngIconLoader.js"></script>
+    
+    <!-- Refactored managers -->
+    <script src="utils/dialogManager.js"></script>
+    <script src="utils/menuManager.js"></script>
+    <script src="utils/windowManager.js"></script>
+    <script src="utils/toolManager.js"></script>
+    
+    <!-- Main application -->
     <script src="main.js"></script>
 </body>
 </html>
