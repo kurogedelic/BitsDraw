@@ -12,7 +12,7 @@
     <div class="menu-bar">
         <div class="menu-item" data-menu="file">File</div>
         <div class="menu-item" data-menu="edit">Edit</div>
-        <div class="menu-item" data-menu="effects">Effects</div>
+        <div class="menu-item" data-menu="image">Image</div>
         <div class="menu-item" data-menu="view">View</div>
         <div class="menu-item" data-menu="window">Window</div>
         <div class="menu-item" data-menu="help">Help</div>
@@ -84,16 +84,21 @@
             <span class="menu-shortcut">⌃A</span>
         </div>
         <div class="menu-divider"></div>
-        <div class="menu-dropdown-item" data-action="rescale">Rescale Canvas...</div>
         <div class="menu-dropdown-item" data-action="clear-selection">
             <span>Clear Selection</span>
             <span class="menu-shortcut">Delete</span>
         </div>
     </div>
 
-    <div class="menu-dropdown" id="menu-effects">
+    <div class="menu-dropdown" id="menu-image">
+        <div class="menu-dropdown-item" data-action="rescale">
+            <span>Rescale Canvas...</span>
+        </div>
         <div class="menu-dropdown-item" data-action="invert-bitmap">
             <span>Invert</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="dithering">
+            <span>Dithering...</span>
         </div>
     </div>
 
@@ -111,10 +116,20 @@
             <span>Show Grid</span>
             <span class="menu-shortcut">⌃G</span>
         </div>
-        <div class="menu-dropdown-item" data-action="invert">
-            <span>Invert Display</span>
-            <span class="menu-shortcut">⌃I</span>
+        <div class="menu-dropdown-item" data-action="show-guides">
+            <span>Show Guides</span>
         </div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item has-submenu" data-action="appearance">
+            <span>Appearance</span>
+            <span class="menu-arrow">▶</span>
+        </div>
+    </div>
+
+    <div class="menu-submenu" id="submenu-appearance">
+        <div class="menu-dropdown-item" data-action="theme-auto">Auto</div>
+        <div class="menu-dropdown-item" data-action="theme-light">Light</div>
+        <div class="menu-dropdown-item" data-action="theme-dark">Dark</div>
     </div>
 
     <div class="menu-dropdown" id="menu-window">
@@ -122,6 +137,7 @@
         <div class="menu-dropdown-item" data-action="show-colors">Patterns</div>
         <div class="menu-dropdown-item" data-action="show-options">Options</div>
         <div class="menu-dropdown-item" data-action="show-layers">Layers</div>
+        <div class="menu-dropdown-item" data-action="show-guides">Guides</div>
         <div class="menu-dropdown-item" data-action="show-preview">Preview</div>
         <div class="menu-dropdown-item" data-action="show-code">Generated Code</div>
     </div>
@@ -183,6 +199,7 @@
                             <option value="blue">Blue</option>
                             <option value="paper-white">Paper White</option>
                             <option value="e-ink-gray">E-Ink Gray</option>
+                            <option value="playdate">Playdate</option>
                         </select>
                         <button id="show-grid-btn" title="Show Grid"><i class="ph ph-grid-four"></i></button>
                     </div>
@@ -203,7 +220,10 @@
             <div class="window-content">
                 <div class="tool-palette">
                     <div class="tool-row">
-                        <button id="pencil-tool" class="tool-icon active" title="Pencil"><i class="ph ph-pencil-simple"></i></button>
+                        <button id="brush-tool" class="tool-icon active" title="Brush"><i class="ph ph-paint-brush"></i></button>
+                        <button id="pencil-tool" class="tool-icon" title="Pencil"><i class="ph ph-pencil"></i></button>
+                    </div>
+                    <div class="tool-row">
                         <button id="bucket-tool" class="tool-icon" title="Bucket Fill"><i class="ph ph-paint-bucket"></i></button>
                     </div>
                     <div class="tool-row">
@@ -211,22 +231,27 @@
                         <button id="select-circle-tool" class="tool-icon" title="Circle Select"><i class="ph ph-circle-dashed"></i></button>
                     </div>
                     <div class="tool-row">
+                        <button id="move-tool" class="tool-icon" title="Move"><i class="ph ph-arrows-out-cardinal"></i></button>
                         <button id="line-tool" class="tool-icon" title="Line"><i class="ph ph-line-segment"></i></button>
+                    </div>
+                    <div class="tool-row">
                         <button id="text-tool" class="tool-icon" title="Text"><i class="ph ph-text-aa"></i></button>
-                    </div>
-                    <div class="tool-row">
                         <button id="rect-tool" class="tool-icon" title="Rectangle"><i class="ph ph-rectangle"></i></button>
-                        <button id="circle-tool" class="tool-icon" title="Circle"><i class="ph ph-circle"></i></button>
                     </div>
                     <div class="tool-row">
+                        <button id="circle-tool" class="tool-icon" title="Circle"><i class="ph ph-circle"></i></button>
                         <button id="spray-tool" class="tool-icon" title="Spray"><i class="ph ph-spray-bottle"></i></button>
+                    </div>
+                    <div class="tool-row">
+                        <button id="guide-tool" class="tool-icon" title="Guide"><i class="ph ph-bounding-box"></i></button>
+                        <button id="hand-tool" class="tool-icon" title="Hand"><i class="ph ph-hand"></i></button>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Patterns Window -->
-        <div class="window small-titlebar" id="colors-window" style="left: 20px; top: 250px; width: 124px;">
+        <div class="window small-titlebar" id="colors-window" style="left: 20px; top: 250px; width: 84px; min-width: 84px; max-width: 84px; resize: none;">
             <div class="window-title-bar">
                 <div class="window-controls">
                     <div class="window-control close"><i class="ph ph-x"></i></div>
@@ -236,16 +261,26 @@
             </div>
             <div class="window-content">
                 <div class="color-palette">
-                    <div class="color-swatch selected" data-pattern="solid-black" style="background: #000000;" title="Black"></div>
-                    <div class="color-swatch" data-pattern="solid-white" style="background: #ffffff; border: 1px solid #808080;" title="White"></div>
-                    <div class="color-swatch" data-pattern="dither-50" title="50% Dither"></div>
-                    <div class="color-swatch" data-pattern="dither-25" title="25% Dither"></div>
-                    <div class="color-swatch" data-pattern="dither-75" title="75% Dither"></div>
-                    <div class="color-swatch" data-pattern="lines-horizontal" title="Horizontal Lines"></div>
-                    <div class="color-swatch" data-pattern="lines-vertical" title="Vertical Lines"></div>
-                    <div class="color-swatch" data-pattern="cross-hatch" title="Cross Hatch"></div>
-                    <div class="color-swatch" data-pattern="dots" title="Dots"></div>
-                    <div class="color-swatch" data-pattern="diagonal" title="Diagonal"></div>
+                    <div class="pattern-row">
+                        <div class="color-swatch selected" data-pattern="solid-black" style="background: #000000;" title="Solid Black"></div>
+                        <div class="color-swatch" data-pattern="solid-white" style="background: #ffffff; border: 1px solid #808080;" title="Solid White"></div>
+                    </div>
+                    <div class="pattern-row">
+                        <div class="color-swatch" data-pattern="checker-2x2" title="Checker 2x2"></div>
+                        <div class="color-swatch" data-pattern="checker-4x4" title="Checker 4x4"></div>
+                    </div>
+                    <div class="pattern-row">
+                        <div class="color-swatch" data-pattern="diagonal-fill-50" title="Diagonal 50%"></div>
+                        <div class="color-swatch" data-pattern="horizontal-lines" title="Horizontal Lines"></div>
+                    </div>
+                    <div class="pattern-row">
+                        <div class="color-swatch" data-pattern="vertical-lines" title="Vertical Lines"></div>
+                        <div class="color-swatch" data-pattern="cross-hatch" title="Cross Hatch"></div>
+                    </div>
+                    <div class="pattern-row">
+                        <div class="color-swatch" data-pattern="dots-sparse" title="Dots Sparse"></div>
+                        <div class="color-swatch" data-pattern="diagonal-lines" title="Diagonal Lines"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -261,10 +296,10 @@
             </div>
             <div class="window-content">
                 <div class="tool-options" id="tool-options">
-                    <!-- Pencil/Brush options -->
-                    <div class="option-section" id="pencil-options" style="display: none;">
-                        <label>Size: <input type="range" id="brush-size" min="1" max="10" value="1"> <span id="brush-size-value">1</span>px</label>
-                        <label><input type="checkbox" id="smooth-drawing"> Smooth</label>
+                    <!-- Brush options -->
+                    <div class="option-section" id="brush-options" style="display: none;">
+                        <label>Size: <input type="range" id="brush-size" min="1" max="10" value="2"> <span id="brush-size-value">2</span>px</label>
+                        <label><input type="checkbox" id="smooth-drawing" checked> Smooth</label>
                     </div>
                     
                     <!-- Shape tools options -->
@@ -288,6 +323,19 @@
                     <!-- Text options -->
                     <div class="option-section" id="text-options" style="display: none;">
                         <span class="option-label">Click on canvas to add text</span>
+                    </div>
+                    
+                    <!-- Move tool options -->
+                    <div class="option-section" id="move-options" style="display: none;">
+                        <label><input type="checkbox" id="move-loop" checked> <i class="ph ph-arrow-clockwise"></i> Loop</label>
+                        <span class="option-label">Loop wraps pixels around edges</span>
+                    </div>
+                    
+                    <!-- Guide tool options -->
+                    <div class="option-section" id="guide-options" style="display: none;">
+                        <label>Guide Name: <input type="text" id="guide-name" value="Guide" placeholder="Guide name"></label>
+                        <label><input type="checkbox" id="guide-snap" checked> <i class="ph ph-magnet"></i> Snap to Grid</label>
+                        <span class="option-label">Click and drag to create guides</span>
                     </div>
                     
                     <!-- Bucket fill options -->
@@ -440,6 +488,18 @@
                             <span class="shortcut-key">M</span>
                             <span class="shortcut-desc">Select Tool</span>
                         </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">V</span>
+                            <span class="shortcut-desc">Move Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">H</span>
+                            <span class="shortcut-desc">Hand Tool</span>
+                        </div>
+                        <div class="shortcut-item">
+                            <span class="shortcut-key">U</span>
+                            <span class="shortcut-desc">Guide Tool</span>
+                        </div>
                     </div>
                     
                     <div class="shortcuts-section">
@@ -455,10 +515,6 @@
                         <div class="shortcut-item">
                             <span class="shortcut-key">⌃G</span>
                             <span class="shortcut-desc">Toggle Grid</span>
-                        </div>
-                        <div class="shortcut-item">
-                            <span class="shortcut-key">⌃I</span>
-                            <span class="shortcut-desc">Invert Display</span>
                         </div>
                     </div>
                 </div>
@@ -499,6 +555,27 @@
             <div class="window-content">
                 <div class="preview-area">
                     <canvas id="preview-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Guides Window -->
+        <div class="window small-titlebar" id="guides-window" style="left: 470px; top: 250px; width: 320px; max-height: 400px;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
+                </div>
+                <div class="window-title">Guides</div>
+            </div>
+            <div class="window-content">
+                <div class="guides-controls">
+                    <button id="add-guide-btn" title="Add Guide"><i class="ph ph-plus"></i> Add Guide</button>
+                    <button id="export-guides-btn" title="Export Guides"><i class="ph ph-download"></i> Export</button>
+                    <button id="clear-guides-btn" title="Clear All"><i class="ph ph-trash"></i> Clear All</button>
+                </div>
+                <div class="guides-list" id="guides-list">
+                    <!-- Guides will be dynamically added here -->
                 </div>
             </div>
         </div>
@@ -566,7 +643,7 @@
     <div class="brush-cursor-overlay" id="brush-cursor-overlay"></div>
 
     <!-- Hidden file input for image import -->
-    <input type="file" id="file-input" accept=".png,.jpg,.jpeg,.gif" style="display: none;">
+    <input type="file" id="file-input" accept="image/*" style="position: absolute; left: -9999px; top: -9999px; opacity: 0; width: 1px; height: 1px; z-index: -1;">
 
     <!-- CPP Export Dialog -->
     <div class="dialog-overlay" id="cpp-export-dialog" style="display: none;">
@@ -576,6 +653,15 @@
                 <button class="dialog-close" id="cpp-export-close-btn"><i class="ph ph-x"></i></button>
             </div>
             <div class="dialog-content">
+                <div class="input-section">
+                    <label for="export-format-select">Format:</label>
+                    <select id="export-format-select">
+                        <option value="u8g2">U8G2 (XBM, LSB first)</option>
+                        <option value="adafruit">Adafruit GFX (MSB first)</option>
+                        <option value="playdate">Playdate PDI</option>
+                        <option value="gameboy">Game Boy 2BPP</option>
+                    </select>
+                </div>
                 <div class="input-section">
                     <label for="array-name-input">Array Name:</label>
                     <input type="text" id="array-name-input" value="my_bitmap" placeholder="my_bitmap">
@@ -614,20 +700,151 @@
         </div>
     </div>
 
+    <!-- Image Placement Dialog -->
+    <div class="dialog-overlay" id="image-placement-dialog" style="display: none;">
+        <div class="dialog image-placement-dialog">
+            <div class="dialog-header">
+                <h3>Place Image</h3>
+                <button class="dialog-close" id="image-placement-close-btn"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="dialog-content">
+                <div class="image-placement-content">
+                    <div class="placement-preview">
+                        <div class="preview-container">
+                            <canvas id="placement-preview-canvas" class="placement-canvas"></canvas>
+                            <div class="resize-handles" id="resize-handles" style="display: none;">
+                                <div class="resize-handle nw" data-direction="nw"></div>
+                                <div class="resize-handle ne" data-direction="ne"></div>
+                                <div class="resize-handle sw" data-direction="sw"></div>
+                                <div class="resize-handle se" data-direction="se"></div>
+                                <div class="resize-handle n" data-direction="n"></div>
+                                <div class="resize-handle s" data-direction="s"></div>
+                                <div class="resize-handle w" data-direction="w"></div>
+                                <div class="resize-handle e" data-direction="e"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="placement-controls">
+                        <div class="control-group">
+                            <label>Size Options:</label>
+                            <div class="size-buttons">
+                                <button class="dialog-btn" id="original-size-btn">100% Original Size</button>
+                                <button class="dialog-btn" id="fit-canvas-btn">Stretch to Fit Canvas</button>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Image Information:</label>
+                            <div class="image-info">
+                                <span id="original-dimensions">Original: -</span>
+                                <span id="current-dimensions">Current: -</span>
+                                <span id="canvas-dimensions">Canvas: -</span>
+                            </div>
+                        </div>
+                        <div class="threshold-control">
+                            <label>Threshold: <span id="threshold-value">128</span></label>
+                            <div class="threshold-slider-container">
+                                <input type="range" id="threshold-slider" min="0" max="255" value="128">
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Transparency Handling:</label>
+                            <select id="alpha-handling-select">
+                                <option value="blend">Blend with White</option>
+                                <option value="transparent-white">Transparent → White</option>
+                                <option value="transparent-black">Transparent → Black</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn dialog-btn-cancel" id="image-placement-cancel-btn">Cancel</button>
+                <button class="dialog-btn dialog-btn-primary" id="image-placement-apply-btn">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dithering Dialog -->
+    <div class="dialog-overlay" id="dithering-dialog" style="display: none;">
+        <div class="dialog dithering-dialog-vertical">
+            <div class="dialog-header">
+                <h3>Dithering</h3>
+                <button class="dialog-close" id="dithering-close-btn"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="dialog-content">
+                <div class="dithering-content-vertical">
+                    <!-- Top half: Before/After preview -->
+                    <div class="dithering-preview-area">
+                        <div class="preview-comparison-horizontal">
+                            <div class="preview-section">
+                                <label>Before</label>
+                                <canvas id="dithering-original-canvas"></canvas>
+                            </div>
+                            <div class="preview-section">
+                                <label>After</label>
+                                <canvas id="dithering-preview-canvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Bottom half: Controls -->
+                    <div class="dithering-controls-area">
+                        <div class="dithering-controls-grid">
+                            <div class="control-group">
+                                <label>Method:</label>
+                                <select id="dithering-method">
+                                    <option value="Bayer2x2">Bayer 2×2</option>
+                                    <option value="Bayer4x4" selected>Bayer 4×4</option>
+                                    <option value="Bayer8x8">Bayer 8×8</option>
+                                    <option value="FloydSteinberg">Floyd-Steinberg</option>
+                                    <option value="Burkes">Burkes</option>
+                                    <option value="Atkinson">Atkinson</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <label>Alpha: <span id="dithering-alpha-value">1.0</span></label>
+                                <input type="range" id="dithering-alpha" min="0" max="100" value="100" step="1">
+                            </div>
+                            <div class="control-group">
+                                <div class="dithering-info">
+                                    <span>Alpha controls the fill rate/transparency simulation</span>
+                                    <span>1.0 = Original, 0.0 = Transparent</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn dialog-btn-cancel" id="dithering-cancel-btn">Cancel</button>
+                <button class="dialog-btn dialog-btn-primary" id="dithering-apply-btn">Apply</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Core utilities -->
     <script src="utils/optimizedBitmap.js"></script>
     <script src="utils/export.js"></script>
     <script src="utils/imageImport.js"></script>
-    <script src="utils/ditherPatterns.js"></script>
-    <script src="utils/ditheringEffects.js"></script>
+    <script src="utils/patterns.js"></script>
     <script src="utils/textRenderer.js"></script>
     <script src="utils/pngIconLoader.js"></script>
+    <script src="utils/ditheringEffects.js"></script>
     
     <!-- Refactored managers -->
     <script src="utils/dialogManager.js"></script>
     <script src="utils/menuManager.js"></script>
     <script src="utils/windowManager.js"></script>
     <script src="utils/toolManager.js"></script>
+    <script src="utils/imagePlacementDialog.js"></script>
+    
+    <!-- New Refactored Architecture -->
+    <script src="src/core/EventBus.js"></script>
+    <script src="src/core/StateManager.js"></script>
+    <script src="src/core/CommandSystem.js"></script>
+    <script src="src/tools/ToolSystem.js"></script>
+    <script src="src/core/Application.js"></script>
+    <script src="src/RefactorBridge.js"></script>
+    <script src="src/RefactorMonitor.js"></script>
     
     <!-- Main application -->
     <script src="main.js"></script>

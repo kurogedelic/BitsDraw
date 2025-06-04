@@ -4,23 +4,57 @@ class BitsDraw {
         this.editor = new OptimizedBitmapEditor(this.canvas, 128, 64);
         this.previewCanvas = document.getElementById('preview-canvas');
         this.isDrawing = false;
-        this.currentTool = 'pencil';
+        this.currentTool = 'brush';
         this.startPos = null;
         this.drawBorder = true;
         this.drawFill = false;
         this.currentPattern = 'solid-black';
         this.selection = null;
         this.showGrid = false;
+        this.showGuides = true;
         this.selectionClipboard = null;
         this.isDraggingSelection = false;
         this.isDraggingSelectionGraphics = false;
         this.selectionDragStart = null;
         this.previewOverlay = null;
         this.textBalloonPos = null;
-        this.brushSize = 1;
+        this.brushSize = 2;
         this.sprayRadius = 5;
         this.sprayDensity = 0.3;
         this.currentDisplayMode = 'white';
+        this.moveLoop = true;
+        
+        // Guides system
+        this.guides = [];
+        this.activeGuideId = null;
+        this.guideColors = ['#ff0000', '#0088ff', '#00ff00', '#ff8800', '#ff00ff', '#00ffff', '#ffff00', '#8800ff'];
+        this.guideColorIndex = 0;
+        this.guideSnap = true;
+        this.isDraggingGuide = false;
+        this.isResizingGuide = false;
+        this.draggedGuideId = null;
+        this.guideDragStart = null;
+        this.guideResizeDirection = null;
+        
+        // Smooth drawing state
+        this.smoothDrawing = true;
+        this.strokePoints = [];
+        this.lastDrawPoint = null;
+        this.strokeStartTime = 0;
+        
+        // Dithering effects
+        this.ditheringEffects = new DitheringEffects();
+        this.ditheringData = {
+            originalPixels: null,
+            previewPixels: null,
+            alpha: 1.0,
+            method: 'Bayer4x4'
+        };
+        
+        // Canvas panning state
+        this.isPanning = false;
+        this.panStart = null;
+        this.canvasOffset = { x: 0, y: 0 };
         
         // Display mode color sets
         this.displayModes = {
@@ -78,11 +112,17 @@ class BitsDraw {
                 name: 'E-Ink Gray',
                 draw_color: '#333333',
                 background_color: '#DDDDDD'
+            },
+            'playdate': {
+                name: 'Playdate',
+                draw_color: '#2e2d23',
+                background_color: '#a3a298'
             }
         };
         
         this.initializeEventListeners();
         this.setupColorPalette();
+        this.detectAndApplyPlatform();
         this.setupMenuBar();
         this.setupWindowManagement();
         this.setupPreview();
@@ -92,27 +132,50 @@ class BitsDraw {
         this.setupNewCanvasDialog();
         this.setupCppExportDialog();
         this.setupCppImportDialog();
+        this.setupImageImportDialog();
+        this.setupDitheringDialog();
         this.setupFileImport();
+        this.setupDragAndDrop();
+        this.setupGuidesPanel();
         this.loadWindowStates();
+        
+        // Initialize image placement dialog
+        this.imagePlacementDialog = new ImagePlacementDialog(this);
         this.updateWindowMenu();
         this.updateOutput();
         this.setupBrushCursor();
+        this.setupThemeManagement();
+        
+        // Test ImageImporter availability
+        if (typeof ImageImporter !== 'undefined') {
+            console.log('ImageImporter is available');
+        } else {
+            console.error('ImageImporter is NOT available');
+        }
         
         // Initialize display mode
         this.setDisplayMode('white');
         
         // Initialize tool options display
-        this.updateToolOptions('pencil');
+        this.updateToolOptions('brush');
     }
 
     initializeEventListeners() {
         this.setupCanvasEvents();
         this.setupToolbarEvents();
         this.setupKeyboardShortcuts();
+        this.setupWindowEvents();
     }
 
     setupCanvasEvents() {
         this.canvas.addEventListener('mousedown', (e) => {
+            // Handle middle mouse button for panning
+            if (e.button === 1) { // Middle mouse button
+                e.preventDefault();
+                this.startPanning(e);
+                return;
+            }
+            
             const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
             this.startPos = coords;
             
@@ -131,11 +194,17 @@ class BitsDraw {
             
             if (this.currentTool === 'bucket') {
                 this.handleCanvasClick(e);
+            } else if (this.currentTool === 'hand') {
+                this.startLayerDrag(e);
+            } else if (this.currentTool === 'move') {
+                this.startLayerMove(e);
+            } else if (this.currentTool === 'guide') {
+                this.startGuideCreation(e);
             } else if (['rect', 'circle', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
                 this.isDrawing = true;
             } else {
                 this.isDrawing = true;
-                if (this.currentTool === 'pencil') {
+                if (this.currentTool === 'brush') {
                     this.hideBrushCursor();
                 }
                 this.handleCanvasClick(e);
@@ -143,7 +212,17 @@ class BitsDraw {
         });
 
         this.canvas.addEventListener('mousemove', (e) => {
-            if (this.isDraggingSelection) {
+            if (this.isPanning) {
+                this.updatePanning(e);
+            } else if (this.isDraggingLayer) {
+                this.updateLayerDrag(e);
+            } else if (this.isMovingLayer) {
+                this.updateLayerMove(e);
+            } else if (this.isCreatingGuide) {
+                this.updateGuideCreation(e);
+            } else if (this.isDraggingGuide) {
+                this.updateGuideDrag(e);
+            } else if (this.isDraggingSelection) {
                 const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
                 this.updateSelectionPosition(coords);
             } else if (this.isDraggingSelectionGraphics) {
@@ -166,7 +245,17 @@ class BitsDraw {
         });
 
         this.canvas.addEventListener('mouseup', (e) => {
-            if (this.isDraggingSelection) {
+            if (this.isPanning) {
+                this.stopPanning();
+            } else if (this.isDraggingLayer) {
+                this.stopLayerDrag();
+            } else if (this.isMovingLayer) {
+                this.stopLayerMove();
+            } else if (this.isCreatingGuide) {
+                this.finishGuideCreation(e);
+            } else if (this.isDraggingGuide) {
+                this.stopGuideDrag(e);
+            } else if (this.isDraggingSelection) {
                 this.isDraggingSelection = false;
                 this.selectionDragStart = null;
                 this.editor.saveState();
@@ -204,18 +293,43 @@ class BitsDraw {
             }
             
             this.isDrawing = false;
-            if (this.currentTool === 'pencil') {
+            if (this.currentTool === 'brush') {
                 this.showBrushCursor();
             }
             this.updateOutput();
         });
 
         this.canvas.addEventListener('mouseleave', () => {
-            this.isDrawing = false;
+            // Don't stop drawing when leaving canvas - allow stroke continuation
+            // Only hide brush cursor
+            if (this.currentTool === 'pencil') {
+                this.hideBrushCursor();
+            }
+        });
+
+        // Add mousemove handler for cursor changes over guides
+        this.canvas.addEventListener('mousemove', (e) => {
+            if (this.currentTool === 'guide' && !this.isDraggingGuide && !this.isCreatingGuide) {
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                const guideAtPoint = this.getGuideAtPoint(coords.x, coords.y);
+                
+                if (guideAtPoint) {
+                    this.canvas.style.cursor = 'move';
+                } else {
+                    this.canvas.style.cursor = 'crosshair';
+                }
+            }
         });
 
         this.canvas.addEventListener('contextmenu', (e) => {
             e.preventDefault();
+        });
+
+        // Prevent middle mouse button default behavior (like auto-scroll)
+        this.canvas.addEventListener('auxclick', (e) => {
+            if (e.button === 1) {
+                e.preventDefault();
+            }
         });
 
         this.canvas.addEventListener('wheel', (e) => {
@@ -223,15 +337,33 @@ class BitsDraw {
             this.handleZoom(e);
         });
 
+        // Global mouse events for continuous stroke outside canvas and panning
+        document.addEventListener('mousemove', (e) => {
+            if (this.isPanning) {
+                this.updatePanning(e);
+            } else if (this.isDrawing && ['brush', 'spray'].includes(this.currentTool)) {
+                // Check if coordinates are within canvas bounds
+                const rect = this.canvas.getBoundingClientRect();
+                if (e.clientX >= rect.left && e.clientX <= rect.right && 
+                    e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                    // Mouse is back inside canvas, continue drawing
+                    this.handleCanvasClick(e);
+                }
+            }
+        });
+
         document.addEventListener('mouseup', () => {
+            if (this.isPanning) {
+                this.stopPanning();
+            }
             this.isDrawing = false;
         });
     }
 
     setupToolbarEvents() {
         // Tool palette events
-        const tools = ['pencil', 'bucket', 'select-rect', 'select-circle', 
-                      'line', 'text', 'rect', 'circle', 'spray'];
+        const tools = ['brush', 'pencil', 'bucket', 'select-rect', 'select-circle', 
+                      'move', 'line', 'text', 'rect', 'circle', 'spray', 'guide', 'hand'];
         
         tools.forEach(tool => {
             const btn = document.getElementById(`${tool}-tool`);
@@ -251,6 +383,15 @@ class BitsDraw {
             this.drawFill = e.target.checked;
         });
 
+        // Move tool loop option
+        document.getElementById('move-loop').addEventListener('change', (e) => {
+            this.moveLoop = e.target.checked;
+        });
+
+        // Guide tool options
+        document.getElementById('guide-snap').addEventListener('change', (e) => {
+            this.guideSnap = e.target.checked;
+        });
 
         // Zoom dropdown button
         document.getElementById('zoom-dropdown-btn').addEventListener('click', () => {
@@ -302,6 +443,7 @@ class BitsDraw {
         this.editor.setZoom(zoom);
         this.updateGridDisplay();
         this.updateBrushCursorSize();
+        this.renderGuides();
         
         // Update zoom select and display
         document.getElementById('zoom-select').value = zoom;
@@ -314,8 +456,113 @@ class BitsDraw {
     }
 
     showDisplayModeDropdown() {
-        // Create custom dropdown
-        this.showCustomDropdown('display-dropdown-btn', 'display-mode-select');
+        // Create custom dropdown with color previews
+        this.showDisplayModeCustomDropdown('display-dropdown-btn', 'display-mode-select');
+    }
+
+    showDisplayModeCustomDropdown(buttonId, selectId) {
+        const button = document.getElementById(buttonId);
+        const select = document.getElementById(selectId);
+        
+        // Remove existing dropdown
+        const existingDropdown = document.querySelector('.custom-dropdown');
+        if (existingDropdown) {
+            existingDropdown.remove();
+        }
+        
+        // Create dropdown
+        const dropdown = document.createElement('div');
+        dropdown.className = 'custom-dropdown';
+        
+        // Position dropdown
+        const rect = button.getBoundingClientRect();
+        dropdown.style.position = 'fixed';
+        dropdown.style.left = rect.left + 'px';
+        dropdown.style.top = (rect.bottom + 2) + 'px';
+        dropdown.style.minWidth = rect.width + 'px';
+        
+        // Add options with color previews
+        Array.from(select.options).forEach(option => {
+            const item = document.createElement('div');
+            item.className = 'dropdown-item';
+            if (option.selected) item.classList.add('selected');
+            
+            // Create color preview container
+            const colorPreview = document.createElement('div');
+            colorPreview.style.cssText = `
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                width: 100%;
+            `;
+            
+            // Create color boxes
+            const colorBoxes = document.createElement('div');
+            colorBoxes.style.cssText = `
+                display: flex;
+                align-items: center;
+                width: 20px;
+                height: 12px;
+                border: 1px solid #ccc;
+                border-radius: 2px;
+                overflow: hidden;
+                flex-shrink: 0;
+            `;
+            
+            // Get display mode colors
+            const displayMode = this.displayModes[option.value];
+            if (displayMode) {
+                // Background color (outer box)
+                const bgBox = document.createElement('div');
+                bgBox.style.cssText = `
+                    width: 50%;
+                    height: 100%;
+                    background-color: ${displayMode.background_color};
+                `;
+                
+                // Foreground color (inner box)
+                const fgBox = document.createElement('div');
+                fgBox.style.cssText = `
+                    width: 50%;
+                    height: 100%;
+                    background-color: ${displayMode.draw_color};
+                `;
+                
+                colorBoxes.appendChild(bgBox);
+                colorBoxes.appendChild(fgBox);
+            }
+            
+            // Create text label
+            const textLabel = document.createElement('span');
+            textLabel.textContent = option.textContent;
+            textLabel.style.cssText = `
+                flex: 1;
+                margin-left: 8px;
+            `;
+            
+            colorPreview.appendChild(colorBoxes);
+            colorPreview.appendChild(textLabel);
+            item.appendChild(colorPreview);
+            
+            item.addEventListener('click', () => {
+                select.value = option.value;
+                select.dispatchEvent(new Event('change'));
+                dropdown.remove();
+            });
+            dropdown.appendChild(item);
+        });
+        
+        document.body.appendChild(dropdown);
+        
+        // Close on outside click
+        setTimeout(() => {
+            document.addEventListener('click', function closeDropdown(e) {
+                if (!dropdown.contains(e.target) && e.target !== button) {
+                    dropdown.remove();
+                    document.removeEventListener('click', closeDropdown);
+                }
+            });
+        }, 0);
     }
 
     showCustomDropdown(buttonId, selectId) {
@@ -414,6 +661,7 @@ class BitsDraw {
                 }
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 e.preventDefault();
+                // Only delete selection, not guides (guides deleted from panel)
                 this.deleteSelection();
             } else if (isCtrl && e.key === 'a') {
                 e.preventDefault();
@@ -429,7 +677,9 @@ class BitsDraw {
                 this.cutSelection();
             }
             // Tool shortcuts
-            else if (e.key.toLowerCase() === 'p' && !isCtrl) {
+            else if (e.key.toLowerCase() === 'b' && !isCtrl) {
+                this.setTool('brush');
+            } else if (e.key.toLowerCase() === 'p' && !isCtrl) {
                 this.setTool('pencil');
             } else if (e.key.toLowerCase() === 'f' && !isCtrl) {
                 this.setTool('bucket');
@@ -445,6 +695,12 @@ class BitsDraw {
                 this.setTool('spray');
             } else if (e.key.toLowerCase() === 'm' && !isCtrl) {
                 this.setTool('select-rect');
+            } else if (e.key.toLowerCase() === 'v' && !isCtrl) {
+                this.setTool('move');
+            } else if (e.key.toLowerCase() === 'h' && !isCtrl) {
+                this.setTool('hand');
+            } else if (e.key.toLowerCase() === 'u' && !isCtrl) {
+                this.setTool('guide');
             }
             // View shortcuts
             else if (isCtrl && e.key === '=') {
@@ -453,15 +709,52 @@ class BitsDraw {
             } else if (isCtrl && e.key === '-') {
                 e.preventDefault();
                 this.zoomOut();
-            } else if (isCtrl && e.key.toLowerCase() === 'i') {
-                e.preventDefault();
-                this.cycleDisplayMode();
             } else if (isCtrl && e.key.toLowerCase() === 'g') {
                 e.preventDefault();
                 const gridCheckbox = document.getElementById('show-grid');
                 gridCheckbox.checked = !gridCheckbox.checked;
                 this.showGrid = gridCheckbox.checked;
                 this.updateGridDisplay();
+            } else if (isCtrl && e.key === '0') {
+                e.preventDefault();
+                this.resetCanvasPan();
+            }
+        });
+    }
+
+    setupWindowEvents() {
+        // Handle window resize to reposition guides
+        window.addEventListener('resize', () => {
+            setTimeout(() => this.renderGuides(), 0);
+        });
+        
+        // Handle scroll to reposition guides  
+        window.addEventListener('scroll', () => {
+            this.renderGuides();
+        });
+        
+        // Handle canvas window movement
+        const canvasWindow = document.getElementById('canvas-window');
+        if (canvasWindow) {
+            const observer = new MutationObserver(() => {
+                this.renderGuides();
+            });
+            observer.observe(canvasWindow, { 
+                attributes: true, 
+                attributeFilter: ['style'] 
+            });
+        }
+        
+        // Handle global mouse events for guide dragging
+        document.addEventListener('mousemove', (e) => {
+            if (this.isDraggingGuide || this.isResizingGuide) {
+                this.updateGuideDrag(e);
+            }
+        });
+        
+        document.addEventListener('mouseup', (e) => {
+            if (this.isDraggingGuide || this.isResizingGuide) {
+                this.stopGuideDrag(e);
             }
         });
     }
@@ -492,38 +785,175 @@ class BitsDraw {
         document.querySelectorAll('.menu-dropdown-item[data-action]').forEach(item => {
             item.addEventListener('click', (e) => {
                 const action = item.dataset.action;
+                console.log('Main.js menu action clicked:', action);
+                
+                // Special handling for import-image to maintain user gesture
+                if (action === 'import-image') {
+                    console.log('Creating temporary file input for import (main menu)');
+                    
+                    // Create a temporary, invisible but clickable file input
+                    const tempInput = document.createElement('input');
+                    tempInput.type = 'file';
+                    tempInput.accept = 'image/*';
+                    tempInput.style.cssText = 'position: fixed; top: -100px; left: -100px; opacity: 0; width: 1px; height: 1px; z-index: 10000; pointer-events: auto;';
+                    
+                    // Add it to the body
+                    document.body.appendChild(tempInput);
+                    
+                    // Set up the change handler
+                    tempInput.onchange = async (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            console.log('File selected via temp input (main):', file.name);
+                            try {
+                                await this.handleImageFile(file);
+                            } catch (error) {
+                                console.error('Error handling image file:', error);
+                                this.showNotification('Failed to import image: ' + error.message, 'error');
+                            }
+                        }
+                        // Remove the temporary input
+                        document.body.removeChild(tempInput);
+                    };
+                    
+                    // Click it immediately
+                    tempInput.click();
+                    
+                    this.hideAllMenus();
+                    activeMenu = null;
+                    return;
+                }
+                
                 this.handleMenuAction(action);
                 this.hideAllMenus();
                 activeMenu = null;
             });
         });
 
-        // Submenu handling for items with has-submenu class
+        // Submenu handling with improved hover logic
+        this.submenuTimeouts = new Map();
+        
         document.querySelectorAll('.menu-dropdown-item.has-submenu').forEach(item => {
             item.addEventListener('mouseenter', (e) => {
-                const submenuId = item.dataset.action.replace('-', '') + '-submenu';
                 const submenu = document.getElementById(`submenu-${item.dataset.action}`);
                 if (submenu) {
+                    // Clear any pending hide timeouts
+                    if (this.submenuTimeouts.has(submenu)) {
+                        clearTimeout(this.submenuTimeouts.get(submenu));
+                        this.submenuTimeouts.delete(submenu);
+                    }
+                    
                     // Hide other submenus
                     document.querySelectorAll('.menu-submenu').forEach(sm => {
-                        if (sm !== submenu) sm.classList.remove('show');
+                        if (sm !== submenu) {
+                            sm.classList.remove('show');
+                        }
                     });
                     
                     // Position and show this submenu
                     const rect = item.getBoundingClientRect();
-                    submenu.style.left = (rect.right - 1) + 'px';
+                    const parentDropdown = item.closest('.menu-dropdown');
+                    const parentRect = parentDropdown.getBoundingClientRect();
+                    
+                    // Position submenu right next to the dropdown
+                    submenu.style.left = (parentRect.right - 2) + 'px';
                     submenu.style.top = rect.top + 'px';
                     submenu.classList.add('show');
                 }
             });
         });
 
+        // Handle submenu hover to keep it open
+        document.querySelectorAll('.menu-submenu').forEach(submenu => {
+            submenu.addEventListener('mouseenter', () => {
+                // Clear any pending hide timeout for this submenu
+                if (this.submenuTimeouts.has(submenu)) {
+                    clearTimeout(this.submenuTimeouts.get(submenu));
+                    this.submenuTimeouts.delete(submenu);
+                }
+            });
+            
+            submenu.addEventListener('mouseleave', () => {
+                // Set timeout to hide submenu
+                const timeout = setTimeout(() => {
+                    submenu.classList.remove('show');
+                    this.submenuTimeouts.delete(submenu);
+                }, 150);
+                this.submenuTimeouts.set(submenu, timeout);
+            });
+            
+            // Handle submenu item clicks
+            submenu.querySelectorAll('.menu-dropdown-item').forEach(subItem => {
+                subItem.addEventListener('click', (e) => {
+                    const action = subItem.dataset.action;
+                    
+                    // Special handling for import-image to maintain user gesture
+                    if (action === 'import-image') {
+                        console.log('Creating temporary file input for import');
+                        
+                        // Create a temporary, invisible but clickable file input
+                        const tempInput = document.createElement('input');
+                        tempInput.type = 'file';
+                        tempInput.accept = 'image/*';
+                        tempInput.style.cssText = 'position: fixed; top: -100px; left: -100px; opacity: 0; width: 1px; height: 1px; z-index: 10000; pointer-events: auto;';
+                        
+                        // Add it to the body
+                        document.body.appendChild(tempInput);
+                        
+                        // Set up the change handler
+                        tempInput.onchange = async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                                console.log('File selected via temp input:', file.name);
+                                try {
+                                    await this.handleImageFile(file);
+                                } catch (error) {
+                                    console.error('Error handling image file:', error);
+                                    this.showNotification('Failed to import image: ' + error.message, 'error');
+                                }
+                            }
+                            // Remove the temporary input
+                            document.body.removeChild(tempInput);
+                        };
+                        
+                        // Cancel handler
+                        tempInput.oncancel = () => {
+                            console.log('File selection cancelled');
+                            document.body.removeChild(tempInput);
+                        };
+                        
+                        // Click it immediately
+                        tempInput.click();
+                        
+                        this.hideAllMenus();
+                        return;
+                    }
+                    
+                    this.handleMenuAction(action);
+                    this.hideAllMenus();
+                });
+            });
+        });
+
         // Hide submenus when leaving the main dropdown
         document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
-            dropdown.addEventListener('mouseleave', () => {
-                document.querySelectorAll('.menu-submenu').forEach(submenu => {
-                    submenu.classList.remove('show');
-                });
+            dropdown.addEventListener('mouseleave', (e) => {
+                // Only hide if not moving to a submenu
+                const relatedTarget = e.relatedTarget;
+                const isMovingToSubmenu = relatedTarget && relatedTarget.closest('.menu-submenu');
+                
+                if (!isMovingToSubmenu) {
+                    // Delay hiding to allow for mouse movement to submenu
+                    setTimeout(() => {
+                        // Check if mouse is still not over any submenu
+                        const hoveredSubmenu = document.querySelector('.menu-submenu:hover');
+                        if (!hoveredSubmenu) {
+                            document.querySelectorAll('.menu-submenu').forEach(submenu => {
+                                submenu.classList.remove('show');
+                            });
+                        }
+                    }, 100);
+                }
             });
         });
 
@@ -550,6 +980,12 @@ class BitsDraw {
     }
 
     hideAllMenus() {
+        // Clear all submenu timeouts
+        if (this.submenuTimeouts) {
+            this.submenuTimeouts.forEach(timeout => clearTimeout(timeout));
+            this.submenuTimeouts.clear();
+        }
+        
         document.querySelectorAll('.menu-dropdown').forEach(dropdown => {
             dropdown.classList.remove('show');
         });
@@ -582,7 +1018,8 @@ class BitsDraw {
                 this.exportPNG();
                 break;
             case 'import-image':
-                document.getElementById('file-input').click();
+                console.log('Import image menu action triggered');
+                this.showImageImportDialog();
                 break;
             case 'import-cpp':
                 this.showCppImportDialog();
@@ -660,6 +1097,15 @@ class BitsDraw {
                 break;
             case 'rescale':
                 this.rescaleCanvas();
+                break;
+            case 'theme-auto':
+                this.setTheme('auto');
+                break;
+            case 'theme-light':
+                this.setTheme('light');
+                break;
+            case 'theme-dark':
+                this.setTheme('dark');
                 break;
         }
     }
@@ -912,39 +1358,49 @@ class BitsDraw {
     setupBrushCursor() {
         this.brushCursorOverlay = document.getElementById('brush-cursor-overlay');
         
+        if (!this.brushCursorOverlay) {
+            console.log('Brush cursor overlay not found, skipping brush cursor setup');
+            return;
+        }
+        
         // Track mouse movement over canvas
         this.canvas.addEventListener('mouseenter', () => {
-            if (this.currentTool === 'pencil') {
+            if (this.currentTool === 'brush' || this.currentTool === 'pencil') {
                 this.showBrushCursor();
             }
         });
         
         this.canvas.addEventListener('mouseleave', () => {
+            // Only hide brush cursor, don't stop drawing
             this.hideBrushCursor();
         });
         
         this.canvas.addEventListener('mousemove', (e) => {
-            if (this.currentTool === 'pencil') {
+            if (this.currentTool === 'brush' || this.currentTool === 'pencil') {
                 this.updateBrushCursor(e.clientX, e.clientY);
             }
         });
     }
 
     showBrushCursor() {
+        if (!this.brushCursorOverlay) return;
         this.brushCursorOverlay.style.display = 'block';
         this.updateBrushCursorSize();
     }
 
     hideBrushCursor() {
+        if (!this.brushCursorOverlay) return;
         this.brushCursorOverlay.style.display = 'none';
     }
 
     updateBrushCursor(clientX, clientY) {
+        if (!this.brushCursorOverlay) return;
         this.brushCursorOverlay.style.left = clientX + 'px';
         this.brushCursorOverlay.style.top = clientY + 'px';
     }
 
     updateBrushCursorSize() {
+        if (!this.brushCursorOverlay) return;
         const size = this.brushSize * this.editor.zoom;
         this.brushCursorOverlay.style.width = size + 'px';
         this.brushCursorOverlay.style.height = size + 'px';
@@ -960,6 +1416,9 @@ class BitsDraw {
         const swatches = document.querySelectorAll('.color-swatch');
         
         swatches.forEach(swatch => {
+            // Generate pattern preview
+            this.generatePatternPreview(swatch);
+            
             swatch.addEventListener('click', () => {
                 // Remove selected class from all swatches
                 swatches.forEach(s => s.classList.remove('selected'));
@@ -969,6 +1428,41 @@ class BitsDraw {
                 this.currentPattern = swatch.dataset.pattern;
             });
         });
+    }
+
+    generatePatternPreview(swatch) {
+        const pattern = swatch.dataset.pattern;
+        const size = 32; // 32x32 preview
+        
+        // Create a canvas for the pattern preview
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        // Fill with white background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, size, size);
+        
+        // Draw pattern
+        ctx.fillStyle = '#000000';
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const value = Patterns.applyPattern(pattern, x, y);
+                if (value) {
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+        
+        // Convert to data URL and set as background
+        const dataUrl = canvas.toDataURL();
+        swatch.style.backgroundImage = `url(${dataUrl})`;
+        swatch.style.backgroundSize = 'cover';
+        swatch.style.backgroundRepeat = 'no-repeat';
+        
+        // Remove any existing CSS background patterns
+        swatch.style.background = `url(${dataUrl})`;
     }
 
     setupLayers() {
@@ -1130,6 +1624,12 @@ class BitsDraw {
             brushSizeValue.textContent = this.brushSize;
             this.updateBrushCursorSize();
         });
+        
+        // Smooth drawing
+        const smoothDrawingCheckbox = document.getElementById('smooth-drawing');
+        smoothDrawingCheckbox.addEventListener('change', (e) => {
+            this.smoothDrawing = e.target.checked;
+        });
 
         // Spray radius
         const sprayRadiusSlider = document.getElementById('spray-radius');
@@ -1161,8 +1661,8 @@ class BitsDraw {
 
         // Show relevant options based on tool
         switch(tool) {
-            case 'pencil':
-                document.getElementById('pencil-options').style.display = 'block';
+            case 'brush':
+                document.getElementById('brush-options').style.display = 'block';
                 break;
             case 'rect':
             case 'circle':
@@ -1180,6 +1680,12 @@ class BitsDraw {
                 break;
             case 'bucket':
                 document.getElementById('bucket-options').style.display = 'block';
+                break;
+            case 'move':
+                document.getElementById('move-options').style.display = 'block';
+                break;
+            case 'guide':
+                document.getElementById('guide-options').style.display = 'block';
                 break;
             default:
                 document.getElementById('no-options').style.display = 'block';
@@ -1284,6 +1790,7 @@ class BitsDraw {
         const cancelBtn = document.getElementById('cpp-export-cancel-btn');
         const copyBtn = document.getElementById('cpp-export-copy-btn');
         const arrayNameInput = document.getElementById('array-name-input');
+        const formatSelect = document.getElementById('export-format-select');
         const codeTextarea = document.getElementById('cpp-export-code');
 
         // Close dialog handlers
@@ -1303,6 +1810,11 @@ class BitsDraw {
 
         // Array name change handler
         arrayNameInput.addEventListener('input', () => {
+            this.generateCppCode();
+        });
+
+        // Format change handler
+        formatSelect.addEventListener('change', () => {
             this.generateCppCode();
         });
 
@@ -1376,6 +1888,257 @@ class BitsDraw {
         });
     }
 
+    setupImageImportDialog() {
+        const dialog = document.getElementById('image-import-dialog');
+        const closeBtn = document.getElementById('image-import-close-btn');
+        const cancelBtn = document.getElementById('image-import-cancel-btn');
+        const fileInput = document.getElementById('image-import-file');
+
+        // Only setup if dialog exists
+        if (!dialog || !closeBtn || !cancelBtn || !fileInput) {
+            console.log('Image import dialog elements not found, skipping setup');
+            return;
+        }
+
+        // Close dialog handlers
+        const closeDialog = () => {
+            dialog.style.display = 'none';
+            fileInput.value = '';
+        };
+
+        closeBtn.addEventListener('click', closeDialog);
+        cancelBtn.addEventListener('click', closeDialog);
+
+        // Close on overlay click
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                closeDialog();
+            }
+        });
+
+        // File input handler
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                console.log('Image file selected from dialog:', file.name, file.type);
+                this.handleImageFile(file);
+                closeDialog();
+            }
+        });
+    }
+
+    showImageImportDialog() {
+        console.log('showImageImportDialog called');
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            console.log('File input found, clicking...');
+            // Reset value to allow selecting same file again
+            fileInput.value = '';
+            fileInput.click();
+        } else {
+            console.error('File input element not found');
+        }
+    }
+
+    // ===== DITHERING DIALOG =====
+
+    setupDitheringDialog() {
+        const dialog = document.getElementById('dithering-dialog');
+        const closeBtn = document.getElementById('dithering-close-btn');
+        const cancelBtn = document.getElementById('dithering-cancel-btn');
+        const applyBtn = document.getElementById('dithering-apply-btn');
+        const methodSelect = document.getElementById('dithering-method');
+        const alphaSlider = document.getElementById('dithering-alpha');
+        const alphaValue = document.getElementById('dithering-alpha-value');
+        
+        console.log('Dialog elements:', {
+            dialog: !!dialog,
+            closeBtn: !!closeBtn, 
+            cancelBtn: !!cancelBtn,
+            applyBtn: !!applyBtn,
+            methodSelect: !!methodSelect,
+            alphaSlider: !!alphaSlider,
+            alphaValue: !!alphaValue
+        });
+
+        const closeDialog = () => {
+            dialog.style.display = 'none';
+            this.ditheringData = {
+                originalPixels: null,
+                previewPixels: null,
+                alpha: 1.0,
+                method: 'Bayer4x4'
+            };
+        };
+
+        // Close button
+        closeBtn.addEventListener('click', closeDialog);
+        cancelBtn.addEventListener('click', closeDialog);
+
+        // Click outside to close
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                closeDialog();
+            }
+        });
+
+        // Method change
+        methodSelect.addEventListener('change', (e) => {
+            this.ditheringData.method = e.target.value;
+            this.updateDitheringPreview();
+        });
+
+        // Alpha slider
+        alphaSlider.addEventListener('input', (e) => {
+            const alpha = parseInt(e.target.value) / 100;
+            this.ditheringData.alpha = alpha;
+            alphaValue.textContent = alpha.toFixed(2);
+            this.updateDitheringPreview();
+        });
+
+        // Apply button
+        applyBtn.addEventListener('click', () => {
+            this.applyDithering();
+            closeDialog();
+        });
+    }
+
+    showDitheringDialog() {
+        const activeLayer = this.editor.getActiveLayer();
+        if (!activeLayer) {
+            this.showNotification('No active layer to apply dithering', 'error');
+            return;
+        }
+
+        // Copy current layer data
+        this.ditheringData.originalPixels = new Uint8Array(activeLayer.pixels);
+        
+        // Reset parameters
+        this.ditheringData.alpha = 1.0;
+        this.ditheringData.method = 'Bayer4x4';
+
+        // Update UI
+        document.getElementById('dithering-method').value = this.ditheringData.method;
+        document.getElementById('dithering-alpha').value = 100;
+        document.getElementById('dithering-alpha-value').textContent = '1.00';
+
+        // Setup preview canvases
+        this.setupDitheringPreview();
+
+        // Show dialog
+        const dialog = document.getElementById('dithering-dialog');
+        if (dialog) {
+            dialog.style.display = 'flex';
+        } else {
+            console.error('Dithering dialog element not found');
+            return;
+        }
+
+        // Initial preview update
+        this.updateDitheringPreview();
+    }
+
+    setupDitheringPreview() {
+        const originalCanvas = document.getElementById('dithering-original-canvas');
+        const previewCanvas = document.getElementById('dithering-preview-canvas');
+
+        const layer = this.editor.getActiveLayer();
+        const width = this.editor.width;
+        const height = this.editor.height;
+
+        // Use 8x zoom for better visibility
+        const zoom = 8;
+
+        // Render original
+        this.ditheringEffects.renderToCanvas(
+            originalCanvas,
+            this.ditheringData.originalPixels,
+            width,
+            height,
+            zoom
+        );
+
+        // Setup preview canvas size
+        previewCanvas.width = width * zoom;
+        previewCanvas.height = height * zoom;
+    }
+
+    updateDitheringPreview() {
+        if (!this.ditheringData.originalPixels) return;
+
+        const previewCanvas = document.getElementById('dithering-preview-canvas');
+        const layer = {
+            pixels: this.ditheringData.originalPixels,
+            width: this.editor.width,
+            height: this.editor.height
+        };
+
+        // Apply dithering
+        const ditheredPixels = this.ditheringEffects.ditherLayer(
+            layer,
+            this.ditheringData.alpha,
+            this.ditheringData.method
+        );
+
+        // Use 8x zoom for better visibility
+        const zoom = 8;
+
+        // Render preview
+        this.ditheringEffects.renderToCanvas(
+            previewCanvas,
+            ditheredPixels,
+            this.editor.width,
+            this.editor.height,
+            zoom
+        );
+
+        // Store preview data for potential application
+        this.ditheringData.previewPixels = ditheredPixels;
+    }
+
+    applyDithering() {
+        if (!this.ditheringData.previewPixels) {
+            this.showNotification('No dithering preview to apply', 'error');
+            return;
+        }
+
+        const activeLayer = this.editor.getActiveLayer();
+        if (!activeLayer) {
+            this.showNotification('No active layer to apply dithering', 'error');
+            return;
+        }
+
+        // Apply the dithered pixels to the active layer
+        activeLayer.pixels.set(this.ditheringData.previewPixels);
+
+        // Mark layer as dirty and update
+        this.editor.markCompositeDirty();
+        this.editor.addDirtyRect(0, 0, this.editor.width, this.editor.height);
+        this.editor.scheduleRender();
+
+        // Save state for undo
+        this.editor.saveState();
+
+        // Update output and preview
+        this.updateOutput();
+        this.editor.redraw();
+
+        this.showNotification(`Dithering applied (${this.ditheringData.method}, α=${this.ditheringData.alpha.toFixed(2)})`, 'success');
+    }
+
+    detectAndApplyPlatform() {
+        // Detect Windows via user agent
+        const isWindows = navigator.userAgent.indexOf('Windows') !== -1;
+        
+        if (isWindows) {
+            // Add Windows class to body for styling
+            document.body.classList.add('platform-windows');
+        } else {
+            // Add macOS class (default)
+            document.body.classList.add('platform-macos');
+        }
+    }
+
     showNewCanvasDialog() {
         const dialog = document.getElementById('new-canvas-dialog');
         const widthInput = document.getElementById('canvas-width');
@@ -1410,6 +2173,7 @@ class BitsDraw {
         if (confirm('Create new canvas? Current work will be lost.')) {
             this.editor.resize(width, height);
             this.editor.clear();
+            this.clearAllGuides();
             this.updateWindowTitle(width, height);
             this.updateOutput();
             this.showNotification(`New canvas created: ${width}×${height}`, 'success');
@@ -1482,10 +2246,12 @@ class BitsDraw {
 
     generateCppCode() {
         const arrayName = document.getElementById('array-name-input').value || 'my_bitmap';
+        const formatSelect = document.getElementById('export-format-select');
+        const format = formatSelect ? formatSelect.value || 'u8g2' : 'u8g2';
         const codeTextarea = document.getElementById('cpp-export-code');
         
         const bitmapData = this.editor.getBitmapData();
-        const code = U8G2Exporter.generateHFile(bitmapData, arrayName);
+        const code = BitmapExporter.generateHFile(bitmapData, arrayName, format);
         
         codeTextarea.value = code;
     }
@@ -1493,210 +2259,82 @@ class BitsDraw {
     setupFileImport() {
         const fileInput = document.getElementById('file-input');
         
-        fileInput.addEventListener('change', (e) => {
+        if (!fileInput) {
+            console.error('File input element not found');
+            return;
+        }
+        
+        console.log('Setting up file import listener, element:', fileInput);
+        console.log('File input accept attribute:', fileInput.accept);
+        
+        fileInput.addEventListener('change', async (e) => {
+            console.log('File input change event triggered, files:', e.target.files);
             const file = e.target.files[0];
             if (file) {
-                this.handleImageFile(file);
+                console.log('Selected file:', file.name, file.type, file.size);
+                try {
+                    await this.handleImageFile(file);
+                } catch (error) {
+                    console.error('Error handling image file:', error);
+                    this.showNotification('Failed to import image: ' + error.message, 'error');
+                }
                 fileInput.value = ''; // Clear the input
-            }
-        });
-    }
-
-    setupDitheringDialog() {
-        const dialog = document.getElementById('dithering-dialog');
-        const closeBtn = document.getElementById('dithering-close-btn');
-        const cancelBtn = document.getElementById('dithering-cancel-btn');
-        const applyBtn = document.getElementById('dithering-apply-btn');
-        const previewBtn = document.getElementById('dither-preview-btn');
-        const resetBtn = document.getElementById('dither-reset-btn');
-        const levelSlider = document.getElementById('dither-level');
-        const levelValue = document.getElementById('dither-level-value');
-
-        // Store original state for preview/reset
-        this.ditheringOriginalState = null;
-
-        // Close dialog handlers
-        const closeDialog = () => {
-            if (this.ditheringOriginalState) {
-                this.resetDitheringPreview();
-            }
-            dialog.style.display = 'none';
-        };
-
-        closeBtn.addEventListener('click', closeDialog);
-        cancelBtn.addEventListener('click', closeDialog);
-
-        // Close on overlay click
-        dialog.addEventListener('click', (e) => {
-            if (e.target === dialog) {
-                closeDialog();
-            }
-        });
-
-        // Level slider handler
-        levelSlider.addEventListener('input', (e) => {
-            levelValue.textContent = e.target.value;
-        });
-
-        // Preview handler
-        previewBtn.addEventListener('click', () => {
-            const algorithm = document.getElementById('dither-algorithm').value;
-            const level = parseInt(levelSlider.value);
-            this.previewDitheringEffect(algorithm, level);
-        });
-
-        // Reset handler
-        resetBtn.addEventListener('click', () => {
-            this.resetDitheringPreview();
-        });
-
-        // Apply dithering handler
-        applyBtn.addEventListener('click', () => {
-            const algorithm = document.getElementById('dither-algorithm').value;
-            const level = parseInt(levelSlider.value);
-            
-            if (this.ditheringOriginalState) {
-                // Apply the current preview permanently
-                this.editor.saveState();
-                this.ditheringOriginalState = null;
             } else {
-                // Apply fresh
-                this.applyDitheringEffect(algorithm, level);
+                console.log('No file selected');
             }
-            
-            this.showNotification('Dithering applied successfully!', 'success');
-            closeDialog();
         });
+        
+        // Add click listener for debugging
+        fileInput.addEventListener('click', () => {
+            console.log('File input clicked');
+        });
+        
+        // Test if file input is functional
+        console.log('File input setup complete. Element style:', fileInput.style.cssText);
     }
 
-    showDitheringDialog() {
-        const dialog = document.getElementById('dithering-dialog');
-        dialog.style.display = 'flex';
-        
-        // Reset state
-        this.ditheringOriginalState = null;
-        
-        // Reset to default values
-        document.getElementById('dither-algorithm').value = 'floyd-steinberg';
-        document.getElementById('dither-level').value = 5;
-        document.getElementById('dither-level-value').textContent = '5';
-        
-        // Add some test data if canvas is empty
-        const bitmapData = this.editor.getBitmapData();
-        let hasData = false;
-        for (let y = 0; y < bitmapData.height && !hasData; y++) {
-            for (let x = 0; x < bitmapData.width && !hasData; x++) {
-                if (bitmapData.pixels[y][x] === 1) {
-                    hasData = true;
-                }
-            }
+    triggerFileImport() {
+        console.log('triggerFileImport called');
+        const fileInput = document.getElementById('file-input');
+        if (!fileInput) {
+            console.error('File input not found in triggerFileImport');
+            return;
         }
         
-        if (!hasData) {
-            console.log('Canvas is empty, adding gradient test pattern for dithering');
+        console.log('File input found, attempting to trigger click');
+        console.log('File input visible:', fileInput.offsetParent !== null);
+        console.log('File input display:', window.getComputedStyle(fileInput).display);
+        
+        // Reset value to allow selecting the same file again
+        fileInput.value = '';
+        
+        // Try multiple methods to trigger file dialog
+        try {
+            // Method 1: Direct click
+            fileInput.click();
+            console.log('Direct click attempted');
+        } catch (error) {
+            console.error('Direct click failed:', error);
             
-            // Create a sophisticated test pattern that shows Floyd-Steinberg well
-            for (let y = 0; y < bitmapData.height; y++) {
-                for (let x = 0; x < bitmapData.width; x++) {
-                    let intensity = 0;
-                    
-                    // Left-to-right gradient (primary)
-                    const horizontalGradient = x / bitmapData.width;
-                    
-                    // Top-to-bottom gradient (secondary)
-                    const verticalGradient = y / bitmapData.height;
-                    
-                    // Circular gradient from center
-                    const centerX = bitmapData.width / 2;
-                    const centerY = bitmapData.height / 2;
-                    const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-                    const maxDistance = Math.sqrt(centerX ** 2 + centerY ** 2);
-                    const radialGradient = 1 - (distance / maxDistance);
-                    
-                    // Combine gradients for complex intensity pattern
-                    intensity = (horizontalGradient * 0.6 + verticalGradient * 0.2 + radialGradient * 0.2);
-                    
-                    // Add some sinusoidal waves for texture
-                    const wave1 = (Math.sin(x * 0.1) + 1) / 2;
-                    const wave2 = (Math.sin(y * 0.15) + 1) / 2;
-                    intensity = (intensity * 0.8 + wave1 * 0.1 + wave2 * 0.1);
-                    
-                    // Convert to probability and set pixel
-                    if (Math.random() < intensity) {
-                        this.editor.setPixel(x, y, 1);
-                    }
-                }
+            // Method 2: Create and dispatch click event
+            try {
+                const event = new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                });
+                fileInput.dispatchEvent(event);
+                console.log('Dispatched click event');
+            } catch (dispatchError) {
+                console.error('Event dispatch failed:', dispatchError);
             }
-            this.updateOutput();
         }
     }
 
-    applyDitheringEffect(algorithm, level) {
-        this.applyDitheringEffectInternal(algorithm, level, true);
-        this.showNotification('Dithering applied successfully!', 'success');
-    }
 
-    applyDitheringToSelection(bitmapData, algorithm, level) {
-        // Extract selection area
-        const selectionPixels = [];
-        let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
 
-        // Find selection bounds
-        for (let y = 0; y < bitmapData.height; y++) {
-            for (let x = 0; x < bitmapData.width; x++) {
-                if (this.editor.isInSelection(x, y, this.selection)) {
-                    minX = Math.min(minX, x);
-                    minY = Math.min(minY, y);
-                    maxX = Math.max(maxX, x);
-                    maxY = Math.max(maxY, y);
-                }
-            }
-        }
 
-        const selectionWidth = maxX - minX + 1;
-        const selectionHeight = maxY - minY + 1;
 
-        // Extract pixels from selection
-        for (let y = 0; y < selectionHeight; y++) {
-            selectionPixels[y] = [];
-            for (let x = 0; x < selectionWidth; x++) {
-                const sourceX = minX + x;
-                const sourceY = minY + y;
-                if (this.editor.isInSelection(sourceX, sourceY, this.selection)) {
-                    selectionPixels[y][x] = bitmapData.pixels[sourceY][sourceX];
-                } else {
-                    selectionPixels[y][x] = 0;
-                }
-            }
-        }
-
-        // Apply dithering to selection
-        const ditheredSelection = DitheringEffects.applyDithering(
-            selectionPixels, 
-            selectionWidth, 
-            selectionHeight, 
-            algorithm, 
-            level
-        );
-
-        return { ditheredSelection, minX, minY, selectionWidth, selectionHeight };
-    }
-
-    applyResultToSelection(result) {
-        const { ditheredSelection, minX, minY, selectionWidth, selectionHeight } = result;
-        
-        for (let y = 0; y < selectionHeight; y++) {
-            for (let x = 0; x < selectionWidth; x++) {
-                const targetX = minX + x;
-                const targetY = minY + y;
-                if (this.editor.isInSelection(targetX, targetY, this.selection)) {
-                    this.editor.setPixel(targetX, targetY, ditheredSelection[y][x]);
-                }
-            }
-        }
-        
-        this.editor.redraw();
-    }
 
     applyInvertEffect() {
         if (this.selection) {
@@ -1720,65 +2358,8 @@ class BitsDraw {
         this.showNotification('Invert applied successfully!', 'success');
     }
 
-    previewDitheringEffect(algorithm, level) {
-        // Save original state if not already saved
-        if (!this.ditheringOriginalState) {
-            this.ditheringOriginalState = this.editor.getBitmapData();
-        }
 
-        // Apply dithering as preview (without saving to history)
-        this.applyDitheringEffectInternal(algorithm, level, false);
-        this.showNotification('Preview applied - use Reset to undo', 'info');
-    }
 
-    resetDitheringPreview() {
-        if (this.ditheringOriginalState) {
-            this.editor.loadBitmapData(this.ditheringOriginalState);
-            this.updateOutput();
-            this.ditheringOriginalState = null;
-            this.showNotification('Reset to original', 'info');
-        }
-    }
-
-    applyDitheringEffectInternal(algorithm, level, saveState = true) {
-        console.log('Applying dithering:', algorithm, level);
-        const bitmapData = this.editor.getBitmapData();
-        console.log('Bitmap data:', bitmapData);
-        let result;
-
-        if (this.selection) {
-            // Apply to selection only
-            result = this.applyDitheringToSelection(bitmapData, algorithm, level);
-        } else {
-            // Apply to entire canvas
-            console.log('Calling DitheringEffects.applyDithering');
-            result = DitheringEffects.applyDithering(
-                bitmapData.pixels, 
-                bitmapData.width, 
-                bitmapData.height, 
-                algorithm, 
-                level
-            );
-            console.log('Dithering result:', result);
-        }
-
-        if (this.selection) {
-            // Update only selection area
-            this.applyResultToSelection(result);
-        } else {
-            // Update entire canvas
-            this.editor.loadBitmapData({
-                width: bitmapData.width,
-                height: bitmapData.height,
-                pixels: result
-            });
-        }
-
-        if (saveState) {
-            this.editor.saveState();
-        }
-        this.updateOutput();
-    }
 
     drawWithBrush(centerX, centerY, draw) {
         const radius = Math.floor(this.brushSize / 2);
@@ -1816,6 +2397,124 @@ class BitsDraw {
         // The OptimizedBitmapEditor handles rendering automatically
     }
 
+    // Smooth drawing implementation using Catmull-Rom spline interpolation
+    startSmoothStroke(x, y) {
+        this.strokePoints = [];
+        this.strokeStartTime = Date.now();
+        this.lastDrawPoint = { x, y };
+        this.addStrokePoint(x, y);
+    }
+
+    addStrokePoint(x, y) {
+        const timestamp = Date.now();
+        this.strokePoints.push({ 
+            x, 
+            y, 
+            timestamp,
+            pressure: 1.0 // Could be extended for pressure-sensitive input
+        });
+        
+        // Limit the number of points to prevent memory issues
+        if (this.strokePoints.length > 100) {
+            this.strokePoints.shift();
+        }
+    }
+
+    updateSmoothStroke(x, y, draw) {
+        if (!this.smoothDrawing) {
+            // Fallback to direct drawing
+            this.drawWithBrush(x, y, draw);
+            return;
+        }
+
+        this.addStrokePoint(x, y);
+        
+        // Need at least 4 points for Catmull-Rom spline
+        if (this.strokePoints.length >= 4) {
+            this.drawSmoothSegment(draw);
+        } else if (this.strokePoints.length >= 2) {
+            // For first few points, draw directly
+            const current = this.strokePoints[this.strokePoints.length - 1];
+            this.drawWithBrush(current.x, current.y, draw);
+        }
+    }
+
+    drawSmoothSegment(draw) {
+        const points = this.strokePoints;
+        const len = points.length;
+        
+        // Use the last 4 points for Catmull-Rom interpolation
+        const p0 = points[len - 4];
+        const p1 = points[len - 3];
+        const p2 = points[len - 2];
+        const p3 = points[len - 1];
+        
+        // Calculate adaptive step size based on distance and brush size
+        const distance = Math.sqrt(
+            Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)
+        );
+        
+        // Adaptive smoothing: more steps for larger brushes and longer distances
+        const brushFactor = Math.max(1, this.brushSize / 3);
+        const steps = Math.max(1, Math.min(30, Math.ceil(distance / brushFactor)));
+        
+        // Skip very short segments to improve performance
+        if (distance < 0.5) {
+            return;
+        }
+        
+        // Draw smooth curve between p1 and p2 using p0 and p3 as control points
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const point = this.catmullRomInterpolate(p0, p1, p2, p3, t);
+            
+            // Adaptive drawing threshold based on brush size
+            const threshold = Math.max(0.3, this.brushSize * 0.1);
+            
+            // Only draw if the point is significantly different from the last drawn point
+            if (!this.lastDrawPoint || 
+                Math.abs(point.x - this.lastDrawPoint.x) >= threshold || 
+                Math.abs(point.y - this.lastDrawPoint.y) >= threshold) {
+                
+                this.drawWithBrush(Math.round(point.x), Math.round(point.y), draw);
+                this.lastDrawPoint = { x: point.x, y: point.y };
+            }
+        }
+    }
+
+    catmullRomInterpolate(p0, p1, p2, p3, t) {
+        const t2 = t * t;
+        const t3 = t2 * t;
+        
+        // Catmull-Rom spline formula
+        const x = 0.5 * (
+            (2 * p1.x) +
+            (-p0.x + p2.x) * t +
+            (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+            (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
+        );
+        
+        const y = 0.5 * (
+            (2 * p1.y) +
+            (-p0.y + p2.y) * t +
+            (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+            (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
+        );
+        
+        return { x, y };
+    }
+
+    finishSmoothStroke(draw) {
+        // Draw remaining points if any
+        if (this.strokePoints.length >= 2) {
+            const lastPoint = this.strokePoints[this.strokePoints.length - 1];
+            this.drawWithBrush(lastPoint.x, lastPoint.y, draw);
+        }
+        
+        // Clear stroke data
+        this.strokePoints = [];
+        this.lastDrawPoint = null;
+    }
 
     saveWindowStates() {
         const windowStates = {};
@@ -1910,27 +2609,74 @@ class BitsDraw {
         }
     }
 
+    setupDragAndDrop() {
+        const canvas = this.canvas;
+        
+        canvas.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+        });
+        
+        canvas.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+        });
+        
+        canvas.addEventListener('drop', (e) => {
+            e.preventDefault();
+            console.log('File dropped on canvas');
+            
+            const files = Array.from(e.dataTransfer.files);
+            const imageFile = files.find(file => file.type.startsWith('image/'));
+            
+            if (imageFile) {
+                console.log('Image file dropped:', imageFile.name, imageFile.type);
+                this.handleImageFile(imageFile);
+            } else {
+                console.log('No image file found in drop');
+                this.showNotification('Please drop an image file', 'error');
+            }
+        });
+    }
 
     async handleImageFile(file) {
+        console.log('handleImageFile called with:', file);
+        
+        if (typeof ImageImporter === 'undefined') {
+            console.error('ImageImporter is not defined');
+            this.showNotification('ImageImporter not available', 'error');
+            return;
+        }
+        
         if (!ImageImporter.isValidImageFile(file)) {
+            console.log('Invalid file type:', file.type);
             this.showNotification('Please select a valid image file (PNG, JPG, GIF)', 'error');
             return;
         }
 
         try {
-            this.showNotification('Processing image...', 'info');
+            console.log('Loading image for placement...');
+            this.showNotification('Loading image...', 'info');
             
-            const targetWidth = this.editor.width;
-            const targetHeight = this.editor.height;
+            // Load the image and preserve original dimensions
+            const imageData = await ImageImporter.loadImage(file);
+            console.log('Image loaded:', imageData.width, 'x', imageData.height);
             
-            const bitmapData = await ImageImporter.processImage(file, targetWidth, targetHeight);
-            this.editor.loadBitmapData(bitmapData);
-            this.updateOutput();
+            // Check if imagePlacementDialog exists
+            if (!this.imagePlacementDialog) {
+                console.error('imagePlacementDialog not initialized');
+                this.showNotification('Image placement dialog not available', 'error');
+                return;
+            }
             
-            this.showNotification('Image imported successfully!', 'success');
+            console.log('Showing image placement dialog...');
+            // Show the image placement dialog
+            await this.imagePlacementDialog.show(imageData);
+            console.log('Image placement dialog shown');
+            
         } catch (error) {
-            console.error('Image import error:', error);
-            this.showNotification('Failed to import image: ' + error.message, 'error');
+            console.error('Image load error:', error);
+            console.error('Error stack:', error.stack);
+            this.showNotification('Failed to load image: ' + error.message, 'error');
         }
     }
 
@@ -1982,16 +2728,27 @@ class BitsDraw {
         document.querySelectorAll('.tool-icon').forEach(btn => {
             btn.classList.remove('active');
         });
-        document.getElementById(`${tool}-tool`).classList.add('active');
+        const toolButton = document.getElementById(`${tool}-tool`);
+        if (toolButton) {
+            toolButton.classList.add('active');
+        }
         
         // Update cursor based on tool
         this.canvas.className = '';
         if (tool === 'bucket') {
             this.canvas.classList.add('bucket-cursor');
+        } else if (tool === 'hand') {
+            this.canvas.style.cursor = 'grab';
+        } else if (tool === 'move') {
+            this.canvas.style.cursor = 'move';
+        } else if (tool === 'guide') {
+            this.canvas.style.cursor = 'crosshair';
+        } else {
+            this.canvas.style.cursor = 'crosshair';
         }
         
         // Update brush cursor visibility
-        if (tool === 'pencil') {
+        if (tool === 'brush' || tool === 'pencil') {
             this.updateBrushCursorSize();
         } else {
             this.hideBrushCursor();
@@ -2011,23 +2768,69 @@ class BitsDraw {
         
         // Update tool options display
         this.updateToolOptions(tool);
+        
+        // Re-render guides to show/hide handles based on active tool
+        this.renderGuides();
     }
 
     handleCanvasClick(e) {
         const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
         
-        if (this.currentTool === 'pencil') {
-            this.drawWithBrush(coords.x, coords.y, e.button === 0);
-            if (this.isDrawing && e.type === 'mouseup') {
+        // Only process if coordinates are within canvas bounds
+        if (coords.x < 0 || coords.x >= this.editor.width || 
+            coords.y < 0 || coords.y >= this.editor.height) {
+            return;
+        }
+        
+        if (this.currentTool === 'brush') {
+            const draw = e.button === 0;
+            
+            if (e.type === 'mousedown') {
+                // Start stroke
+                if (this.smoothDrawing) {
+                    this.startSmoothStroke(coords.x, coords.y);
+                }
+                this.drawWithBrush(coords.x, coords.y, draw);
+            } else if (e.type === 'mousemove' && this.isDrawing) {
+                // Continue stroke
+                if (this.smoothDrawing) {
+                    this.updateSmoothStroke(coords.x, coords.y, draw);
+                } else {
+                    this.drawWithBrush(coords.x, coords.y, draw);
+                }
+            } else if (e.type === 'mouseup' && this.isDrawing) {
+                // Finish stroke
+                if (this.smoothDrawing) {
+                    this.finishSmoothStroke(draw);
+                }
+                this.editor.saveState();
+            }
+        } else if (this.currentTool === 'pencil') {
+            const draw = e.button === 0;
+            
+            if (e.type === 'mousedown') {
+                // Simple 1-pixel bit flip
+                const currentPixel = this.editor.getPixel(coords.x, coords.y);
+                this.editor.setPixel(coords.x, coords.y, currentPixel ? 0 : 1);
+                this.editor.redraw();
+                this.updateOutput();
+            } else if (e.type === 'mousemove' && this.isDrawing) {
+                // Continue 1-pixel bit flip
+                const currentPixel = this.editor.getPixel(coords.x, coords.y);
+                this.editor.setPixel(coords.x, coords.y, currentPixel ? 0 : 1);
+                this.editor.redraw();
+                this.updateOutput();
+            } else if (e.type === 'mouseup' && this.isDrawing) {
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'bucket') {
             if (e.button === 0) { // Left click = fill with current pattern
                 this.editor.floodFill(coords.x, coords.y, 1, this.currentPattern);
-            } else { // Right click = fill with white
+            } else { // Right click = clear (white fill)
                 this.editor.floodFill(coords.x, coords.y, 0);
             }
             this.editor.saveState();
+            this.updateOutput();
         } else if (this.currentTool === 'spray') {
             this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern);
             if (e.type === 'mouseup') {
@@ -2056,6 +2859,61 @@ class BitsDraw {
         }
     }
 
+    // ===== CANVAS PANNING METHODS =====
+    
+    startPanning(e) {
+        this.isPanning = true;
+        this.panStart = {
+            x: e.clientX,
+            y: e.clientY,
+            canvasOffsetX: this.canvasOffset.x,
+            canvasOffsetY: this.canvasOffset.y
+        };
+        
+        // Change cursor to indicate panning mode
+        this.canvas.style.cursor = 'move';
+        
+        // Prevent middle mouse button default behavior (like opening links in new tab)
+        e.preventDefault();
+    }
+    
+    updatePanning(e) {
+        if (!this.isPanning || !this.panStart) return;
+        
+        const deltaX = e.clientX - this.panStart.x;
+        const deltaY = e.clientY - this.panStart.y;
+        
+        this.canvasOffset.x = this.panStart.canvasOffsetX + deltaX;
+        this.canvasOffset.y = this.panStart.canvasOffsetY + deltaY;
+        
+        this.applyCanvasOffset();
+        this.renderGuides();
+    }
+    
+    stopPanning() {
+        this.isPanning = false;
+        this.panStart = null;
+        
+        // Reset cursor
+        this.canvas.style.cursor = this.currentTool === 'bucket' ? '' : 'crosshair';
+    }
+    
+    applyCanvasOffset() {
+        // Get the canvas area container
+        const canvasArea = this.canvas.parentElement;
+        
+        // Apply transform to center the canvas with offset
+        this.canvas.style.transform = `translate(${this.canvasOffset.x}px, ${this.canvasOffset.y}px)`;
+        
+        // Update guide positions
+        this.renderGuides();
+    }
+    
+    resetCanvasPan() {
+        this.canvasOffset.x = 0;
+        this.canvasOffset.y = 0;
+        this.applyCanvasOffset();
+    }
 
     clearCanvas() {
         if (confirm('Are you sure you want to clear the canvas?')) {
@@ -2464,10 +3322,947 @@ class BitsDraw {
             }, 300);
         }, 2000);
     }
+
+    // ===== THEME MANAGEMENT =====
+    
+    setupThemeManagement() {
+        // Load saved theme or default to auto
+        this.currentTheme = localStorage.getItem('bitsdraw-theme') || 'auto';
+        this.applyTheme(this.currentTheme);
+        
+        // Listen for system theme changes
+        if (window.matchMedia) {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            
+            // Use addEventListener instead of deprecated addListener
+            const handleThemeChange = () => {
+                console.log('System theme changed, current theme:', this.currentTheme);
+                if (this.currentTheme === 'auto') {
+                    console.log('Applying auto theme...');
+                    this.applyTheme('auto');
+                }
+            };
+            
+            // Try both methods for compatibility
+            if (mediaQuery.addEventListener) {
+                mediaQuery.addEventListener('change', handleThemeChange);
+            } else if (mediaQuery.addListener) {
+                mediaQuery.addListener(handleThemeChange);
+            }
+            
+            console.log('Auto theme setup complete. System prefers dark:', mediaQuery.matches);
+        }
+    }
+    
+    setTheme(theme) {
+        this.currentTheme = theme;
+        localStorage.setItem('bitsdraw-theme', theme);
+        this.applyTheme(theme);
+        this.showNotification(`Theme changed to ${theme}`, 'info');
+    }
+    
+    applyTheme(theme) {
+        const html = document.documentElement;
+        console.log('Applying theme:', theme);
+        
+        // Remove existing theme attributes
+        html.removeAttribute('data-theme');
+        
+        if (theme === 'dark') {
+            console.log('Setting dark theme');
+            html.setAttribute('data-theme', 'dark');
+        } else if (theme === 'auto') {
+            // Check system preference
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            console.log('Auto theme - system prefers dark:', prefersDark);
+            if (prefersDark) {
+                console.log('Setting dark theme for auto mode');
+                html.setAttribute('data-theme', 'dark');
+            } else {
+                console.log('Setting light theme for auto mode');
+            }
+        } else {
+            console.log('Setting light theme');
+        }
+        
+        console.log('Final data-theme attribute:', html.getAttribute('data-theme'));
+        
+        this.updateThemeMenuIndicators();
+    }
+    
+    updateThemeMenuIndicators() {
+        // Update menu indicators to show current theme
+        document.querySelectorAll('[data-action^="theme-"]').forEach(item => {
+            const themeType = item.dataset.action.replace('theme-', '');
+            if (themeType === this.currentTheme) {
+                item.style.fontWeight = 'bold';
+                item.textContent = '• ' + item.textContent.replace('• ', '');
+            } else {
+                item.style.fontWeight = 'normal';
+                item.textContent = item.textContent.replace('• ', '');
+            }
+        });
+    }
+
+    // Hand tool layer dragging methods
+    startLayerDrag(e) {
+        if (this.currentTool !== 'hand') return;
+        
+        this.isDraggingLayer = true;
+        this.layerDragStart = {
+            x: e.clientX,
+            y: e.clientY,
+            canvasOffsetX: this.canvasOffset ? this.canvasOffset.x : 0,
+            canvasOffsetY: this.canvasOffset ? this.canvasOffset.y : 0
+        };
+        
+        // Change cursor to grabbing
+        this.canvas.style.cursor = 'grabbing';
+        
+        // Change the hand icon to grabbing
+        const handTool = document.getElementById('hand-tool');
+        if (handTool) {
+            const icon = handTool.querySelector('i');
+            if (icon) {
+                icon.className = 'ph ph-hand-grabbing';
+            }
+        }
+        
+        e.preventDefault();
+    }
+
+    updateLayerDrag(e) {
+        if (!this.isDraggingLayer || !this.layerDragStart) return;
+        
+        const deltaX = e.clientX - this.layerDragStart.x;
+        const deltaY = e.clientY - this.layerDragStart.y;
+        
+        // Initialize canvas offset if it doesn't exist
+        if (!this.canvasOffset) {
+            this.canvasOffset = { x: 0, y: 0 };
+        }
+        
+        // Update canvas offset
+        this.canvasOffset.x = this.layerDragStart.canvasOffsetX + deltaX;
+        this.canvasOffset.y = this.layerDragStart.canvasOffsetY + deltaY;
+        
+        // Apply the transformation to the canvas
+        this.canvas.style.transform = `translate(${this.canvasOffset.x}px, ${this.canvasOffset.y}px)`;
+        
+        // Update guide positions
+        this.renderGuides();
+        
+        e.preventDefault();
+    }
+
+    stopLayerDrag() {
+        if (!this.isDraggingLayer) return;
+        
+        this.isDraggingLayer = false;
+        this.layerDragStart = null;
+        
+        // Change cursor back to grab
+        this.canvas.style.cursor = 'grab';
+        
+        // Change the hand icon back to regular hand
+        const handTool = document.getElementById('hand-tool');
+        if (handTool) {
+            const icon = handTool.querySelector('i');
+            if (icon) {
+                icon.className = 'ph ph-hand';
+            }
+        }
+    }
+
+    // Move tool layer content methods
+    startLayerMove(e) {
+        if (this.currentTool !== 'move') return;
+        
+        const activeLayer = this.editor.getActiveLayer();
+        if (!activeLayer) return;
+        
+        this.isMovingLayer = true;
+        const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+        
+        // Save original pixels from active layer only
+        const originalPixels = [];
+        for (let y = 0; y < this.editor.height; y++) {
+            originalPixels[y] = [];
+            for (let x = 0; x < this.editor.width; x++) {
+                const index = this.editor.getPixelIndex(x, y);
+                originalPixels[y][x] = activeLayer.pixels[index];
+            }
+        }
+        
+        this.layerMoveStart = {
+            x: coords.x,
+            y: coords.y,
+            originalPixels: originalPixels
+        };
+        
+        e.preventDefault();
+    }
+
+    updateLayerMove(e) {
+        if (!this.isMovingLayer || !this.layerMoveStart) return;
+        
+        const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+        const deltaX = coords.x - this.layerMoveStart.x;
+        const deltaY = coords.y - this.layerMoveStart.y;
+        
+        // Only update if there's actually movement
+        if (deltaX === 0 && deltaY === 0) return;
+        
+        this.moveLayerContent(deltaX, deltaY);
+        
+        e.preventDefault();
+    }
+
+    stopLayerMove() {
+        if (!this.isMovingLayer) return;
+        
+        this.isMovingLayer = false;
+        this.layerMoveStart = null;
+        
+        // Save state for undo
+        this.editor.saveState();
+        this.updateOutput();
+    }
+
+    moveLayerContent(deltaX, deltaY) {
+        if (!this.layerMoveStart) return;
+        
+        const activeLayer = this.editor.getActiveLayer();
+        if (!activeLayer) return;
+        
+        const { width, height } = { width: this.editor.width, height: this.editor.height };
+        const originalPixels = this.layerMoveStart.originalPixels;
+        
+        // Clear current layer first
+        activeLayer.pixels.fill(0);
+        
+        // Create new pixel layout by moving original pixels
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let sourceX = x - deltaX;
+                let sourceY = y - deltaY;
+                
+                if (this.moveLoop) {
+                    // Loop/wrap mode - pixels wrap around edges
+                    sourceX = ((sourceX % width) + width) % width;
+                    sourceY = ((sourceY % height) + height) % height;
+                } else {
+                    // Clip mode - pixels outside bounds are lost
+                    if (sourceX < 0 || sourceX >= width || sourceY < 0 || sourceY >= height) {
+                        continue; // Leave as 0 (background)
+                    }
+                }
+                
+                // Get original pixel value and set it at new position
+                if (sourceY < originalPixels.length && sourceX < originalPixels[sourceY].length) {
+                    const pixelValue = originalPixels[sourceY][sourceX];
+                    if (pixelValue) {
+                        const index = this.editor.getPixelIndex(x, y);
+                        activeLayer.pixels[index] = pixelValue;
+                    }
+                }
+            }
+        }
+        
+        // Mark layer as dirty and redraw
+        this.editor.markCompositeDirty();
+        this.editor.addDirtyRect(0, 0, width, height);
+        this.editor.redraw();
+    }
+
+    // Guide tool methods
+    startGuideCreation(e) {
+        if (this.currentTool !== 'guide') return;
+        
+        // Only allow new guide creation if not dragging
+        if (this.isDraggingGuide) {
+            return;
+        }
+        
+        const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+        
+        // Check if clicking on a guide handle - if so, don't create new guide
+        const clickedGuide = this.getGuideAtPoint(coords.x, coords.y);
+        if (clickedGuide) {
+            // Start dragging existing guide immediately
+            this.preparePotentialGuideDrag(e, clickedGuide);
+            this.isDraggingGuide = true;
+            return;
+        }
+        
+        // Start creating new guide only in empty space
+        this.isCreatingGuide = true;
+        
+        // Snap to grid if enabled
+        if (this.guideSnap && this.showGrid) {
+            coords.x = Math.round(coords.x);
+            coords.y = Math.round(coords.y);
+        }
+        
+        this.guideCreationStart = {
+            x: coords.x,
+            y: coords.y
+        };
+        
+        // Start creating preview guide
+        this.currentGuidePreview = {
+            x: coords.x,
+            y: coords.y,
+            w: 0,
+            h: 0
+        };
+        
+        this.renderGuides();
+        e.preventDefault();
+    }
+
+    updateGuideCreation(e) {
+        if (!this.isCreatingGuide || !this.guideCreationStart) return;
+        
+        const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+        
+        // Snap to grid if enabled
+        if (this.guideSnap && this.showGrid) {
+            coords.x = Math.round(coords.x);
+            coords.y = Math.round(coords.y);
+        }
+        
+        // Calculate guide dimensions
+        const startX = Math.min(this.guideCreationStart.x, coords.x);
+        const startY = Math.min(this.guideCreationStart.y, coords.y);
+        const endX = Math.max(this.guideCreationStart.x, coords.x);
+        const endY = Math.max(this.guideCreationStart.y, coords.y);
+        
+        this.currentGuidePreview = {
+            x: startX,
+            y: startY,
+            w: endX - startX,
+            h: endY - startY
+        };
+        
+        this.renderGuides();
+        e.preventDefault();
+    }
+
+    finishGuideCreation(e) {
+        if (!this.isCreatingGuide || !this.guideCreationStart || !this.currentGuidePreview) return;
+        
+        // Only create guide if it has meaningful size
+        if (this.currentGuidePreview.w > 0 && this.currentGuidePreview.h > 0) {
+            const guideName = document.getElementById('guide-name').value || 'Guide';
+            
+            const guide = {
+                id: 'guide_' + Date.now(),
+                name: guideName,
+                x: this.currentGuidePreview.x,
+                y: this.currentGuidePreview.y,
+                w: this.currentGuidePreview.w,
+                h: this.currentGuidePreview.h,
+                color: this.guideColors[this.guideColorIndex % this.guideColors.length]
+            };
+            
+            this.guides.push(guide);
+            this.guideColorIndex++;
+            this.activeGuideId = guide.id;
+            
+            // Update guide name for next guide
+            const nextGuideNumber = this.guides.length + 1;
+            document.getElementById('guide-name').value = 'Guide ' + nextGuideNumber;
+            
+            this.updateGuidesPanel();
+        }
+        
+        this.isCreatingGuide = false;
+        this.guideCreationStart = null;
+        this.currentGuidePreview = null;
+        this.renderGuides();
+        
+        e.preventDefault();
+    }
+
+    renderGuides() {
+        // Remove existing guide overlays
+        const existingOverlays = document.querySelectorAll('.guide-overlay');
+        existingOverlays.forEach(overlay => overlay.remove());
+        
+        // Don't render guides if showGuides is false
+        if (!this.showGuides) {
+            return;
+        }
+        
+        // Get canvas area container for clipping
+        const canvasArea = this.canvas.parentElement;
+        const canvasAreaRect = canvasArea.getBoundingClientRect();
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const zoom = this.editor.zoom;
+        
+        // Only show handles when guide tool is active
+        const showHandles = this.currentTool === 'guide';
+        
+        // Render existing guides
+        this.guides.forEach(guide => {
+            const isActive = guide.id === this.activeGuideId;
+            this.renderGuideOverlay(guide, canvasRect, canvasAreaRect, zoom, isActive, false, showHandles);
+        });
+        
+        // Render preview guide during creation
+        if (this.currentGuidePreview && this.isCreatingGuide) {
+            const previewGuide = {
+                ...this.currentGuidePreview,
+                color: this.guideColors[this.guideColorIndex % this.guideColors.length]
+            };
+            this.renderGuideOverlay(previewGuide, canvasRect, canvasAreaRect, zoom, true, true, showHandles);
+        }
+    }
+
+    renderGuideOverlay(guide, canvasRect, canvasAreaRect, zoom, isActive = false, isPreview = false, showHandles = true) {
+        const overlay = document.createElement('div');
+        overlay.className = 'guide-overlay';
+        overlay.style.position = 'absolute';
+        
+        // Calculate guide position relative to canvas (no extra offset needed)
+        const guideLeft = canvasRect.left + guide.x * zoom;
+        const guideTop = canvasRect.top + guide.y * zoom;
+        const guideWidth = guide.w * zoom;
+        const guideHeight = guide.h * zoom;
+        
+        // Check if guide is visible within canvas area bounds
+        const areaLeft = canvasAreaRect.left;
+        const areaTop = canvasAreaRect.top;
+        const areaRight = canvasAreaRect.right;
+        const areaBottom = canvasAreaRect.bottom;
+        
+        // Skip rendering if guide is completely outside canvas area
+        if (guideLeft >= areaRight || guideTop >= areaBottom || 
+            guideLeft + guideWidth <= areaLeft || guideTop + guideHeight <= areaTop) {
+            return;
+        }
+        
+        // Clip guide to canvas area bounds
+        const clippedLeft = Math.max(guideLeft, areaLeft);
+        const clippedTop = Math.max(guideTop, areaTop);
+        const clippedRight = Math.min(guideLeft + guideWidth, areaRight);
+        const clippedBottom = Math.min(guideTop + guideHeight, areaBottom);
+        
+        overlay.style.left = clippedLeft + 'px';
+        overlay.style.top = clippedTop + 'px';
+        overlay.style.width = (clippedRight - clippedLeft) + 'px';
+        overlay.style.height = (clippedBottom - clippedTop) + 'px';
+        overlay.style.borderColor = guide.color;
+        overlay.style.opacity = isActive ? '0.6' : '0.3';
+        overlay.style.zIndex = isActive ? '102' : '100';
+        
+        // Add thicker border for active guide
+        if (isActive) {
+            overlay.style.borderWidth = '3px';
+        }
+        
+        if (isPreview) {
+            overlay.style.borderStyle = 'dashed';
+            overlay.style.opacity = '0.8';
+        }
+        
+        if (!isPreview) {
+            overlay.dataset.guideId = guide.id;
+            overlay.style.pointerEvents = 'none'; // Let canvas handle mouse events
+            
+            // Add drag handles to the guide only if showHandles is true
+            if (showHandles) {
+                this.addGuideHandles(overlay, guide, isActive);
+            }
+        }
+        
+        document.body.appendChild(overlay);
+    }
+
+    addGuideHandles(overlay, guide, isActive) {
+        // Add center handle for moving the guide
+        this.addMoveHandle(overlay, guide, isActive);
+        
+        // Add corner handles for resizing
+        this.addResizeHandles(overlay, guide);
+    }
+
+    addMoveHandle(overlay, guide, isActive) {
+        const handle = document.createElement('div');
+        handle.className = 'guide-handle guide-move-handle';
+        handle.style.position = 'absolute';
+        handle.style.width = isActive ? '16px' : '12px';
+        handle.style.height = isActive ? '16px' : '12px';
+        handle.style.background = guide.color;
+        handle.style.border = isActive ? '3px solid white' : '2px solid white';
+        handle.style.borderRadius = '50%';
+        handle.style.cursor = 'move';
+        handle.style.left = '50%';
+        handle.style.top = '50%';
+        handle.style.transform = 'translate(-50%, -50%)';
+        handle.style.pointerEvents = 'all';
+        handle.style.zIndex = '103';
+        handle.style.boxShadow = isActive ? '0 2px 6px rgba(0,0,0,0.4)' : '0 1px 3px rgba(0,0,0,0.3)';
+        
+        // Add mouse events to handle
+        handle.addEventListener('mousedown', (e) => {
+            if (this.currentTool === 'guide') {
+                e.stopPropagation();
+                e.preventDefault();
+                
+                // Start dragging existing guide
+                this.preparePotentialGuideDrag(e, guide, 'move');
+                this.isDraggingGuide = true;
+            }
+        });
+        
+        handle.addEventListener('mouseenter', () => {
+            if (this.currentTool === 'guide') {
+                handle.style.transform = 'translate(-50%, -50%) scale(1.2)';
+            }
+        });
+        
+        handle.addEventListener('mouseleave', () => {
+            handle.style.transform = 'translate(-50%, -50%) scale(1)';
+        });
+        
+        overlay.appendChild(handle);
+    }
+
+    addResizeHandles(overlay, guide) {
+        const handlePositions = [
+            { pos: 'nw', left: '0%', top: '0%', cursor: 'nw-resize' },
+            { pos: 'ne', left: '100%', top: '0%', cursor: 'ne-resize' },
+            { pos: 'sw', left: '0%', top: '100%', cursor: 'sw-resize' },
+            { pos: 'se', left: '100%', top: '100%', cursor: 'se-resize' }
+        ];
+        
+        handlePositions.forEach(position => {
+            const handle = document.createElement('div');
+            handle.className = `guide-handle guide-resize-handle guide-resize-${position.pos}`;
+            handle.style.position = 'absolute';
+            handle.style.width = '10px';
+            handle.style.height = '10px';
+            handle.style.background = guide.color;
+            handle.style.border = '2px solid white';
+            handle.style.borderRadius = '2px'; // Square handles
+            handle.style.cursor = position.cursor;
+            handle.style.left = position.left;
+            handle.style.top = position.top;
+            handle.style.transform = 'translate(-50%, -50%)';
+            handle.style.pointerEvents = 'all';
+            handle.style.zIndex = '104';
+            handle.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
+            
+            
+            // Add mouse events to resize handle
+            handle.addEventListener('mousedown', (e) => {
+                if (this.currentTool === 'guide') {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    
+                    
+                    // Start resizing guide
+                    this.preparePotentialGuideDrag(e, guide, 'resize', position.pos);
+                    this.isResizingGuide = true;
+                }
+            });
+            
+            handle.addEventListener('mouseenter', () => {
+                if (this.currentTool === 'guide') {
+                    handle.style.transform = 'translate(-50%, -50%) scale(1.3)';
+                }
+            });
+            
+            handle.addEventListener('mouseleave', () => {
+                handle.style.transform = 'translate(-50%, -50%) scale(1)';
+            });
+            
+            overlay.appendChild(handle);
+        });
+    }
+
+    updateGuidesPanel() {
+        const guidesList = document.getElementById('guides-list');
+        guidesList.innerHTML = '';
+        
+        this.guides.forEach(guide => {
+            const guideItem = document.createElement('div');
+            guideItem.className = 'guide-item';
+            if (guide.id === this.activeGuideId) {
+                guideItem.classList.add('active');
+            }
+            
+            guideItem.innerHTML = `
+                <div class="guide-color" style="background-color: ${guide.color}"></div>
+                <div class="guide-info">
+                    <div class="guide-name">${guide.name}</div>
+                    <div class="guide-coords">${guide.x},${guide.y} ${guide.w}×${guide.h}</div>
+                </div>
+                <div class="guide-actions">
+                    <button class="guide-action" title="Select" onclick="bitsDraw.selectGuide('${guide.id}')">
+                        <i class="ph ph-cursor"></i>
+                    </button>
+                    <button class="guide-action" title="Delete" onclick="bitsDraw.deleteGuide('${guide.id}')">
+                        <i class="ph ph-trash"></i>
+                    </button>
+                </div>
+            `;
+            
+            guideItem.addEventListener('click', (e) => {
+                // Only select if not clicking on action buttons
+                if (!e.target.closest('.guide-action')) {
+                    this.selectGuide(guide.id);
+                }
+            });
+            
+            guidesList.appendChild(guideItem);
+        });
+    }
+
+    selectGuide(guideId) {
+        this.activeGuideId = guideId;
+        this.updateGuidesPanel();
+        this.renderGuides();
+    }
+
+    deleteGuide(guideId) {
+        this.guides = this.guides.filter(guide => guide.id !== guideId);
+        if (this.activeGuideId === guideId) {
+            this.activeGuideId = null;
+        }
+        this.updateGuidesPanel();
+        this.renderGuides();
+    }
+
+    clearAllGuides() {
+        this.guides = [];
+        this.activeGuideId = null;
+        this.guideColorIndex = 0;
+        this.updateGuidesPanel();
+        this.renderGuides();
+    }
+
+    exportGuides(format = 'txt') {
+        if (this.guides.length === 0) {
+            this.showNotification('No guides to export', 'error');
+            return;
+        }
+        
+        let content = '';
+        
+        if (format === 'txt') {
+            this.guides.forEach(guide => {
+                content += `${guide.name} ${guide.x} ${guide.y} ${guide.w} ${guide.h}\n`;
+            });
+        } else if (format === 'json') {
+            const guidesData = this.guides.map(guide => ({
+                name: guide.name,
+                x: guide.x,
+                y: guide.y,
+                w: guide.w,
+                h: guide.h
+            }));
+            content = JSON.stringify(guidesData, null, 2);
+        }
+        
+        // Create and download file
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `guides.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        this.showNotification(`Guides exported as ${format.toUpperCase()}`, 'success');
+    }
+
+    setupGuidesPanel() {
+        // Add guide button
+        const addBtn = document.getElementById('add-guide-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => {
+            const guideName = document.getElementById('guide-name').value || 'Guide';
+            
+            // Create a default guide in the center
+            const guide = {
+                id: 'guide_' + Date.now(),
+                name: guideName,
+                x: Math.floor(this.editor.width / 4),
+                y: Math.floor(this.editor.height / 4),
+                w: Math.floor(this.editor.width / 2),
+                h: Math.floor(this.editor.height / 2),
+                color: this.guideColors[this.guideColorIndex % this.guideColors.length]
+            };
+            
+            this.guides.push(guide);
+            this.guideColorIndex++;
+            this.activeGuideId = guide.id;
+            
+            // Update guide name for next guide
+            const nextGuideNumber = this.guides.length + 1;
+            document.getElementById('guide-name').value = 'Guide ' + nextGuideNumber;
+            
+            this.updateGuidesPanel();
+            this.renderGuides();
+            });
+        } else {
+            console.error('Add guide button not found');
+        }
+        
+        // Export guides button with dropdown
+        const exportBtn = document.getElementById('export-guides-btn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', (e) => {
+                if (this.guides.length === 0) {
+                    this.showNotification('No guides to export', 'error');
+                    return;
+                }
+                
+                this.showExportGuidesDropdown(e.target);
+            });
+        } else {
+            console.error('Export guides button not found');
+        }
+        
+        // Clear all guides button
+        const clearBtn = document.getElementById('clear-guides-btn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                if (this.guides.length === 0) {
+                    this.showNotification('No guides to clear', 'error');
+                    return;
+                }
+                
+                if (confirm('Clear all guides? This cannot be undone.')) {
+                    this.clearAllGuides();
+                    this.showNotification('All guides cleared', 'success');
+                }
+            });
+        } else {
+            console.error('Clear guides button not found');
+        }
+    }
+
+    // Guide interaction methods
+    getGuideAtPoint(x, y) {
+        // Find guide that contains the point (coordinates are already in canvas space)
+        return this.guides.find(guide => {
+            return x >= guide.x && x <= guide.x + guide.w &&
+                   y >= guide.y && y <= guide.y + guide.h;
+        });
+    }
+
+    preparePotentialGuideDrag(e, guide, operation = 'move', direction = null) {
+        // Use screen coordinates for drag calculation
+        this.guideDragStart = {
+            screenX: e.clientX,
+            screenY: e.clientY,
+            guideOriginal: { ...guide },
+            operation: operation
+        };
+        this.draggedGuideId = guide.id;
+        this.guideResizeDirection = direction;
+        this.isDraggingGuide = false; // Will become true on mouse move
+        this.isResizingGuide = false;
+    }
+
+    updateGuideDrag(e) {
+        if (!this.guideDragStart || !this.draggedGuideId) {
+            return;
+        }
+        
+        const operation = this.guideDragStart.operation;
+        
+        if (!this.isDraggingGuide && !this.isResizingGuide) {
+            // Start operation
+            if (operation === 'resize') {
+                this.isResizingGuide = true;
+            } else {
+                this.isDraggingGuide = true;
+            }
+        }
+        
+        // Calculate delta in screen coordinates, then convert to canvas coordinates
+        const deltaScreenX = e.clientX - this.guideDragStart.screenX;
+        const deltaScreenY = e.clientY - this.guideDragStart.screenY;
+        
+        // Convert screen delta to canvas delta (account for zoom)
+        const deltaX = Math.round(deltaScreenX / this.editor.zoom);
+        const deltaY = Math.round(deltaScreenY / this.editor.zoom);
+        
+        const guide = this.guides.find(g => g.id === this.draggedGuideId);
+        if (guide) {
+            if (operation === 'resize') {
+                this.updateGuideResize(guide, deltaX, deltaY);
+            } else {
+                this.updateGuideMove(guide, deltaX, deltaY);
+            }
+            
+            this.updateGuidesPanel();
+            this.renderGuides();
+        }
+        
+        e.preventDefault();
+    }
+
+    updateGuideMove(guide, deltaX, deltaY) {
+        let newX = this.guideDragStart.guideOriginal.x + deltaX;
+        let newY = this.guideDragStart.guideOriginal.y + deltaY;
+        
+        // Snap to grid if enabled
+        if (this.guideSnap && this.showGrid) {
+            newX = Math.round(newX);
+            newY = Math.round(newY);
+        }
+        
+        // Keep guide within canvas bounds
+        newX = Math.max(0, Math.min(newX, this.editor.width - guide.w));
+        newY = Math.max(0, Math.min(newY, this.editor.height - guide.h));
+        guide.x = newX;
+        guide.y = newY;
+    }
+
+    updateGuideResize(guide, deltaX, deltaY) {
+        const original = this.guideDragStart.guideOriginal;
+        const direction = this.guideResizeDirection;
+        
+        
+        let newX = original.x;
+        let newY = original.y;
+        let newW = original.w;
+        let newH = original.h;
+        
+        // Update dimensions based on resize direction
+        switch (direction) {
+            case 'nw': // Top-left
+                newX = original.x + deltaX;
+                newY = original.y + deltaY;
+                newW = original.w - deltaX;
+                newH = original.h - deltaY;
+                break;
+            case 'ne': // Top-right
+                newY = original.y + deltaY;
+                newW = original.w + deltaX;
+                newH = original.h - deltaY;
+                break;
+            case 'sw': // Bottom-left
+                newX = original.x + deltaX;
+                newW = original.w - deltaX;
+                newH = original.h + deltaY;
+                break;
+            case 'se': // Bottom-right
+                newW = original.w + deltaX;
+                newH = original.h + deltaY;
+                break;
+        }
+        
+        // Minimum size constraints
+        const minSize = 10;
+        if (newW < minSize) {
+            if (direction.includes('w')) {
+                newX = original.x + original.w - minSize;
+            }
+            newW = minSize;
+        }
+        if (newH < minSize) {
+            if (direction.includes('n')) {
+                newY = original.y + original.h - minSize;
+            }
+            newH = minSize;
+        }
+        
+        // Keep within canvas bounds
+        newX = Math.max(0, newX);
+        newY = Math.max(0, newY);
+        newW = Math.min(newW, this.editor.width - newX);
+        newH = Math.min(newH, this.editor.height - newY);
+        
+        // Snap to grid if enabled
+        if (this.guideSnap && this.showGrid) {
+            newX = Math.round(newX);
+            newY = Math.round(newY);
+            newW = Math.round(newW);
+            newH = Math.round(newH);
+        }
+        guide.x = newX;
+        guide.y = newY;
+        guide.w = newW;
+        guide.h = newH;
+    }
+
+    stopGuideDrag(e) {
+        this.isDraggingGuide = false;
+        this.isResizingGuide = false;
+        this.draggedGuideId = null;
+        this.guideDragStart = null;
+        this.guideResizeDirection = null;
+    }
+
+    showExportGuidesDropdown(button) {
+        // Remove existing dropdown
+        const existingDropdown = document.querySelector('.export-guides-dropdown');
+        if (existingDropdown) {
+            existingDropdown.remove();
+            return;
+        }
+        
+        const dropdown = document.createElement('div');
+        dropdown.className = 'export-guides-dropdown custom-dropdown';
+        dropdown.style.position = 'fixed';
+        dropdown.style.zIndex = '1000';
+        
+        // Position dropdown
+        const rect = button.getBoundingClientRect();
+        dropdown.style.left = rect.left + 'px';
+        dropdown.style.top = (rect.bottom + 2) + 'px';
+        dropdown.style.minWidth = rect.width + 'px';
+        
+        // Create dropdown items
+        const txtItem = document.createElement('div');
+        txtItem.className = 'dropdown-item';
+        txtItem.innerHTML = '<i class="ph ph-download"></i> Download as .txt';
+        txtItem.addEventListener('click', () => {
+            this.exportGuides('txt');
+            dropdown.remove();
+        });
+        
+        const jsonItem = document.createElement('div');
+        jsonItem.className = 'dropdown-item';
+        jsonItem.innerHTML = '<i class="ph ph-download"></i> Download as .json';
+        jsonItem.addEventListener('click', () => {
+            this.exportGuides('json');
+            dropdown.remove();
+        });
+        
+        dropdown.appendChild(txtItem);
+        dropdown.appendChild(jsonItem);
+        
+        document.body.appendChild(dropdown);
+        
+        // Close dropdown when clicking outside
+        const closeDropdown = (e) => {
+            if (!dropdown.contains(e.target) && e.target !== button) {
+                dropdown.remove();
+                document.removeEventListener('click', closeDropdown);
+            }
+        };
+        
+        setTimeout(() => {
+            document.addEventListener('click', closeDropdown);
+        }, 0);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     const app = new BitsDraw();
+    
+    // Expose app globally for refactor bridge
+    window.bitsDraw = app;
     
     const style = document.createElement('style');
     style.textContent = `

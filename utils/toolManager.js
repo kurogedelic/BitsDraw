@@ -9,7 +9,7 @@ class ToolManager {
     }
 
     setupToolEvents() {
-        const tools = ['pencil', 'bucket', 'select-rect', 'select-circle', 
+        const tools = ['brush', 'pencil', 'bucket', 'select-rect', 'select-circle', 
                       'line', 'text', 'rect', 'circle', 'spray'];
         
         tools.forEach(tool => {
@@ -84,7 +84,7 @@ class ToolManager {
         }
         
         // Update brush cursor visibility
-        if (tool === 'pencil') {
+        if (tool === 'brush') {
             this.app.updateBrushCursorSize();
         } else {
             this.app.hideBrushCursor();
@@ -117,8 +117,11 @@ class ToolManager {
 
         // Show relevant options based on tool
         switch(tool) {
-            case 'pencil':
+            case 'brush':
                 document.getElementById('pencil-options').style.display = 'block';
+                break;
+            case 'pencil':
+                // Pencil has no options - simple 1-pixel tool
                 break;
             case 'rect':
             case 'circle':
