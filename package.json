@@ -1,0 +1,51 @@
+{
+  "name": "bitsdraw",
+  "version": "1.0.1",
+  "description": "Professional 1-bit graphics editor for U8G2 displays with WASM acceleration",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite preview --port 8080",
+    "lint": "eslint src --ext js --report-unused-disable-directives --max-warnings 0",
+    "format": "prettier --write src/**/*.js",
+    "clean": "rm -rf dist node_modules",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "bitmap",
+    "editor",
+    "U8G2",
+    "OLED",
+    "pixel-art",
+    "Arduino",
+    "ESP32",
+    "graphics",
+    "monochrome",
+    "embedded"
+  ],
+  "author": "kurogedelic",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kurogedelic/BitsDraw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kurogedelic/BitsDraw/issues"
+  },
+  "homepage": "https://kurogedelic.github.io/BitsDraw",
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "vite-plugin-pwa": "^0.17.0",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.0",
+    "@types/node": "^20.10.0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

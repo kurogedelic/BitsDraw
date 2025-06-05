@@ -18,6 +18,7 @@ class OptimizedBitmapEditor {
         this.zoom = 4;
         this.inverted = false;
         this.showGrid = false;
+        this.showCheckerboard = true; // Default to showing checkerboard
         this.drawColor = '#000000';
         this.backgroundColor = '#FFFFFF';
         
@@ -51,6 +52,13 @@ class OptimizedBitmapEditor {
         return new Uint8Array(this.width * this.height);
     }
 
+    createEmptyAlpha() {
+        // Create alpha channel - default to fully transparent (0)
+        const alpha = new Uint8Array(this.width * this.height);
+        alpha.fill(0);
+        return alpha;
+    }
+
     getPixelIndex(x, y) {
         return y * this.width + x;
     }
@@ -61,7 +69,8 @@ class OptimizedBitmapEditor {
             name: name,
             visible: true,
             blendMode: 'normal',
-            pixels: this.createEmptyBitmap()
+            pixels: this.createEmptyBitmap(),
+            alpha: this.createEmptyAlpha()
         };
         this.layers.push(layer);
         this.activeLayerIndex = this.layers.length - 1;
@@ -159,7 +168,7 @@ class OptimizedBitmapEditor {
         if (!activeLayer) return;
         
         for (const operation of this.batchOperations) {
-            operation(activeLayer.pixels);
+            operation(activeLayer);
         }
         
         this.batchOperations = [];
@@ -171,13 +180,50 @@ class OptimizedBitmapEditor {
     setPixel(x, y, value, pattern = null) {
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
         
-        const operation = (pixels) => {
+        const operation = (layer) => {
             const index = this.getPixelIndex(x, y);
-            if (pattern && typeof DitherPatterns !== 'undefined') {
-                pixels[index] = DitherPatterns.applyPattern(pattern, x, y);
+            if (pattern && typeof Patterns !== 'undefined') {
+                const patternValue = Patterns.applyPattern(pattern, x, y);
+                // Only set draw data if alpha is 1
+                if (layer.alpha[index] === 1) {
+                    layer.pixels[index] = patternValue;
+                }
             } else {
-                pixels[index] = value;
+                layer.pixels[index] = value;
             }
+        };
+        
+        this.batchPixelOperation(operation);
+        this.addDirtyRect(x, y);
+    }
+
+    setPixelWithAlpha(x, y, drawValue, alphaValue, pattern = null) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+        
+        const operation = (layer) => {
+            const index = this.getPixelIndex(x, y);
+            layer.alpha[index] = alphaValue;
+            if (alphaValue === 1) {
+                if (pattern && typeof Patterns !== 'undefined') {
+                    layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                } else {
+                    layer.pixels[index] = drawValue;
+                }
+            } else {
+                layer.pixels[index] = drawValue; // Set draw value regardless of alpha
+            }
+        };
+        
+        this.batchPixelOperation(operation);
+        this.addDirtyRect(x, y);
+    }
+
+    setAlpha(x, y, alphaValue) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+        
+        const operation = (layer) => {
+            const index = this.getPixelIndex(x, y);
+            layer.alpha[index] = alphaValue;
         };
         
         this.batchPixelOperation(operation);
@@ -194,71 +240,115 @@ class OptimizedBitmapEditor {
         return activeLayer.pixels[index];
     }
 
+    getAlpha(x, y) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return 0;
+        
+        const activeLayer = this.getActiveLayer();
+        if (!activeLayer) return 0;
+        
+        const index = this.getPixelIndex(x, y);
+        return activeLayer.alpha[index];
+    }
+
+    getPixelWithAlpha(x, y) {
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) return { draw: 0, alpha: 0 };
+        
+        const activeLayer = this.getActiveLayer();
+        if (!activeLayer) return { draw: 0, alpha: 0 };
+        
+        const index = this.getPixelIndex(x, y);
+        return {
+            draw: activeLayer.pixels[index],
+            alpha: activeLayer.alpha[index]
+        };
+    }
+
     // ===== EFFICIENT FLOOD FILL =====
     
     floodFill(startX, startY, newValue, pattern = null) {
+        // Use the new alpha-aware flood fill with alpha=1
+        this.floodFillWithAlpha(startX, startY, newValue, 1, pattern);
+    }
+
+    floodFillWithAlpha(startX, startY, newDrawValue, newAlphaValue, pattern = null) {
         const activeLayer = this.getActiveLayer();
         if (!activeLayer) return;
         
+        // Bounds checking
+        if (startX < 0 || startX >= this.width || startY < 0 || startY >= this.height) return;
+        
         const startIndex = this.getPixelIndex(startX, startY);
-        const originalValue = activeLayer.pixels[startIndex];
+        const originalDrawValue = activeLayer.pixels[startIndex];
+        const originalAlphaValue = activeLayer.alpha[startIndex];
         
-        if (originalValue === newValue) return;
+        // Early exit if trying to fill with the same values
+        if (pattern && typeof Patterns !== 'undefined') {
+            const patternValue = Patterns.applyPattern(pattern, startX, startY);
+            if (originalDrawValue === patternValue && originalAlphaValue === newAlphaValue) return;
+        } else if (originalDrawValue === newDrawValue && originalAlphaValue === newAlphaValue) {
+            return;
+        }
         
-        // Scanline flood fill algorithm - much faster than recursive
+        // Direct flood fill algorithm without batch operations
         const stack = [{ x: startX, y: startY }];
-        const minX = 0;
-        const maxX = this.width - 1;
-        const minY = 0;
-        const maxY = this.height - 1;
+        const visited = new Array(this.width * this.height).fill(false);
+        let minX = startX, maxX = startX, minY = startY, maxY = startY;
+        let pixelsChanged = 0;
         
-        const operation = (pixels) => {
-            while (stack.length > 0) {
-                const { x, y } = stack.pop();
-                
-                if (x < minX || x > maxX || y < minY || y > maxY) continue;
-                
-                const index = this.getPixelIndex(x, y);
-                if (pixels[index] !== originalValue) continue;
-                
-                // Fill horizontally
-                let leftX = x;
-                let rightX = x;
-                
-                // Find left boundary
-                while (leftX > minX && pixels[this.getPixelIndex(leftX - 1, y)] === originalValue) {
-                    leftX--;
+        while (stack.length > 0) {
+            const { x, y } = stack.pop();
+            
+            // Bounds check
+            if (x < 0 || x >= this.width || y < 0 || y >= this.height) continue;
+            
+            const index = this.getPixelIndex(x, y);
+            
+            // Skip if already visited or not matching original values
+            if (visited[index] || 
+                activeLayer.pixels[index] !== originalDrawValue ||
+                activeLayer.alpha[index] !== originalAlphaValue) continue;
+            
+            // Mark as visited and fill pixel
+            visited[index] = true;
+            pixelsChanged++;
+            
+            // Update bounding box
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+            
+            // Set alpha first
+            activeLayer.alpha[index] = newAlphaValue;
+            
+            // Apply pattern or solid color for draw channel
+            if (newAlphaValue === 1) {
+                if (pattern && typeof Patterns !== 'undefined') {
+                    activeLayer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                } else {
+                    activeLayer.pixels[index] = newDrawValue;
                 }
-                
-                // Find right boundary
-                while (rightX < maxX && pixels[this.getPixelIndex(rightX + 1, y)] === originalValue) {
-                    rightX++;
-                }
-                
-                // Fill the line
-                for (let fillX = leftX; fillX <= rightX; fillX++) {
-                    const fillIndex = this.getPixelIndex(fillX, y);
-                    if (pattern && typeof DitherPatterns !== 'undefined') {
-                        pixels[fillIndex] = DitherPatterns.applyPattern(pattern, fillX, y);
-                    } else {
-                        pixels[fillIndex] = newValue;
-                    }
-                }
-                
-                // Add adjacent lines to stack
-                for (let fillX = leftX; fillX <= rightX; fillX++) {
-                    if (y > minY && pixels[this.getPixelIndex(fillX, y - 1)] === originalValue) {
-                        stack.push({ x: fillX, y: y - 1 });
-                    }
-                    if (y < maxY && pixels[this.getPixelIndex(fillX, y + 1)] === originalValue) {
-                        stack.push({ x: fillX, y: y + 1 });
-                    }
-                }
+            } else {
+                // For transparent pixels, still set draw value
+                activeLayer.pixels[index] = newDrawValue;
             }
-        };
+            
+            // Add adjacent pixels to stack
+            stack.push({ x: x + 1, y: y });     // Right
+            stack.push({ x: x - 1, y: y });     // Left
+            stack.push({ x: x, y: y + 1 });     // Down
+            stack.push({ x: x, y: y - 1 });     // Up
+        }
         
-        this.batchPixelOperation(operation);
-        this.addDirtyRect(0, 0, this.width, this.height);
+        // Only update if pixels were actually changed
+        if (pixelsChanged > 0) {
+            // Mark composite cache as dirty
+            this.markCompositeDirty();
+            // Update dirty rect to only affected area
+            this.addDirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+            // Force immediate render
+            this.scheduleRender();
+        }
     }
 
     // ===== OPTIMIZED SHAPE DRAWING =====
@@ -269,7 +359,7 @@ class OptimizedBitmapEditor {
         const endX = Math.max(x1, x2);
         const endY = Math.max(y1, y2);
         
-        const operation = (pixels) => {
+        const operation = (layer) => {
             for (let y = startY; y <= endY; y++) {
                 for (let x = startX; x <= endX; x++) {
                     if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
@@ -277,10 +367,12 @@ class OptimizedBitmapEditor {
                         
                         if ((filled) || (!filled && isBorder)) {
                             const index = this.getPixelIndex(x, y);
-                            if (pattern && typeof DitherPatterns !== 'undefined') {
-                                pixels[index] = DitherPatterns.applyPattern(pattern, x, y);
+                            // Set alpha=1 and draw value
+                            layer.alpha[index] = 1;
+                            if (pattern && typeof Patterns !== 'undefined') {
+                                layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
                             } else {
-                                pixels[index] = 1;
+                                layer.pixels[index] = 1;
                             }
                         }
                     }
@@ -299,7 +391,7 @@ class OptimizedBitmapEditor {
         const minY = Math.max(0, centerY - radius);
         const maxY = Math.min(this.height - 1, centerY + radius);
         
-        const operation = (pixels) => {
+        const operation = (layer) => {
             for (let y = minY; y <= maxY; y++) {
                 for (let x = minX; x <= maxX; x++) {
                     const dx = x - centerX;
@@ -318,10 +410,63 @@ class OptimizedBitmapEditor {
                     
                     if (shouldDraw) {
                         const index = this.getPixelIndex(x, y);
-                        if (pattern && typeof DitherPatterns !== 'undefined') {
-                            pixels[index] = DitherPatterns.applyPattern(pattern, x, y);
+                        // Set alpha=1 and draw value
+                        layer.alpha[index] = 1;
+                        if (pattern && typeof Patterns !== 'undefined') {
+                            layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
                         } else {
-                            pixels[index] = 1;
+                            layer.pixels[index] = 1;
+                        }
+                    }
+                }
+            }
+        };
+        
+        this.batchPixelOperation(operation);
+        this.addDirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+    }
+
+    drawEllipse(centerX, centerY, radiusX, radiusY, filled = false, borderOnly = false, pattern = null) {
+        const radiusXSquared = radiusX * radiusX;
+        const radiusYSquared = radiusY * radiusY;
+        const minX = Math.max(0, Math.floor(centerX - radiusX));
+        const maxX = Math.min(this.width - 1, Math.ceil(centerX + radiusX));
+        const minY = Math.max(0, Math.floor(centerY - radiusY));
+        const maxY = Math.min(this.height - 1, Math.ceil(centerY + radiusY));
+        
+        const operation = (layer) => {
+            for (let y = minY; y <= maxY; y++) {
+                for (let x = minX; x <= maxX; x++) {
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    
+                    // Ellipse equation: (x²/a²) + (y²/b²) = 1
+                    const ellipseValue = (dx * dx) / radiusXSquared + (dy * dy) / radiusYSquared;
+                    
+                    let shouldDraw = false;
+                    if (filled) {
+                        shouldDraw = ellipseValue <= 1.0;
+                    } else {
+                        // For border, check if pixel is on the edge of the ellipse
+                        const outerRadiusX = radiusX + 0.5;
+                        const outerRadiusY = radiusY + 0.5;
+                        const innerRadiusX = Math.max(0, radiusX - 0.5);
+                        const innerRadiusY = Math.max(0, radiusY - 0.5);
+                        
+                        const outerEllipse = (dx * dx) / (outerRadiusX * outerRadiusX) + (dy * dy) / (outerRadiusY * outerRadiusY);
+                        const innerEllipse = (dx * dx) / (innerRadiusX * innerRadiusX) + (dy * dy) / (innerRadiusY * innerRadiusY);
+                        
+                        shouldDraw = outerEllipse <= 1.0 && innerEllipse >= 1.0;
+                    }
+                    
+                    if (shouldDraw) {
+                        const index = this.getPixelIndex(x, y);
+                        // Set alpha=1 and draw value
+                        layer.alpha[index] = 1;
+                        if (pattern && typeof Patterns !== 'undefined') {
+                            layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                        } else {
+                            layer.pixels[index] = 1;
                         }
                     }
                 }
@@ -345,20 +490,36 @@ class OptimizedBitmapEditor {
         }
         
         if (!this.compositeCache) {
-            this.compositeCache = new Uint8Array(this.width * this.height);
+            this.compositeCache = {
+                pixels: new Uint8Array(this.width * this.height),
+                alpha: new Uint8Array(this.width * this.height)
+            };
         }
         
         // Clear composite
-        this.compositeCache.fill(0);
+        this.compositeCache.pixels.fill(0);
+        this.compositeCache.alpha.fill(0);
         
-        // Composite all visible layers
+        // Composite all visible layers from bottom to top
         for (let i = 0; i < this.layers.length; i++) {
             const layer = this.layers[i];
             if (!layer.visible) continue;
             
-            for (let j = 0; j < this.compositeCache.length; j++) {
-                if (layer.pixels[j] > 0) {
-                    this.compositeCache[j] = 1; // Simple OR blend for monochrome
+            for (let j = 0; j < this.compositeCache.pixels.length; j++) {
+                const layerAlpha = layer.alpha[j];
+                const layerPixel = layer.pixels[j];
+                
+                if (layerAlpha > 0) {
+                    // Simple alpha blending for 1-bit alpha
+                    const currentAlpha = this.compositeCache.alpha[j];
+                    if (currentAlpha === 0) {
+                        // No previous alpha, just copy
+                        this.compositeCache.pixels[j] = layerPixel;
+                        this.compositeCache.alpha[j] = layerAlpha;
+                    } else {
+                        // Blend with existing pixel (OR operation for monochrome)
+                        this.compositeCache.pixels[j] = this.compositeCache.pixels[j] || layerPixel;
+                    }
                 }
             }
         }
@@ -435,13 +596,45 @@ class OptimizedBitmapEditor {
                 if (pixelX >= this.width || pixelY >= this.height) continue;
                 
                 const index = this.getPixelIndex(pixelX, pixelY);
-                const pixelValue = composite[index];
-                const displayValue = this.inverted ? (1 - pixelValue) : pixelValue;
+                const alphaValue = composite.alpha[index];
+                const pixelValue = composite.pixels[index];
                 
-                if (displayValue) {
-                    this.ctx.fillStyle = this.drawColor;
-                    this.ctx.fillRect(pixelX * this.zoom, pixelY * this.zoom, this.zoom, this.zoom);
+                const canvasX = pixelX * this.zoom;
+                const canvasY = pixelY * this.zoom;
+                
+                if (alphaValue === 0) {
+                    // Transparent pixel
+                    if (this.showCheckerboard) {
+                        // Render checkerboard pattern
+                        this.renderCheckerboard(canvasX, canvasY, this.zoom, this.zoom);
+                    } else {
+                        // Render solid background color (bit=0 color)
+                        this.ctx.fillStyle = this.backgroundColor;
+                        this.ctx.fillRect(canvasX, canvasY, this.zoom, this.zoom);
+                    }
+                } else {
+                    // Opaque - render pixel
+                    const displayValue = this.inverted ? (1 - pixelValue) : pixelValue;
+                    this.ctx.fillStyle = displayValue ? this.drawColor : this.backgroundColor;
+                    this.ctx.fillRect(canvasX, canvasY, this.zoom, this.zoom);
                 }
+            }
+        }
+    }
+
+    renderCheckerboard(x, y, width, height) {
+        const checkerSize = 8; // Fixed 8x8px checkerboard regardless of zoom
+        
+        for (let cy = 0; cy < height; cy += checkerSize) {
+            for (let cx = 0; cx < width; cx += checkerSize) {
+                const checkX = Math.floor((x + cx) / checkerSize);
+                const checkY = Math.floor((y + cy) / checkerSize);
+                const isLight = (checkX + checkY) % 2 === 0;
+                
+                this.ctx.fillStyle = isLight ? '#f0f0f0' : '#d0d0d0';
+                const drawWidth = Math.min(checkerSize, width - cx);
+                const drawHeight = Math.min(checkerSize, height - cy);
+                this.ctx.fillRect(x + cx, y + cy, drawWidth, drawHeight);
             }
         }
     }
@@ -511,6 +704,11 @@ class OptimizedBitmapEditor {
         this.scheduleRender();
     }
 
+    setShowCheckerboard(showCheckerboard) {
+        this.showCheckerboard = showCheckerboard;
+        this.scheduleRender();
+    }
+
     setDisplayColors(drawColor, backgroundColor) {
         this.drawColor = drawColor;
         this.backgroundColor = backgroundColor;
@@ -538,9 +736,11 @@ class OptimizedBitmapEditor {
         // Resize all layers
         this.layers.forEach(layer => {
             const oldPixels = layer.pixels;
+            const oldAlpha = layer.alpha;
             layer.pixels = new Uint8Array(newWidth * newHeight);
+            layer.alpha = new Uint8Array(newWidth * newHeight);
             
-            // Copy existing pixels to new array
+            // Copy existing pixels and alpha to new arrays
             const minWidth = Math.min(oldWidth, newWidth);
             const minHeight = Math.min(oldHeight, newHeight);
             
@@ -549,6 +749,7 @@ class OptimizedBitmapEditor {
                     const oldIndex = y * oldWidth + x;
                     const newIndex = y * newWidth + x;
                     layer.pixels[newIndex] = oldPixels[oldIndex];
+                    layer.alpha[newIndex] = oldAlpha[oldIndex];
                 }
             }
         });
@@ -597,19 +798,23 @@ class OptimizedBitmapEditor {
     getBitmapData() {
         const composite = this.compositeAllLayers();
         const pixels = [];
+        const alpha = [];
         
         for (let y = 0; y < this.height; y++) {
             pixels[y] = [];
+            alpha[y] = [];
             for (let x = 0; x < this.width; x++) {
                 const index = this.getPixelIndex(x, y);
-                pixels[y][x] = composite[index];
+                pixels[y][x] = composite.pixels[index];
+                alpha[y][x] = composite.alpha[index];
             }
         }
         
         return {
             width: this.width,
             height: this.height,
-            pixels: pixels
+            pixels: pixels,
+            alpha: alpha
         };
     }
 
@@ -618,7 +823,8 @@ class OptimizedBitmapEditor {
     saveState() {
         const state = this.layers.map(layer => ({
             ...layer,
-            pixels: new Uint8Array(layer.pixels)
+            pixels: new Uint8Array(layer.pixels),
+            alpha: new Uint8Array(layer.alpha)
         }));
         
         if (this.historyIndex < this.history.length - 1) {
@@ -655,7 +861,8 @@ class OptimizedBitmapEditor {
     restoreState(state) {
         this.layers = state.map(layer => ({
             ...layer,
-            pixels: new Uint8Array(layer.pixels)
+            pixels: new Uint8Array(layer.pixels),
+            alpha: new Uint8Array(layer.alpha || this.createEmptyAlpha())
         }));
         this.markCompositeDirty();
         this.addDirtyRect(0, 0, this.width, this.height);
@@ -681,7 +888,7 @@ class OptimizedBitmapEditor {
             const y = Math.round(centerY + Math.sin(angle) * distance);
             
             if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
-                this.setPixel(x, y, 1, pattern);
+                this.setPixelWithAlpha(x, y, 1, 1, pattern);
             }
         }
     }
@@ -697,14 +904,16 @@ class OptimizedBitmapEditor {
         let x = x1;
         let y = y1;
         
-        const operation = (pixels) => {
+        const operation = (layer) => {
             while (true) {
                 const index = this.getPixelIndex(x, y);
                 if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
-                    if (pattern && typeof DitherPatterns !== 'undefined') {
-                        pixels[index] = DitherPatterns.applyPattern(pattern, x, y);
+                    // Set alpha=1 and draw value
+                    layer.alpha[index] = 1;
+                    if (pattern && typeof Patterns !== 'undefined') {
+                        layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
                     } else {
-                        pixels[index] = 1;
+                        layer.pixels[index] = 1;
                     }
                 }
                 
@@ -745,6 +954,22 @@ class OptimizedBitmapEditor {
                 Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2)
             ));
         }
+        
+        return selection;
+    }
+
+    createCircleSelection(centerX, centerY, radius) {
+        const selection = {
+            x1: centerX - radius,
+            y1: centerY - radius,
+            x2: centerX + radius,
+            y2: centerY + radius,
+            type: 'circle',
+            centerX: centerX,
+            centerY: centerY,
+            radius: radius,
+            active: true
+        };
         
         return selection;
     }
@@ -823,5 +1048,178 @@ class OptimizedBitmapEditor {
             }
             this.addDirtyRect(0, 0, this.width, this.height);
         }
+    }
+
+    // ===== LAYER TRANSFORMATIONS =====
+
+    rotateLayer90() {
+        if (this.layers.length === 0) return false;
+
+        const oldWidth = this.width;
+        const oldHeight = this.height;
+        const newWidth = oldHeight;
+        const newHeight = oldWidth;
+
+        // Transform all layers
+        this.layers.forEach(layer => {
+            const oldPixels = new Uint8Array(layer.pixels);
+            const oldAlpha = new Uint8Array(layer.alpha);
+
+            // Create new arrays with swapped dimensions
+            layer.pixels = new Uint8Array(newWidth * newHeight);
+            layer.alpha = new Uint8Array(newWidth * newHeight);
+
+            // Rotate 90°: (x, y) -> (height - 1 - y, x)
+            for (let y = 0; y < oldHeight; y++) {
+                for (let x = 0; x < oldWidth; x++) {
+                    const oldIndex = y * oldWidth + x;
+                    const newX = oldHeight - 1 - y;
+                    const newY = x;
+                    const newIndex = newY * newWidth + newX;
+                    
+                    layer.pixels[newIndex] = oldPixels[oldIndex];
+                    layer.alpha[newIndex] = oldAlpha[oldIndex];
+                }
+            }
+        });
+
+        // Update canvas dimensions
+        this.width = newWidth;
+        this.height = newHeight;
+        this.setupCanvas();
+
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
+    }
+
+    rotateLayer180() {
+        if (this.layers.length === 0) return false;
+
+        // Transform all layers
+        this.layers.forEach(layer => {
+            const oldPixels = new Uint8Array(layer.pixels);
+            const oldAlpha = new Uint8Array(layer.alpha);
+
+            // Rotate 180°: (x, y) -> (width - 1 - x, height - 1 - y)
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const oldIndex = y * this.width + x;
+                    const newX = this.width - 1 - x;
+                    const newY = this.height - 1 - y;
+                    const newIndex = newY * this.width + newX;
+                    
+                    layer.pixels[newIndex] = oldPixels[oldIndex];
+                    layer.alpha[newIndex] = oldAlpha[oldIndex];
+                }
+            }
+        });
+
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
+    }
+
+    rotateLayer270() {
+        if (this.layers.length === 0) return false;
+
+        const oldWidth = this.width;
+        const oldHeight = this.height;
+        const newWidth = oldHeight;
+        const newHeight = oldWidth;
+
+        // Transform all layers
+        this.layers.forEach(layer => {
+            const oldPixels = new Uint8Array(layer.pixels);
+            const oldAlpha = new Uint8Array(layer.alpha);
+
+            // Create new arrays with swapped dimensions
+            layer.pixels = new Uint8Array(newWidth * newHeight);
+            layer.alpha = new Uint8Array(newWidth * newHeight);
+
+            // Rotate 270°: (x, y) -> (y, width - 1 - x)
+            for (let y = 0; y < oldHeight; y++) {
+                for (let x = 0; x < oldWidth; x++) {
+                    const oldIndex = y * oldWidth + x;
+                    const newX = y;
+                    const newY = oldWidth - 1 - x;
+                    const newIndex = newY * newWidth + newX;
+                    
+                    layer.pixels[newIndex] = oldPixels[oldIndex];
+                    layer.alpha[newIndex] = oldAlpha[oldIndex];
+                }
+            }
+        });
+
+        // Update canvas dimensions
+        this.width = newWidth;
+        this.height = newHeight;
+        this.setupCanvas();
+
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
+    }
+
+    flipLayerHorizontal() {
+        if (this.layers.length === 0) return false;
+
+        // Transform all layers
+        this.layers.forEach(layer => {
+            const oldPixels = new Uint8Array(layer.pixels);
+            const oldAlpha = new Uint8Array(layer.alpha);
+
+            // Flip horizontally: (x, y) -> (width - 1 - x, y)
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const oldIndex = y * this.width + x;
+                    const newX = this.width - 1 - x;
+                    const newIndex = y * this.width + newX;
+                    
+                    layer.pixels[newIndex] = oldPixels[oldIndex];
+                    layer.alpha[newIndex] = oldAlpha[oldIndex];
+                }
+            }
+        });
+
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
+    }
+
+    flipLayerVertical() {
+        if (this.layers.length === 0) return false;
+
+        // Transform all layers
+        this.layers.forEach(layer => {
+            const oldPixels = new Uint8Array(layer.pixels);
+            const oldAlpha = new Uint8Array(layer.alpha);
+
+            // Flip vertically: (x, y) -> (x, height - 1 - y)
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const oldIndex = y * this.width + x;
+                    const newY = this.height - 1 - y;
+                    const newIndex = newY * this.width + x;
+                    
+                    layer.pixels[newIndex] = oldPixels[oldIndex];
+                    layer.alpha[newIndex] = oldAlpha[oldIndex];
+                }
+            }
+        });
+
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
     }
 }

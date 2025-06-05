@@ -4,13 +4,25 @@
 class MenuManager {
     constructor(bitsDraw) {
         this.app = bitsDraw;
+        console.log('MenuManager constructor called');
         this.setupMenuBar();
     }
 
     setupMenuBar() {
+        console.log('setupMenuBar called');
         const menuItems = document.querySelectorAll('.menu-item');
         const menuDropdowns = document.querySelectorAll('.menu-dropdown');
+        console.log('Found menu items:', menuItems.length);
+        console.log('Found menu dropdowns:', menuDropdowns.length);
         let activeMenu = null;
+
+        // Initialize window visibility icons
+        this.updateWindowVisibilityIcons();
+        
+        // Clean up any existing dynamic window menu items
+        if (this.app.windowManager) {
+            this.app.windowManager.updateWindowMenu();
+        }
 
         menuItems.forEach(item => {
             item.addEventListener('click', (e) => {
@@ -30,12 +42,37 @@ class MenuManager {
         });
 
         // Menu dropdown actions
-        document.querySelectorAll('.menu-dropdown-item[data-action]').forEach(item => {
+        const actionItems = document.querySelectorAll('.menu-dropdown-item[data-action]');
+        console.log('Found action items:', actionItems.length);
+        actionItems.forEach((item, index) => {
+            console.log(`Action item ${index}:`, item.dataset.action);
+        });
+        
+        actionItems.forEach(item => {
             item.addEventListener('click', (e) => {
                 const action = item.dataset.action;
+                console.log('Menu item clicked:', action);
+                
+                // Special handling for import-image to maintain user gesture
+                if (action === 'import-image') {
+                    const fileInput = document.getElementById('file-input');
+                    if (fileInput) {
+                        fileInput.value = ''; // Reset to allow same file
+                        fileInput.click();
+                    }
+                    this.hideAllMenus();
+                    activeMenu = null;
+                    return;
+                }
+                
                 this.handleMenuAction(action);
                 this.hideAllMenus();
                 activeMenu = null;
+                
+                // Update window visibility icons after window actions
+                if (action.startsWith('show-')) {
+                    setTimeout(() => this.updateWindowVisibilityIcons(), 50);
+                }
             });
         });
 
@@ -88,6 +125,11 @@ class MenuManager {
         dropdown.style.left = rect.left + 'px';
         dropdown.style.top = rect.bottom + 'px';
         dropdown.classList.add('show');
+        
+        // Update window visibility icons when window menu is opened
+        if (dropdown.id === 'menu-window') {
+            this.updateWindowVisibilityIcons();
+        }
     }
 
     hideAllMenus() {
@@ -103,22 +145,41 @@ class MenuManager {
     }
 
     handleMenuAction(action) {
+        console.log('handleMenuAction called with action:', action);
         switch (action) {
             // File menu
             case 'new':
-                this.app.dialogs.showNewCanvasDialog();
+                this.app.showNewProjectDialog();
                 break;
             case 'save':
-                this.app.saveBitmapToStorage();
+                this.app.saveProject();
+                break;
+            case 'save-as':
+                this.app.saveProjectAs();
+                break;
+            case 'export-project':
+                this.app.exportProject();
                 break;
             case 'open':
-                this.app.loadBitmapFromStorage();
+                this.app.showOpenProjectDialog();
+                break;
+            case 'recent-projects':
+                this.app.showRecentProjectsDialog();
                 break;
             case 'export-cpp':
                 this.app.dialogs.showCppExportDialog();
                 break;
             case 'export-png':
                 this.app.exportPNG();
+                break;
+            case 'export-animation-gif':
+                this.app.exportAnimationGIF();
+                break;
+            case 'export-animation-apng':
+                this.app.exportAnimationAPNG();
+                break;
+            case 'export-sprite-sheet':
+                this.app.exportSpriteSheet();
                 break;
             case 'import-image':
                 document.getElementById('file-input').click();
@@ -158,12 +219,57 @@ class MenuManager {
                 this.app.rescaleCanvas();
                 break;
 
-            // Effects menu
+            // Layer menu
+            case 'rotate-90':
+                if (this.app.editor.rotateLayer90()) {
+                    this.app.updateLayersList();
+                    this.app.updateOutput();
+                }
+                break;
+            case 'rotate-180':
+                if (this.app.editor.rotateLayer180()) {
+                    this.app.updateLayersList();
+                    this.app.updateOutput();
+                }
+                break;
+            case 'rotate-270':
+                if (this.app.editor.rotateLayer270()) {
+                    this.app.updateLayersList();
+                    this.app.updateOutput();
+                }
+                break;
+            case 'flip-horizontal':
+                if (this.app.editor.flipLayerHorizontal()) {
+                    this.app.updateLayersList();
+                    this.app.updateOutput();
+                }
+                break;
+            case 'flip-vertical':
+                if (this.app.editor.flipLayerVertical()) {
+                    this.app.updateLayersList();
+                    this.app.updateOutput();
+                }
+                break;
+
+            // Image menu
+            case 'smart-conversions':
+                this.app.showSmartConversions();
+                break;
+
+            // Effects menu (moved from Image)
             case 'invert-bitmap':
                 this.app.applyInvertEffect();
                 break;
+            case 'dithering':
+                this.app.showDitheringDialog();
+                break;
 
-            // View menu
+            // View menu - Mode switching
+            case 'view-canvas':
+                this.app.switchToCanvasView();
+                break;
+                
+            // View menu - Zoom
             case 'zoom-in':
                 this.app.zoomIn();
                 break;
@@ -176,8 +282,9 @@ class MenuManager {
                 this.app.showGrid = gridCheckbox.checked;
                 this.app.updateGridDisplay();
                 break;
-            case 'invert':
-                this.app.cycleDisplayMode();
+            case 'show-guides':
+                this.app.showGuides = !this.app.showGuides;
+                this.app.renderGuides();
                 break;
 
             // Window menu
@@ -193,8 +300,14 @@ class MenuManager {
             case 'show-layers':
                 this.app.windowManager.toggleWindow('layers-window');
                 break;
+            case 'show-guides':
+                this.app.windowManager.toggleWindow('guides-window');
+                break;
             case 'show-preview':
                 this.app.windowManager.toggleWindow('preview-window');
+                break;
+            case 'show-canvas-controls':
+                this.app.windowManager.toggleWindow('canvas-controls-window');
                 break;
 
             // Help menu
@@ -205,5 +318,27 @@ class MenuManager {
                 this.app.windowManager.showWindow('shortcuts-window');
                 break;
         }
+    }
+
+    updateWindowVisibilityIcons() {
+        // Update window visibility icons based on current window state
+        const windowIcons = document.querySelectorAll('[data-window-icon]');
+        
+        windowIcons.forEach(icon => {
+            const windowId = icon.getAttribute('data-window-icon');
+            const window = document.getElementById(windowId);
+            
+            if (window) {
+                const isVisible = !window.classList.contains('hidden') && 
+                                window.style.display !== 'none';
+                
+                // Update icon class based on visibility
+                if (isVisible) {
+                    icon.className = 'ph ph-check-square';
+                } else {
+                    icon.className = 'ph ph-square';
+                }
+            }
+        });
     }
 }

@@ -189,51 +189,25 @@ class WindowManager {
     }
 
     updateWindowMenu() {
+        // Clean up any existing dynamic menu items to prevent duplicates
         const windowMenu = document.getElementById('menu-window');
         if (!windowMenu) return;
-
+        
+        // Remove any existing dynamic items
         const existingItems = windowMenu.querySelectorAll('.window-menu-item');
         existingItems.forEach(item => item.remove());
-
-        const separator = document.createElement('div');
-        separator.className = 'menu-divider';
-        windowMenu.appendChild(separator);
-
-        const windows = [
-            { id: 'canvas-window', name: 'Canvas' },
-            { id: 'tools-window', name: 'Tools' },
-            { id: 'colors-window', name: 'Patterns' },
-            { id: 'options-window', name: 'Options' },
-            { id: 'layers-window', name: 'Layers' },
-            { id: 'preview-window', name: 'Preview' },
-            { id: 'about-window', name: 'About BitsDraw' },
-            { id: 'shortcuts-window', name: 'Keyboard Shortcuts' }
-        ];
-
-        windows.forEach(windowInfo => {
-            const window = document.getElementById(windowInfo.id);
-            if (window) {
-                const menuItem = document.createElement('div');
-                menuItem.className = 'menu-dropdown-item window-menu-item';
-                
-                const isVisible = !window.classList.contains('hidden');
-                const isMinimized = window.classList.contains('minimized');
-                
-                let prefix = '   ';
-                if (isVisible && !isMinimized) {
-                    prefix = '✓ ';
-                } else if (isVisible && isMinimized) {
-                    prefix = '− ';
-                }
-                
-                menuItem.textContent = prefix + windowInfo.name;
-                menuItem.addEventListener('click', () => {
-                    this.toggleWindow(windowInfo.id);
-                });
-                
-                windowMenu.appendChild(menuItem);
+        
+        // Remove any existing dynamic separators
+        const separators = windowMenu.querySelectorAll('.menu-divider');
+        separators.forEach(separator => {
+            // Only remove separators that were dynamically added (not the static ones)
+            if (separator.nextElementSibling && separator.nextElementSibling.classList.contains('window-menu-item')) {
+                separator.remove();
             }
         });
+        
+        // Static window menu with icons is used instead
+        return;
     }
 
     saveWindowStates() {

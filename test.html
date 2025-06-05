@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BitsDraw Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        canvas { border: 1px solid #000; }
+    </style>
+</head>
+<body>
+    <h1>BitsDraw Component Test</h1>
+    <div id="test-results"></div>
+    <canvas id="test-canvas" width="256" height="128"></canvas>
+    
+    <!-- Load dependencies in order -->
+    <script src="utils/optimizedBitmap.js"></script>
+    <script src="utils/export.js"></script>
+    <script src="utils/imageImport.js"></script>
+    <script src="utils/patterns.js"></script>
+    <script src="utils/textRenderer.js"></script>
+    <script src="utils/ditheringEffects.js"></script>
+    
+    <script>
+        const results = document.getElementById('test-results');
+        
+        function addResult(name, success, error = null) {
+            const div = document.createElement('div');
+            div.className = `test ${success ? 'success' : 'error'}`;
+            div.innerHTML = `<strong>${name}:</strong> ${success ? 'PASS' : 'FAIL'} ${error ? `- ${error}` : ''}`;
+            results.appendChild(div);
+        }
+        
+        // Test 1: OptimizedBitmapEditor
+        try {
+            const canvas = document.getElementById('test-canvas');
+            const editor = new OptimizedBitmapEditor(canvas, 128, 64);
+            addResult('OptimizedBitmapEditor', true);
+            
+            // Test basic operations
+            editor.setPixel(10, 10, 1);
+            const pixel = editor.getPixel(10, 10);
+            addResult('Pixel operations', pixel === 1);
+            
+        } catch (error) {
+            addResult('OptimizedBitmapEditor', false, error.message);
+        }
+        
+        // Test 2: BitmapExporter
+        try {
+            const testData = {
+                width: 8,
+                height: 8,
+                pixels: new Uint8Array(64).fill(1)
+            };
+            const code = BitmapExporter.generateHFile(testData, 'test', 'u8g2');
+            addResult('BitmapExporter', code && code.includes('test[]'));
+        } catch (error) {
+            addResult('BitmapExporter', false, error.message);
+        }
+        
+        // Test 3: ImageImporter
+        try {
+            const hasImporter = typeof ImageImporter !== 'undefined';
+            addResult('ImageImporter available', hasImporter);
+        } catch (error) {
+            addResult('ImageImporter', false, error.message);
+        }
+        
+        // Test 4: DitheringEffects
+        try {
+            const hasDithering = typeof DitheringEffects !== 'undefined';
+            addResult('DitheringEffects available', hasDithering);
+        } catch (error) {
+            addResult('DitheringEffects', false, error.message);
+        }
+        
+        // Test 5: PatternManager
+        try {
+            const hasPatterns = typeof PatternManager !== 'undefined';
+            addResult('PatternManager available', hasPatterns);
+        } catch (error) {
+            addResult('PatternManager', false, error.message);
+        }
+        
+        // Test 6: TextRenderer
+        try {
+            const hasTextRenderer = typeof TextRenderer !== 'undefined';
+            addResult('TextRenderer available', hasTextRenderer);
+        } catch (error) {
+            addResult('TextRenderer', false, error.message);
+        }
+    </script>
+</body>
+</html>

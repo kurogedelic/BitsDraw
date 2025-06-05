@@ -1,8 +1,64 @@
+// Debug utility - automatically detects dev vs production
+const DEBUG = {
+    // Auto-detect development environment
+    isDev: () => {
+        return (
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname === '' ||
+            window.location.port !== '' ||
+            window.location.protocol === 'file:'
+        );
+    },
+    
+    // Debug logging that only shows in development
+    log: (...args) => {
+        if (DEBUG.isDev()) {
+            console.log(...args);
+        }
+    },
+    
+    warn: (...args) => {
+        if (DEBUG.isDev()) {
+            console.warn(...args);
+        }
+    },
+    
+    error: (...args) => {
+        // Always show errors, even in production
+        console.error(...args);
+    },
+    
+    info: (...args) => {
+        if (DEBUG.isDev()) {
+            console.info(...args);
+        }
+    }
+};
+
 class BitsDraw {
     constructor() {
         this.canvas = document.getElementById('bitmap-canvas');
         this.editor = new OptimizedBitmapEditor(this.canvas, 128, 64);
         this.previewCanvas = document.getElementById('preview-canvas');
+        
+        
+        // Initialize CanvasUnit system (Phase 1)
+        try {
+            if (typeof LegacyAdapter !== 'undefined') {
+                this.legacyAdapter = new LegacyAdapter(this);
+                this.unitManager = this.legacyAdapter.getUnitManager();
+                DEBUG.log('CanvasUnit system initialized successfully');
+            } else {
+                DEBUG.warn('LegacyAdapter not available, running in legacy mode only');
+                this.legacyAdapter = null;
+                this.unitManager = null;
+            }
+        } catch (error) {
+            console.error('Failed to initialize CanvasUnit system:', error);
+            this.legacyAdapter = null;
+            this.unitManager = null;
+        }
         this.isDrawing = false;
         this.currentTool = 'brush';
         this.startPos = null;
@@ -11,6 +67,7 @@ class BitsDraw {
         this.currentPattern = 'solid-black';
         this.selection = null;
         this.showGrid = false;
+        this.showCheckerboard = true; // Default to showing checkerboard
         this.showGuides = true;
         this.selectionClipboard = null;
         this.isDraggingSelection = false;
@@ -19,8 +76,15 @@ class BitsDraw {
         this.previewOverlay = null;
         this.textBalloonPos = null;
         this.brushSize = 2;
-        this.sprayRadius = 5;
-        this.sprayDensity = 0.3;
+        this.eraserSize = 2;
+        this.eraserSmooth = true;
+        this.sprayRadius = 8;
+        this.sprayDensity = 0.6;
+        this.blurSize = 3;
+        this.circleDrawBorder = true;
+        this.circleDrawFill = false;
+        this.blurDitherMethod = 'Bayer4x4';
+        this.blurAlphaChannel = true;
         this.currentDisplayMode = 'white';
         this.moveLoop = true;
         
@@ -55,6 +119,10 @@ class BitsDraw {
         this.isPanning = false;
         this.panStart = null;
         this.canvasOffset = { x: 0, y: 0 };
+        
+        // Modifier key tracking
+        this.shiftPressed = false;
+        this.altPressed = false;
         
         // Display mode color sets
         this.displayModes = {
@@ -146,11 +214,17 @@ class BitsDraw {
         this.setupBrushCursor();
         this.setupThemeManagement();
         
+        // Initialize button states
+        this.updateGridButton();
+        this.updateCheckerboardDisplay();
+        this.updateCheckerboardButton();
+        this.updateGuidesButton();
+        
         // Test ImageImporter availability
         if (typeof ImageImporter !== 'undefined') {
-            console.log('ImageImporter is available');
+            DEBUG.log('ImageImporter is available');
         } else {
-            console.error('ImageImporter is NOT available');
+            DEBUG.error('ImageImporter is NOT available');
         }
         
         // Initialize display mode
@@ -158,6 +232,8 @@ class BitsDraw {
         
         // Initialize tool options display
         this.updateToolOptions('brush');
+        
+        // Initialize canvas view
     }
 
     initializeEventListeners() {
@@ -204,7 +280,7 @@ class BitsDraw {
                 this.isDrawing = true;
             } else {
                 this.isDrawing = true;
-                if (this.currentTool === 'brush') {
+                if (this.currentTool === 'brush' || this.currentTool === 'eraser' || this.currentTool === 'blur' || this.currentTool === 'spray') {
                     this.hideBrushCursor();
                 }
                 this.handleCanvasClick(e);
@@ -273,10 +349,20 @@ class BitsDraw {
                     this.updateOutput();
                 } else if (this.currentTool === 'circle') {
                     this.clearShapePreview();
-                    const radius = Math.round(Math.sqrt(
-                        Math.pow(coords.x - this.startPos.x, 2) + Math.pow(coords.y - this.startPos.y, 2)
-                    ));
-                    this.editor.drawCircle(this.startPos.x, this.startPos.y, radius, this.drawFill, false, this.currentPattern);
+                    const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
+                        this.startPos.x, this.startPos.y, coords.x, coords.y, 
+                        this.shiftPressed, this.altPressed
+                    );
+                    if (this.circleDrawBorder && !this.circleDrawFill) {
+                        // Border only
+                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, false, true, this.currentPattern);
+                    } else if (this.circleDrawFill && !this.circleDrawBorder) {
+                        // Fill only
+                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern);
+                    } else if (this.circleDrawBorder && this.circleDrawFill) {
+                        // Both border and fill
+                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern);
+                    }
                     this.editor.saveState();
                     this.updateOutput();
                 } else if (this.currentTool === 'line') {
@@ -287,13 +373,19 @@ class BitsDraw {
                     this.selection = this.editor.createSelection(this.startPos.x, this.startPos.y, coords.x, coords.y, 'rect');
                     this.drawSelectionOverlay();
                 } else if (this.currentTool === 'select-circle') {
-                    this.selection = this.editor.createSelection(this.startPos.x, this.startPos.y, coords.x, coords.y, 'circle');
+                    const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
+                        this.startPos.x, this.startPos.y, coords.x, coords.y, 
+                        this.shiftPressed, this.altPressed
+                    );
+                    // For now, use the smaller radius to maintain compatibility with circular selections
+                    const radius = Math.min(radiusX, radiusY);
+                    this.selection = this.editor.createCircleSelection(centerX, centerY, radius);
                     this.drawSelectionOverlay();
                 }
             }
             
             this.isDrawing = false;
-            if (this.currentTool === 'brush') {
+            if (this.currentTool === 'brush' || this.currentTool === 'eraser' || this.currentTool === 'blur' || this.currentTool === 'spray') {
                 this.showBrushCursor();
             }
             this.updateOutput();
@@ -362,8 +454,8 @@ class BitsDraw {
 
     setupToolbarEvents() {
         // Tool palette events
-        const tools = ['brush', 'pencil', 'bucket', 'select-rect', 'select-circle', 
-                      'move', 'line', 'text', 'rect', 'circle', 'spray', 'guide', 'hand'];
+        const tools = ['brush', 'pencil', 'eraser', 'bucket', 'select-rect', 'select-circle', 
+                      'move', 'line', 'text', 'rect', 'circle', 'spray', 'blur', 'guide', 'hand'];
         
         tools.forEach(tool => {
             const btn = document.getElementById(`${tool}-tool`);
@@ -381,6 +473,16 @@ class BitsDraw {
 
         document.getElementById('draw-fill').addEventListener('change', (e) => {
             this.drawFill = e.target.checked;
+        });
+
+
+        // Circle border and fill checkboxes
+        document.getElementById('circle-draw-border').addEventListener('change', (e) => {
+            this.circleDrawBorder = e.target.checked;
+        });
+
+        document.getElementById('circle-draw-fill').addEventListener('change', (e) => {
+            this.circleDrawFill = e.target.checked;
         });
 
         // Move tool loop option
@@ -429,6 +531,18 @@ class BitsDraw {
             this.showGrid = !this.showGrid;
             this.updateGridDisplay();
             this.updateGridButton();
+        });
+
+        document.getElementById('show-checkerboard-btn').addEventListener('click', () => {
+            this.showCheckerboard = !this.showCheckerboard;
+            this.updateCheckerboardDisplay();
+            this.updateCheckerboardButton();
+        });
+
+        document.getElementById('show-guides-btn').addEventListener('click', () => {
+            this.showGuides = !this.showGuides;
+            this.renderGuides();
+            this.updateGuidesButton();
         });
 
         // Selection controls
@@ -621,12 +735,21 @@ class BitsDraw {
 
     updateDisplayModeDisplay() {
         const select = document.getElementById('display-mode-select');
-        const display = document.getElementById('display-current-value');
-        display.textContent = select.options[select.selectedIndex].textContent;
+        const previewIcon = document.getElementById('display-preview-icon');
+        
+        // Update preview icon with current display mode colors
+        const displayMode = this.displayModes[this.currentDisplayMode];
+        if (displayMode) {
+            previewIcon.style.background = `linear-gradient(45deg, ${displayMode.background_color} 0%, ${displayMode.background_color} 40%, ${displayMode.draw_color} 60%, ${displayMode.draw_color} 100%)`;
+        }
     }
 
     setupKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
+            // Track modifier keys globally
+            this.shiftPressed = e.shiftKey;
+            this.altPressed = e.altKey;
+            
             // Skip if user is typing in input fields
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
                 return;
@@ -681,6 +804,8 @@ class BitsDraw {
                 this.setTool('brush');
             } else if (e.key.toLowerCase() === 'p' && !isCtrl) {
                 this.setTool('pencil');
+            } else if (e.key.toLowerCase() === 'e' && !isCtrl) {
+                this.setTool('eraser');
             } else if (e.key.toLowerCase() === 'f' && !isCtrl) {
                 this.setTool('bucket');
             } else if (e.key.toLowerCase() === 'l' && !isCtrl) {
@@ -702,6 +827,11 @@ class BitsDraw {
             } else if (e.key.toLowerCase() === 'u' && !isCtrl) {
                 this.setTool('guide');
             }
+            // View mode shortcuts
+            else if (isCtrl && e.key === '1') {
+                e.preventDefault();
+                this.switchToCanvasView();
+            }
             // View shortcuts
             else if (isCtrl && e.key === '=') {
                 e.preventDefault();
@@ -719,6 +849,12 @@ class BitsDraw {
                 e.preventDefault();
                 this.resetCanvasPan();
             }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            // Track modifier keys globally
+            this.shiftPressed = e.shiftKey;
+            this.altPressed = e.altKey;
         });
     }
 
@@ -804,7 +940,7 @@ class BitsDraw {
                     tempInput.onchange = async (e) => {
                         const file = e.target.files[0];
                         if (file) {
-                            console.log('File selected via temp input (main):', file.name);
+                            DEBUG.log('File selected via temp input (main):', file.name);
                             try {
                                 await this.handleImageFile(file);
                             } catch (error) {
@@ -904,7 +1040,7 @@ class BitsDraw {
                         tempInput.onchange = async (e) => {
                             const file = e.target.files[0];
                             if (file) {
-                                console.log('File selected via temp input:', file.name);
+                                DEBUG.log('File selected via temp input:', file.name);
                                 try {
                                     await this.handleImageFile(file);
                                 } catch (error) {
@@ -1098,6 +1234,44 @@ class BitsDraw {
             case 'rescale':
                 this.rescaleCanvas();
                 break;
+            
+            // Layer transformation actions
+            case 'rotate-90':
+                if (this.editor.rotateLayer90()) {
+                    this.updateLayersList();
+                    this.updateOutput();
+                    this.updateWindowTitle(this.editor.width, this.editor.height);
+                }
+                break;
+            case 'rotate-180':
+                if (this.editor.rotateLayer180()) {
+                    this.updateLayersList();
+                    this.updateOutput();
+                    this.updateWindowTitle(this.editor.width, this.editor.height);
+                }
+                break;
+            case 'rotate-270':
+                if (this.editor.rotateLayer270()) {
+                    this.updateLayersList();
+                    this.updateOutput();
+                    this.updateWindowTitle(this.editor.width, this.editor.height);
+                }
+                break;
+            case 'flip-horizontal':
+                if (this.editor.flipLayerHorizontal()) {
+                    this.updateLayersList();
+                    this.updateOutput();
+                    this.updateWindowTitle(this.editor.width, this.editor.height);
+                }
+                break;
+            case 'flip-vertical':
+                if (this.editor.flipLayerVertical()) {
+                    this.updateLayersList();
+                    this.updateOutput();
+                    this.updateWindowTitle(this.editor.width, this.editor.height);
+                }
+                break;
+                
             case 'theme-auto':
                 this.setTheme('auto');
                 break;
@@ -1365,7 +1539,7 @@ class BitsDraw {
         
         // Track mouse movement over canvas
         this.canvas.addEventListener('mouseenter', () => {
-            if (this.currentTool === 'brush' || this.currentTool === 'pencil') {
+            if (this.currentTool === 'brush' || this.currentTool === 'pencil' || this.currentTool === 'eraser' || this.currentTool === 'blur' || this.currentTool === 'spray') {
                 this.showBrushCursor();
             }
         });
@@ -1376,7 +1550,7 @@ class BitsDraw {
         });
         
         this.canvas.addEventListener('mousemove', (e) => {
-            if (this.currentTool === 'brush' || this.currentTool === 'pencil') {
+            if (this.currentTool === 'brush' || this.currentTool === 'pencil' || this.currentTool === 'eraser' || this.currentTool === 'blur' || this.currentTool === 'spray') {
                 this.updateBrushCursor(e.clientX, e.clientY);
             }
         });
@@ -1401,7 +1575,10 @@ class BitsDraw {
 
     updateBrushCursorSize() {
         if (!this.brushCursorOverlay) return;
-        const size = this.brushSize * this.editor.zoom;
+        const toolSize = this.currentTool === 'eraser' ? this.eraserSize : 
+                        this.currentTool === 'blur' ? this.blurSize :
+                        this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
+        const size = toolSize * this.editor.zoom;
         this.brushCursorOverlay.style.width = size + 'px';
         this.brushCursorOverlay.style.height = size + 'px';
         
@@ -1409,6 +1586,8 @@ class BitsDraw {
         this.brushCursorOverlay.className = 'brush-cursor-overlay';
         if (this.currentTool === 'pencil' && this.brushSize === 1) {
             this.brushCursorOverlay.classList.add('square');
+        } else if (this.currentTool === 'eraser') {
+            this.brushCursorOverlay.classList.add('eraser');
         }
     }
 
@@ -1579,6 +1758,28 @@ class BitsDraw {
         }
     }
 
+    updateCheckerboardDisplay() {
+        this.editor.setShowCheckerboard(this.showCheckerboard);
+    }
+
+    updateCheckerboardButton() {
+        const btn = document.getElementById('show-checkerboard-btn');
+        if (this.showCheckerboard) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    }
+
+    updateGuidesButton() {
+        const btn = document.getElementById('show-guides-btn');
+        if (this.showGuides) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    }
+
     rescaleCanvas() {
         const width = prompt('New width:', this.editor.width);
         const height = prompt('New height:', this.editor.height);
@@ -1631,12 +1832,28 @@ class BitsDraw {
             this.smoothDrawing = e.target.checked;
         });
 
+        // Eraser size
+        const eraserSizeSlider = document.getElementById('eraser-size');
+        const eraserSizeValue = document.getElementById('eraser-size-value');
+        eraserSizeSlider.addEventListener('input', (e) => {
+            this.eraserSize = parseInt(e.target.value);
+            eraserSizeValue.textContent = this.eraserSize;
+            this.updateBrushCursorSize();
+        });
+        
+        // Eraser smooth
+        const eraserSmoothCheckbox = document.getElementById('eraser-smooth');
+        eraserSmoothCheckbox.addEventListener('change', (e) => {
+            this.eraserSmooth = e.target.checked;
+        });
+
         // Spray radius
         const sprayRadiusSlider = document.getElementById('spray-radius');
         const sprayRadiusValue = document.getElementById('spray-radius-value');
         sprayRadiusSlider.addEventListener('input', (e) => {
             this.sprayRadius = parseInt(e.target.value);
             sprayRadiusValue.textContent = this.sprayRadius;
+            this.updateBrushCursorSize();
         });
 
         // Spray density
@@ -1645,6 +1862,25 @@ class BitsDraw {
         sprayDensitySlider.addEventListener('input', (e) => {
             this.sprayDensity = parseInt(e.target.value) / 100;
             sprayDensityValue.textContent = e.target.value;
+        });
+
+        // Blur size
+        const blurSizeSlider = document.getElementById('blur-size');
+        const blurSizeValue = document.getElementById('blur-size-value');
+        blurSizeSlider.addEventListener('input', (e) => {
+            this.blurSize = parseInt(e.target.value);
+            blurSizeValue.textContent = this.blurSize;
+            this.updateBrushCursorSize();
+        });
+
+        // Blur dither method
+        document.getElementById('blur-dither-method').addEventListener('change', (e) => {
+            this.blurDitherMethod = e.target.value;
+        });
+
+        // Blur alpha channel
+        document.getElementById('blur-alpha-channel').addEventListener('change', (e) => {
+            this.blurAlphaChannel = e.target.checked;
         });
 
         // Select All button
@@ -1664,16 +1900,26 @@ class BitsDraw {
             case 'brush':
                 document.getElementById('brush-options').style.display = 'block';
                 break;
+            case 'eraser':
+                document.getElementById('eraser-options').style.display = 'block';
+                break;
             case 'rect':
-            case 'circle':
                 document.getElementById('shape-options').style.display = 'block';
+                break;
+            case 'circle':
+                document.getElementById('circle-options').style.display = 'block';
                 break;
             case 'spray':
                 document.getElementById('spray-options').style.display = 'block';
                 break;
+            case 'blur':
+                document.getElementById('blur-options').style.display = 'block';
+                break;
             case 'select-rect':
-            case 'select-circle':
                 document.getElementById('selection-options').style.display = 'block';
+                break;
+            case 'select-circle':
+                document.getElementById('circle-select-options').style.display = 'block';
                 break;
             case 'text':
                 document.getElementById('text-options').style.display = 'block';
@@ -1950,6 +2196,7 @@ class BitsDraw {
         const methodSelect = document.getElementById('dithering-method');
         const alphaSlider = document.getElementById('dithering-alpha');
         const alphaValue = document.getElementById('dithering-alpha-value');
+        const alphaChannelCheckbox = document.getElementById('dithering-alpha-channel');
         
         console.log('Dialog elements:', {
             dialog: !!dialog,
@@ -1967,7 +2214,8 @@ class BitsDraw {
                 originalPixels: null,
                 previewPixels: null,
                 alpha: 1.0,
-                method: 'Bayer4x4'
+                method: 'Bayer4x4',
+                ditherAlphaChannel: false
             };
         };
 
@@ -1996,6 +2244,12 @@ class BitsDraw {
             this.updateDitheringPreview();
         });
 
+        // Alpha channel checkbox
+        alphaChannelCheckbox.addEventListener('change', (e) => {
+            this.ditheringData.ditherAlphaChannel = e.target.checked;
+            this.updateDitheringPreview();
+        });
+
         // Apply button
         applyBtn.addEventListener('click', () => {
             this.applyDithering();
@@ -2004,23 +2258,35 @@ class BitsDraw {
     }
 
     showDitheringDialog() {
-        const activeLayer = this.editor.getActiveLayer();
+        DEBUG.log('🎨 Opening dithering dialog...');
+        let activeLayer = this.editor.getActiveLayer();
+        
+        // Fallback: if no active layer, try to get the main bitmap data
         if (!activeLayer) {
-            this.showNotification('No active layer to apply dithering', 'error');
-            return;
+            console.log('⚠️ No active layer found, using main bitmap data');
+            const bitmapData = this.editor.getBitmapData();
+            if (bitmapData && bitmapData.pixels) {
+                activeLayer = { pixels: bitmapData.pixels };
+            } else {
+                this.showNotification('No bitmap data available for dithering', 'error');
+                return;
+            }
         }
 
-        // Copy current layer data
+        // Copy current layer data (both pixels and alpha)
         this.ditheringData.originalPixels = new Uint8Array(activeLayer.pixels);
+        this.ditheringData.originalAlpha = new Uint8Array(activeLayer.alpha || this.editor.createEmptyAlpha());
         
         // Reset parameters
         this.ditheringData.alpha = 1.0;
         this.ditheringData.method = 'Bayer4x4';
+        this.ditheringData.ditherAlphaChannel = false;
 
         // Update UI
         document.getElementById('dithering-method').value = this.ditheringData.method;
         document.getElementById('dithering-alpha').value = 100;
         document.getElementById('dithering-alpha-value').textContent = '1.00';
+        document.getElementById('dithering-alpha-channel').checked = this.ditheringData.ditherAlphaChannel;
 
         // Setup preview canvases
         this.setupDitheringPreview();
@@ -2067,26 +2333,51 @@ class BitsDraw {
         if (!this.ditheringData.originalPixels) return;
 
         const previewCanvas = document.getElementById('dithering-preview-canvas');
-        const layer = {
+        
+        // Dither pixel data
+        const pixelLayer = {
             pixels: this.ditheringData.originalPixels,
             width: this.editor.width,
             height: this.editor.height
         };
 
-        // Apply dithering
+        // Apply JavaScript dithering to pixels
         const ditheredPixels = this.ditheringEffects.ditherLayer(
-            layer,
+            pixelLayer,
             this.ditheringData.alpha,
             this.ditheringData.method
         );
 
+        // Dither alpha channel if enabled
+        let ditheredAlpha = this.ditheringData.originalAlpha;
+        if (this.ditheringData.ditherAlphaChannel && this.ditheringData.originalAlpha) {
+            // Convert 1-bit alpha to normalized for dithering
+            const normalizedAlpha = new Float32Array(this.ditheringData.originalAlpha.length);
+            for (let i = 0; i < this.ditheringData.originalAlpha.length; i++) {
+                normalizedAlpha[i] = this.ditheringData.originalAlpha[i];
+            }
+            
+            const alphaLayer = {
+                pixels: normalizedAlpha,
+                width: this.editor.width,
+                height: this.editor.height
+            };
+
+            ditheredAlpha = this.ditheringEffects.ditherLayer(
+                alphaLayer,
+                this.ditheringData.alpha,
+                this.ditheringData.method
+            );
+        }
+
         // Use 8x zoom for better visibility
         const zoom = 8;
 
-        // Render preview
-        this.ditheringEffects.renderToCanvas(
+        // Render preview with alpha support
+        this.renderDitheringPreviewWithAlpha(
             previewCanvas,
             ditheredPixels,
+            ditheredAlpha,
             this.editor.width,
             this.editor.height,
             zoom
@@ -2094,6 +2385,41 @@ class BitsDraw {
 
         // Store preview data for potential application
         this.ditheringData.previewPixels = ditheredPixels;
+        this.ditheringData.previewAlpha = ditheredAlpha;
+    }
+
+    renderDitheringPreviewWithAlpha(canvas, pixelData, alphaData, width, height, zoom) {
+        const ctx = canvas.getContext('2d');
+        canvas.width = width * zoom;
+        canvas.height = height * zoom;
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = y * width + x;
+                const pixelValue = pixelData[idx];
+                const alphaValue = alphaData[idx];
+                
+                const canvasX = x * zoom;
+                const canvasY = y * zoom;
+                
+                if (alphaValue === 0) {
+                    // Transparent - render checkerboard or solid based on current setting
+                    if (this.editor.showCheckerboard) {
+                        this.editor.renderCheckerboard(canvasX, canvasY, zoom, zoom);
+                    } else {
+                        ctx.fillStyle = this.editor.backgroundColor;
+                        ctx.fillRect(canvasX, canvasY, zoom, zoom);
+                    }
+                } else {
+                    // Opaque - render pixel
+                    ctx.fillStyle = pixelValue ? '#000000' : '#ffffff';
+                    ctx.fillRect(canvasX, canvasY, zoom, zoom);
+                }
+            }
+        }
     }
 
     applyDithering() {
@@ -2110,6 +2436,11 @@ class BitsDraw {
 
         // Apply the dithered pixels to the active layer
         activeLayer.pixels.set(this.ditheringData.previewPixels);
+        
+        // Apply dithered alpha if available
+        if (this.ditheringData.previewAlpha) {
+            activeLayer.alpha.set(this.ditheringData.previewAlpha);
+        }
 
         // Mark layer as dirty and update
         this.editor.markCompositeDirty();
@@ -2361,8 +2692,9 @@ class BitsDraw {
 
 
 
-    drawWithBrush(centerX, centerY, draw) {
-        const radius = Math.floor(this.brushSize / 2);
+    drawWithBrush(centerX, centerY, drawValue, alphaValue, brushSize = null) {
+        const size = brushSize || this.brushSize;
+        const radius = Math.floor(size / 2);
         let pixelsChanged = false;
         
         for (let y = centerY - radius; y <= centerY + radius; y++) {
@@ -2371,7 +2703,7 @@ class BitsDraw {
                     let shouldDraw = false;
                     
                     // For size 1, just draw center pixel
-                    if (this.brushSize === 1) {
+                    if (size === 1) {
                         if (x === centerX && y === centerY) {
                             shouldDraw = true;
                         }
@@ -2387,7 +2719,13 @@ class BitsDraw {
                     }
                     
                     if (shouldDraw) {
-                        this.editor.setPixel(x, y, draw ? 1 : 0, draw ? this.currentPattern : null);
+                        if (alphaValue === 1 && drawValue === 1 && this.currentPattern && this.currentPattern !== 'solid-black') {
+                            // Apply pattern only when drawing (not erasing)
+                            this.editor.setPixelWithAlpha(x, y, drawValue, alphaValue, this.currentPattern);
+                        } else {
+                            // Direct draw/alpha setting
+                            this.editor.setPixelWithAlpha(x, y, drawValue, alphaValue);
+                        }
                         pixelsChanged = true;
                     }
                 }
@@ -2420,10 +2758,10 @@ class BitsDraw {
         }
     }
 
-    updateSmoothStroke(x, y, draw) {
+    updateSmoothStroke(x, y, drawValue, alphaValue) {
         if (!this.smoothDrawing) {
             // Fallback to direct drawing
-            this.drawWithBrush(x, y, draw);
+            this.drawWithBrush(x, y, drawValue, alphaValue);
             return;
         }
 
@@ -2431,15 +2769,15 @@ class BitsDraw {
         
         // Need at least 4 points for Catmull-Rom spline
         if (this.strokePoints.length >= 4) {
-            this.drawSmoothSegment(draw);
+            this.drawSmoothSegment(drawValue, alphaValue);
         } else if (this.strokePoints.length >= 2) {
             // For first few points, draw directly
             const current = this.strokePoints[this.strokePoints.length - 1];
-            this.drawWithBrush(current.x, current.y, draw);
+            this.drawWithBrush(current.x, current.y, drawValue, alphaValue);
         }
     }
 
-    drawSmoothSegment(draw) {
+    drawSmoothSegment(drawValue, alphaValue) {
         const points = this.strokePoints;
         const len = points.length;
         
@@ -2476,7 +2814,7 @@ class BitsDraw {
                 Math.abs(point.x - this.lastDrawPoint.x) >= threshold || 
                 Math.abs(point.y - this.lastDrawPoint.y) >= threshold) {
                 
-                this.drawWithBrush(Math.round(point.x), Math.round(point.y), draw);
+                this.drawWithBrush(Math.round(point.x), Math.round(point.y), drawValue, alphaValue);
                 this.lastDrawPoint = { x: point.x, y: point.y };
             }
         }
@@ -2504,11 +2842,11 @@ class BitsDraw {
         return { x, y };
     }
 
-    finishSmoothStroke(draw) {
+    finishSmoothStroke(drawValue, alphaValue, brushSize = null) {
         // Draw remaining points if any
         if (this.strokePoints.length >= 2) {
             const lastPoint = this.strokePoints[this.strokePoints.length - 1];
-            this.drawWithBrush(lastPoint.x, lastPoint.y, draw);
+            this.drawWithBrush(lastPoint.x, lastPoint.y, drawValue, alphaValue, brushSize);
         }
         
         // Clear stroke data
@@ -2748,7 +3086,7 @@ class BitsDraw {
         }
         
         // Update brush cursor visibility
-        if (tool === 'brush' || tool === 'pencil') {
+        if (tool === 'brush' || tool === 'pencil' || tool === 'spray') {
             this.updateBrushCursorSize();
         } else {
             this.hideBrushCursor();
@@ -2773,7 +3111,7 @@ class BitsDraw {
         this.renderGuides();
     }
 
-    handleCanvasClick(e) {
+    async handleCanvasClick(e) {
         const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
         
         // Only process if coordinates are within canvas bounds
@@ -2783,44 +3121,65 @@ class BitsDraw {
         }
         
         if (this.currentTool === 'brush') {
-            const draw = e.button === 0;
-            
             if (e.type === 'mousedown') {
+                // Left click = alpha=1,draw=1, Right click = alpha=1,draw=0
+                const drawValue = e.button === 0 ? 1 : 0;
+                
                 // Start stroke
                 if (this.smoothDrawing) {
                     this.startSmoothStroke(coords.x, coords.y);
                 }
-                this.drawWithBrush(coords.x, coords.y, draw);
+                this.drawWithBrush(coords.x, coords.y, drawValue, 1);
             } else if (e.type === 'mousemove' && this.isDrawing) {
                 // Continue stroke
+                const drawValue = e.button === 0 ? 1 : 0;
                 if (this.smoothDrawing) {
-                    this.updateSmoothStroke(coords.x, coords.y, draw);
+                    this.updateSmoothStroke(coords.x, coords.y, drawValue, 1);
                 } else {
-                    this.drawWithBrush(coords.x, coords.y, draw);
+                    this.drawWithBrush(coords.x, coords.y, drawValue, 1);
                 }
             } else if (e.type === 'mouseup' && this.isDrawing) {
                 // Finish stroke
+                const drawValue = e.button === 0 ? 1 : 0;
                 if (this.smoothDrawing) {
-                    this.finishSmoothStroke(draw);
+                    this.finishSmoothStroke(drawValue, 1);
                 }
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'pencil') {
-            const draw = e.button === 0;
+            // Left click = alpha=1,draw=1, Right click = alpha=1,draw=0
+            const drawValue = e.button === 0 ? 1 : 0;
             
             if (e.type === 'mousedown') {
-                // Simple 1-pixel bit flip
-                const currentPixel = this.editor.getPixel(coords.x, coords.y);
-                this.editor.setPixel(coords.x, coords.y, currentPixel ? 0 : 1);
+                // Set pixel with alpha=1 and left/right click draw value
+                this.editor.setPixelWithAlpha(coords.x, coords.y, drawValue, 1);
                 this.editor.redraw();
                 this.updateOutput();
             } else if (e.type === 'mousemove' && this.isDrawing) {
-                // Continue 1-pixel bit flip
-                const currentPixel = this.editor.getPixel(coords.x, coords.y);
-                this.editor.setPixel(coords.x, coords.y, currentPixel ? 0 : 1);
+                // Continue setting pixels with same draw/alpha values
+                this.editor.setPixelWithAlpha(coords.x, coords.y, drawValue, 1);
                 this.editor.redraw();
                 this.updateOutput();
             } else if (e.type === 'mouseup' && this.isDrawing) {
+                this.editor.saveState();
+            }
+        } else if (this.currentTool === 'eraser') {
+            // Eraser tool: always sets alpha=0, draw=0
+            if (e.type === 'mousedown') {
+                if (this.eraserSmooth) {
+                    this.startSmoothStroke(coords.x, coords.y);
+                }
+                this.drawWithBrush(coords.x, coords.y, 0, 0, this.eraserSize);
+            } else if (e.type === 'mousemove' && this.isDrawing) {
+                if (this.eraserSmooth) {
+                    this.updateSmoothStroke(coords.x, coords.y, 0, 0);
+                } else {
+                    this.drawWithBrush(coords.x, coords.y, 0, 0, this.eraserSize);
+                }
+            } else if (e.type === 'mouseup' && this.isDrawing) {
+                if (this.eraserSmooth) {
+                    this.finishSmoothStroke(0, 0, this.eraserSize);
+                }
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'bucket') {
@@ -2833,6 +3192,13 @@ class BitsDraw {
             this.updateOutput();
         } else if (this.currentTool === 'spray') {
             this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern);
+            this.editor.redraw();
+            this.updateOutput();
+            if (e.type === 'mouseup') {
+                this.editor.saveState();
+            }
+        } else if (this.currentTool === 'blur') {
+            this.applyBlurEffect(coords.x, coords.y);
             if (e.type === 'mouseup') {
                 this.editor.saveState();
             }
@@ -2932,7 +3298,10 @@ class BitsDraw {
         const previewCtx = this.previewCanvas.getContext('2d');
         previewCtx.imageSmoothingEnabled = false;
         
-        // Copy pixels from main canvas
+        // Clear canvas to transparent
+        previewCtx.clearRect(0, 0, this.previewCanvas.width, this.previewCanvas.height);
+        
+        // Copy pixels from main canvas with proper alpha handling
         const imageData = previewCtx.createImageData(this.editor.width, this.editor.height);
         const data = imageData.data;
         
@@ -2944,14 +3313,25 @@ class BitsDraw {
         for (let y = 0; y < this.editor.height; y++) {
             for (let x = 0; x < this.editor.width; x++) {
                 const pixelValue = bitmapData.pixels[y][x];
-                const displayValue = this.editor.inverted ? (1 - pixelValue) : pixelValue;
-                const color = displayValue ? drawColor : backgroundColor;
+                const alphaValue = bitmapData.alpha[y][x];
                 const index = (y * this.editor.width + x) * 4;
                 
-                data[index] = color.r;     // R
-                data[index + 1] = color.g; // G
-                data[index + 2] = color.b; // B
-                data[index + 3] = 255;     // A
+                if (alphaValue === 0) {
+                    // Transparent pixel - set alpha to 0 for true transparency
+                    data[index] = 0;       // R
+                    data[index + 1] = 0;   // G
+                    data[index + 2] = 0;   // B
+                    data[index + 3] = 0;   // A (transparent)
+                } else {
+                    // Opaque pixel - apply display mode colors
+                    const displayValue = this.editor.inverted ? (1 - pixelValue) : pixelValue;
+                    const color = displayValue ? drawColor : backgroundColor;
+                    
+                    data[index] = color.r;     // R
+                    data[index + 1] = color.g; // G
+                    data[index + 2] = color.b; // B
+                    data[index + 3] = 255;     // A (opaque)
+                }
             }
         }
         
@@ -3070,7 +3450,8 @@ class BitsDraw {
         for (let y = 0; y < this.editor.height; y++) {
             for (let x = 0; x < this.editor.width; x++) {
                 if (this.editor.isInSelection(x, y, this.selection)) {
-                    this.editor.setPixel(x, y, 0);
+                    // Set alpha=0, draw=0 for transparency
+                    this.editor.setPixelWithAlpha(x, y, 0, 0);
                 }
             }
         }
@@ -3156,18 +3537,23 @@ class BitsDraw {
             this.drawSelectionOverlay();
         }
         
-        // Draw line preview
+        // Draw pixel-perfect line preview using Bresenham algorithm
         const ctx = this.editor.ctx;
-        ctx.save();
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 2]);
-        
         const zoom = this.editor.zoom;
-        ctx.beginPath();
-        ctx.moveTo(x1 * zoom + zoom/2, y1 * zoom + zoom/2);
-        ctx.lineTo(x2 * zoom + zoom/2, y2 * zoom + zoom/2);
-        ctx.stroke();
+        
+        // Use Bresenham's line algorithm to get exact pixels
+        const linePixels = this.getLinePixels(x1, y1, x2, y2);
+        
+        // Draw preview pixels as red semi-transparent overlay
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+        
+        for (const pixel of linePixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+            }
+        }
         
         ctx.restore();
     }
@@ -3188,25 +3574,62 @@ class BitsDraw {
             this.drawSelectionOverlay();
         }
         
-        // Draw rect preview
+        // Draw pixel-perfect rectangle preview
         const ctx = this.editor.ctx;
-        ctx.save();
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 2]);
-        
         const zoom = this.editor.zoom;
-        const startX = Math.min(x1, x2) * zoom;
-        const startY = Math.min(y1, y2) * zoom;
-        const width = (Math.abs(x2 - x1) + 1) * zoom;
-        const height = (Math.abs(y2 - y1) + 1) * zoom;
         
-        ctx.strokeRect(startX, startY, width, height);
+        // Get rectangle boundary pixels
+        const rectPixels = this.getRectPixels(x1, y1, x2, y2);
+        
+        // Draw preview pixels as red semi-transparent overlay
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+        
+        for (const pixel of rectPixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+            }
+        }
         
         ctx.restore();
     }
 
-    drawCirclePreview(centerX, centerY, endX, endY) {
+    calculateEllipseParams(startX, startY, endX, endY, isShiftHeld, isAltHeld) {
+        if (isAltHeld) {
+            // Alt held: Draw from center
+            const centerX = startX;
+            const centerY = startY;
+            const radiusX = Math.abs(endX - startX);
+            const radiusY = Math.abs(endY - startY);
+            
+            if (isShiftHeld) {
+                // Shift + Alt: Perfect circle from center
+                const radius = Math.max(radiusX, radiusY);
+                return { centerX, centerY, radiusX: radius, radiusY: radius };
+            } else {
+                // Alt only: Oval from center
+                return { centerX, centerY, radiusX, radiusY };
+            }
+        } else {
+            // Normal mode: Draw from corner (like rectangle)
+            const centerX = Math.round((startX + endX) / 2);
+            const centerY = Math.round((startY + endY) / 2);
+            const radiusX = Math.abs(endX - startX) / 2;
+            const radiusY = Math.abs(endY - startY) / 2;
+            
+            if (isShiftHeld) {
+                // Shift only: Perfect circle from corner
+                const radius = Math.min(radiusX, radiusY);
+                return { centerX, centerY, radiusX: radius, radiusY: radius };
+            } else {
+                // No modifiers: Oval from corner
+                return { centerX, centerY, radiusX, radiusY };
+            }
+        }
+    }
+
+    drawCirclePreview(startX, startY, endX, endY) {
         // Clear previous preview
         this.editor.redraw();
         
@@ -3215,21 +3638,28 @@ class BitsDraw {
             this.drawSelectionOverlay();
         }
         
-        // Draw circle preview
+        // Draw pixel-perfect ellipse/circle preview
         const ctx = this.editor.ctx;
-        ctx.save();
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 2]);
-        
         const zoom = this.editor.zoom;
-        const radius = Math.round(Math.sqrt(
-            Math.pow(endX - centerX, 2) + Math.pow(endY - centerY, 2)
-        )) * zoom;
         
-        ctx.beginPath();
-        ctx.arc(centerX * zoom + zoom/2, centerY * zoom + zoom/2, radius, 0, 2 * Math.PI);
-        ctx.stroke();
+        // Calculate ellipse parameters with modifier key support
+        const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
+            startX, startY, endX, endY, this.shiftPressed, this.altPressed
+        );
+        
+        // Get ellipse boundary pixels
+        const ellipsePixels = this.getEllipsePixels(centerX, centerY, radiusX, radiusY);
+        
+        // Draw preview pixels as red semi-transparent overlay
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+        
+        for (const pixel of ellipsePixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+            }
+        }
         
         ctx.restore();
     }
@@ -3239,6 +3669,149 @@ class BitsDraw {
         if (this.selection) {
             this.drawSelectionOverlay();
         }
+    }
+
+    // ===== PIXEL-PERFECT PREVIEW HELPERS =====
+    
+    getLinePixels(x1, y1, x2, y2) {
+        const pixels = [];
+        
+        // Bresenham's line algorithm
+        const dx = Math.abs(x2 - x1);
+        const dy = Math.abs(y2 - y1);
+        const sx = x1 < x2 ? 1 : -1;
+        const sy = y1 < y2 ? 1 : -1;
+        let err = dx - dy;
+        
+        let x = x1;
+        let y = y1;
+        
+        while (true) {
+            pixels.push({ x, y });
+            
+            if (x === x2 && y === y2) break;
+            
+            const e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
+                x += sx;
+            }
+            if (e2 < dx) {
+                err += dx;
+                y += sy;
+            }
+        }
+        
+        return pixels;
+    }
+    
+    getRectPixels(x1, y1, x2, y2) {
+        const pixels = [];
+        const startX = Math.min(x1, x2);
+        const startY = Math.min(y1, y2);
+        const endX = Math.max(x1, x2);
+        const endY = Math.max(y1, y2);
+        
+        // Check shape options to determine if we draw border, fill, or both
+        const drawBorder = document.getElementById('draw-border').checked;
+        const drawFill = document.getElementById('draw-fill').checked;
+        
+        for (let y = startY; y <= endY; y++) {
+            for (let x = startX; x <= endX; x++) {
+                const isBorder = (x === startX || x === endX || y === startY || y === endY);
+                
+                if ((drawFill) || (!drawFill && isBorder && drawBorder)) {
+                    pixels.push({ x, y });
+                } else if (drawBorder && isBorder) {
+                    pixels.push({ x, y });
+                }
+            }
+        }
+        
+        return pixels;
+    }
+    
+    getCirclePixels(centerX, centerY, radius) {
+        const pixels = [];
+        const radiusSquared = radius * radius;
+        const minX = Math.max(0, centerX - radius);
+        const maxX = Math.min(this.editor.width - 1, centerX + radius);
+        const minY = Math.max(0, centerY - radius);
+        const maxY = Math.min(this.editor.height - 1, centerY + radius);
+        
+        // Check shape options to determine if we draw border, fill, or both
+        const drawBorder = document.getElementById('draw-border').checked;
+        const drawFill = document.getElementById('draw-fill').checked;
+        
+        for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+                const dx = x - centerX;
+                const dy = y - centerY;
+                const distanceSquared = dx * dx + dy * dy;
+                
+                let shouldDraw = false;
+                if (drawFill) {
+                    shouldDraw = distanceSquared <= radiusSquared;
+                } else if (drawBorder) {
+                    const outerRadius = radius + 0.5;
+                    const innerRadius = radius - 0.5;
+                    shouldDraw = distanceSquared <= outerRadius * outerRadius && 
+                               distanceSquared >= innerRadius * innerRadius;
+                }
+                
+                if (shouldDraw) {
+                    pixels.push({ x, y });
+                }
+            }
+        }
+        
+        return pixels;
+    }
+    
+    getEllipsePixels(centerX, centerY, radiusX, radiusY) {
+        const pixels = [];
+        const radiusXSquared = radiusX * radiusX;
+        const radiusYSquared = radiusY * radiusY;
+        const minX = Math.max(0, Math.floor(centerX - radiusX));
+        const maxX = Math.min(this.editor.width - 1, Math.ceil(centerX + radiusX));
+        const minY = Math.max(0, Math.floor(centerY - radiusY));
+        const maxY = Math.min(this.editor.height - 1, Math.ceil(centerY + radiusY));
+        
+        // Check circle-specific shape options to determine if we draw border, fill, or both
+        const drawBorder = document.getElementById('circle-draw-border').checked;
+        const drawFill = document.getElementById('circle-draw-fill').checked;
+        
+        for (let y = minY; y <= maxY; y++) {
+            for (let x = minX; x <= maxX; x++) {
+                const dx = x - centerX;
+                const dy = y - centerY;
+                
+                // Ellipse equation: (x²/a²) + (y²/b²) = 1
+                const ellipseValue = (dx * dx) / radiusXSquared + (dy * dy) / radiusYSquared;
+                
+                let shouldDraw = false;
+                if (drawFill) {
+                    shouldDraw = ellipseValue <= 1.0;
+                } else if (drawBorder) {
+                    // For border, check if pixel is on the edge of the ellipse
+                    const outerRadiusX = radiusX + 0.5;
+                    const outerRadiusY = radiusY + 0.5;
+                    const innerRadiusX = Math.max(0, radiusX - 0.5);
+                    const innerRadiusY = Math.max(0, radiusY - 0.5);
+                    
+                    const outerEllipse = (dx * dx) / (outerRadiusX * outerRadiusX) + (dy * dy) / (outerRadiusY * outerRadiusY);
+                    const innerEllipse = (dx * dx) / (innerRadiusX * innerRadiusX) + (dy * dy) / (innerRadiusY * innerRadiusY);
+                    
+                    shouldDraw = outerEllipse <= 1.0 && innerEllipse >= 1.0;
+                }
+                
+                if (shouldDraw) {
+                    pixels.push({ x, y });
+                }
+            }
+        }
+        
+        return pixels;
     }
 
     updateOutput() {
@@ -3255,19 +3828,43 @@ class BitsDraw {
         canvas.width = this.editor.width;
         canvas.height = this.editor.height;
         
-        // Fill with white background
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Create ImageData for pixel-perfect alpha support
+        const imageData = ctx.createImageData(this.editor.width, this.editor.height);
+        const data = imageData.data;
         
-        // Draw bitmap data
-        ctx.fillStyle = '#000000';
+        // Get current display mode colors
+        const colors = this.displayModes[this.currentDisplayMode];
+        const drawColor = this.hexToRgb(colors.draw_color);
+        const backgroundColor = this.hexToRgb(colors.background_color);
+        
+        // Set pixels with proper alpha channel support
         for (let y = 0; y < this.editor.height; y++) {
             for (let x = 0; x < this.editor.width; x++) {
-                if (bitmapData.pixels[y][x] === 1) {
-                    ctx.fillRect(x, y, 1, 1);
+                const pixelValue = bitmapData.pixels[y][x];
+                const alphaValue = bitmapData.alpha[y][x];
+                const index = (y * this.editor.width + x) * 4;
+                
+                if (alphaValue === 0) {
+                    // Transparent pixel - set alpha to 0 for PNG transparency
+                    data[index] = 0;       // R
+                    data[index + 1] = 0;   // G
+                    data[index + 2] = 0;   // B
+                    data[index + 3] = 0;   // A (transparent)
+                } else {
+                    // Opaque pixel - apply display mode colors
+                    const displayValue = this.editor.inverted ? (1 - pixelValue) : pixelValue;
+                    const color = displayValue ? drawColor : backgroundColor;
+                    
+                    data[index] = color.r;     // R
+                    data[index + 1] = color.g; // G
+                    data[index + 2] = color.b; // B
+                    data[index + 3] = 255;     // A (opaque)
                 }
             }
         }
+        
+        // Put the image data on the canvas
+        ctx.putImageData(imageData, 0, 0);
         
         // Download the PNG
         canvas.toBlob((blob) => {
@@ -3282,6 +3879,107 @@ class BitsDraw {
             URL.revokeObjectURL(url);
             this.showNotification('PNG exported successfully!', 'success');
         }, 'image/png');
+    }
+
+    /**
+     * Export animation as GIF (Phase 5)
+     */
+    exportAnimationGIF() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.exportAnimationGIF();
+        } else {
+            alert('Animation export requires the advanced CanvasUnit system.');
+        }
+    }
+
+    /**
+     * Export animation as APNG (Phase 5)
+     */
+    exportAnimationAPNG() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.exportAnimationAPNG();
+        } else {
+            alert('Animation export requires the advanced CanvasUnit system.');
+        }
+    }
+
+    /**
+     * Export animation as sprite sheet (Phase 5)
+     */
+    exportSpriteSheet() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.exportSpriteSheet();
+        } else {
+            alert('Animation export requires the advanced CanvasUnit system.');
+        }
+    }
+
+    /**
+     * Show new project dialog (Phase 6)
+     */
+    showNewProjectDialog() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.showNewProjectDialog();
+        } else {
+            // Fallback to old dialog
+            this.dialogs.showNewCanvasDialog();
+        }
+    }
+
+    /**
+     * Show open project dialog (Phase 6)
+     */
+    showOpenProjectDialog() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.showOpenProjectDialog();
+        } else {
+            alert('Project management requires the advanced CanvasUnit system.');
+        }
+    }
+
+    /**
+     * Show recent projects dialog (Phase 6)
+     */
+    showRecentProjectsDialog() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.showRecentProjectsDialog();
+        } else {
+            alert('Project management requires the advanced CanvasUnit system.');
+        }
+    }
+
+    /**
+     * Save current project (Phase 6)
+     */
+    saveProject() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.saveProject();
+        } else {
+            // Fallback to old save
+            this.saveBitmapToStorage();
+        }
+    }
+
+    /**
+     * Save project as new file (Phase 6)
+     */
+    saveProjectAs() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.saveProjectAs();
+        } else {
+            alert('Project management requires the advanced CanvasUnit system.');
+        }
+    }
+
+    /**
+     * Export project as .bdp file (Phase 6)
+     */
+    exportProject() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.exportProject();
+        } else {
+            alert('Project management requires the advanced CanvasUnit system.');
+        }
     }
 
     showNotification(message, type = 'info') {
@@ -3484,20 +4182,24 @@ class BitsDraw {
         this.isMovingLayer = true;
         const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
         
-        // Save original pixels from active layer only
+        // Save original pixels and alpha from active layer
         const originalPixels = [];
+        const originalAlpha = [];
         for (let y = 0; y < this.editor.height; y++) {
             originalPixels[y] = [];
+            originalAlpha[y] = [];
             for (let x = 0; x < this.editor.width; x++) {
                 const index = this.editor.getPixelIndex(x, y);
                 originalPixels[y][x] = activeLayer.pixels[index];
+                originalAlpha[y][x] = activeLayer.alpha[index];
             }
         }
         
         this.layerMoveStart = {
             x: coords.x,
             y: coords.y,
-            originalPixels: originalPixels
+            originalPixels: originalPixels,
+            originalAlpha: originalAlpha
         };
         
         e.preventDefault();
@@ -3537,11 +4239,13 @@ class BitsDraw {
         
         const { width, height } = { width: this.editor.width, height: this.editor.height };
         const originalPixels = this.layerMoveStart.originalPixels;
+        const originalAlpha = this.layerMoveStart.originalAlpha;
         
-        // Clear current layer first
+        // Clear current layer first (both pixels and alpha)
         activeLayer.pixels.fill(0);
+        activeLayer.alpha.fill(0);
         
-        // Create new pixel layout by moving original pixels
+        // Create new pixel and alpha layout by moving original data
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 let sourceX = x - deltaX;
@@ -3554,17 +4258,17 @@ class BitsDraw {
                 } else {
                     // Clip mode - pixels outside bounds are lost
                     if (sourceX < 0 || sourceX >= width || sourceY < 0 || sourceY >= height) {
-                        continue; // Leave as 0 (background)
+                        continue; // Leave as 0 (transparent background)
                     }
                 }
                 
-                // Get original pixel value and set it at new position
+                // Get original pixel and alpha values and set at new position
                 if (sourceY < originalPixels.length && sourceX < originalPixels[sourceY].length) {
                     const pixelValue = originalPixels[sourceY][sourceX];
-                    if (pixelValue) {
-                        const index = this.editor.getPixelIndex(x, y);
-                        activeLayer.pixels[index] = pixelValue;
-                    }
+                    const alphaValue = originalAlpha[sourceY][sourceX];
+                    const index = this.editor.getPixelIndex(x, y);
+                    activeLayer.pixels[index] = pixelValue;
+                    activeLayer.alpha[index] = alphaValue;
                 }
             }
         }
@@ -4256,6 +4960,397 @@ class BitsDraw {
             document.addEventListener('click', closeDropdown);
         }, 0);
     }
+
+    // CanvasUnit System - View Mode Switching (Phase 1)
+    switchToCanvasView() {
+        // Make sure canvas window is visible
+        const canvasWindow = document.getElementById('canvas-window');
+        if (canvasWindow) canvasWindow.style.display = 'block';
+        
+        console.log('Switched to Canvas View');
+        
+        if (this.legacyAdapter) {
+            this.legacyAdapter.switchToCanvasView();
+        }
+    }
+
+
+    // CanvasUnit System - Utility Methods
+    getCanvasUnitManager() {
+        return this.unitManager;
+    }
+
+    getConversionTools() {
+        return this.legacyAdapter ? this.legacyAdapter.getConversionTools() : null;
+    }
+
+    // Phase 4: Smart Conversion Methods
+    showSmartConversions() {
+        if (this.legacyAdapter) {
+            this.legacyAdapter.showConversionDialog();
+        } else {
+            console.log('Smart conversions require CanvasUnit system');
+        }
+    }
+
+    quickConversion(type) {
+        if (this.legacyAdapter && this.legacyAdapter.quickConversions) {
+            if (typeof this.legacyAdapter.quickConversions[type] === 'function') {
+                this.legacyAdapter.quickConversions[type]();
+            } else {
+                console.warn(`Unknown quick conversion type: ${type}`);
+            }
+        } else {
+            console.log('Quick conversions require CanvasUnit system');
+        }
+    }
+
+    // ===== BLUR TOOL IMPLEMENTATION =====
+    
+    applyBlurEffect(centerX, centerY) {
+        const radius = this.blurSize;
+        
+        // Get area to blur (square region around cursor)
+        const x1 = Math.max(0, centerX - radius);
+        const y1 = Math.max(0, centerY - radius);
+        const x2 = Math.min(this.editor.width - 1, centerX + radius);
+        const y2 = Math.min(this.editor.height - 1, centerY + radius);
+        
+        const width = x2 - x1 + 1;
+        const height = y2 - y1 + 1;
+        
+        if (width <= 0 || height <= 0) return;
+        
+        // Extract region data (1-bit to grayscale)
+        const grayscaleData = new Uint8Array(width * height);
+        const alphaData = new Uint8Array(width * height);
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const srcX = x1 + x;
+                const srcY = y1 + y;
+                const srcIndex = y * width + x;
+                
+                const pixelData = this.editor.getPixelWithAlpha(srcX, srcY);
+                grayscaleData[srcIndex] = pixelData.draw * 255; // Convert 1-bit to 8-bit
+                alphaData[srcIndex] = pixelData.alpha;
+            }
+        }
+        
+        // Analyze color palette in the blur region
+        const colorPalette = this.analyzeBlurRegionPalette(grayscaleData, alphaData, width, height);
+        
+        // Apply context-aware blur and dithering
+        const { ditheredDrawData, ditheredAlphaData } = this.applyContextAwareBlur(
+            grayscaleData, alphaData, width, height, colorPalette
+        );
+        
+        // Write result back to canvas
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const srcX = x1 + x;
+                const srcY = y1 + y;
+                const srcIndex = y * width + x;
+                
+                // Apply both dithered draw and alpha values
+                const newDrawValue = ditheredDrawData[srcIndex];
+                const newAlphaValue = ditheredAlphaData[srcIndex];
+                this.editor.setPixelWithAlpha(srcX, srcY, newDrawValue, newAlphaValue);
+            }
+        }
+        
+        this.editor.scheduleRender();
+    }
+    
+    analyzeBlurRegionPalette(grayscaleData, alphaData, width, height) {
+        let hasBlack = false;
+        let hasWhite = false;
+        let hasTransparent = false;
+        
+        // Analyze what colors exist in the opaque pixels
+        for (let i = 0; i < grayscaleData.length; i++) {
+            if (alphaData[i] === 1) { // Only analyze opaque pixels
+                const pixelValue = grayscaleData[i];
+                if (pixelValue === 0) hasWhite = true;        // 0 = white pixel
+                else if (pixelValue === 255) hasBlack = true;  // 255 = black pixel
+            } else {
+                hasTransparent = true; // Track existing transparency
+            }
+        }
+        
+        // Determine target palette based on existing colors
+        let targetPalette;
+        if (hasBlack && !hasWhite) {
+            // Pure black region → target: black + transparency
+            targetPalette = 'black-alpha';
+        } else if (hasWhite && !hasBlack) {
+            // Pure white region → target: white + transparency  
+            targetPalette = 'white-alpha';
+        } else if (hasBlack && hasWhite) {
+            // Mixed region → target: white + black + transparency
+            targetPalette = 'white-black-alpha';
+        } else {
+            // Fallback: if region is empty or all transparent
+            targetPalette = 'white-black-alpha';
+        }
+        
+        DEBUG.log(`🎨 Blur region analysis: hasBlack=${hasBlack}, hasWhite=${hasWhite}, hasTransparent=${hasTransparent} → palette: ${targetPalette}`);
+        
+        return {
+            hasBlack,
+            hasWhite, 
+            hasTransparent,
+            targetPalette
+        };
+    }
+    
+    applyContextAwareBlur(grayscaleData, alphaData, width, height, colorPalette) {
+        let ditheredDrawData, ditheredAlphaData;
+        
+        if (colorPalette.targetPalette === 'black-alpha') {
+            // Black-only region: blur ONLY the alpha, keep pixels pure black
+            const result = this.blurBlackWithAlphaOnly(grayscaleData, alphaData, width, height);
+            ditheredDrawData = result.pixels;
+            ditheredAlphaData = result.alpha;
+            
+        } else if (colorPalette.targetPalette === 'white-alpha') {
+            // White-only region: blur ONLY the alpha, keep pixels pure white
+            const result = this.blurWhiteWithAlphaOnly(grayscaleData, alphaData, width, height);
+            ditheredDrawData = result.pixels;
+            ditheredAlphaData = result.alpha;
+            
+        } else {
+            // Mixed region: use traditional blur + dithering
+            const blurredDrawData = this.gaussianBlur(grayscaleData, width, height, alphaData);
+            ditheredDrawData = this.applyDithering(blurredDrawData, width, height, this.blurDitherMethod);
+            
+            if (this.blurAlphaChannel) {
+                const blurredAlphaData = this.gaussianBlurAlpha(alphaData, width, height);
+                ditheredAlphaData = this.applyAlphaDithering(blurredAlphaData, width, height, this.blurDitherMethod);
+            } else {
+                ditheredAlphaData = alphaData;
+            }
+        }
+        
+        return { ditheredDrawData, ditheredAlphaData };
+    }
+    
+    blurBlackWithAlphaOnly(grayscaleData, alphaData, width, height) {
+        // For black-only regions: blur ONLY the alpha channel, keep pure black pixels
+        
+        // Step 1: Blur the alpha channel to create soft falloff
+        const blurredAlpha = this.gaussianBlurAlpha(alphaData, width, height);
+        
+        // Step 2: Dither the blurred alpha to get 1-bit alpha values
+        const normalizedAlpha = new Float32Array(blurredAlpha.length);
+        for (let i = 0; i < blurredAlpha.length; i++) {
+            normalizedAlpha[i] = blurredAlpha[i] / 255; // Convert to 0-1 range
+        }
+        
+        const alphaLayer = {
+            pixels: normalizedAlpha,
+            width: width,
+            height: height
+        };
+        
+        const dithering = new DitheringEffects();
+        const ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, this.blurDitherMethod);
+        
+        // Step 3: Create result - pure black pixels where opaque, transparent elsewhere
+        const pixelResult = new Uint8Array(grayscaleData.length);
+        const alphaResult = new Uint8Array(grayscaleData.length);
+        
+        for (let i = 0; i < grayscaleData.length; i++) {
+            alphaResult[i] = ditheredAlpha[i];
+            
+            // Keep pure black pixels where opaque, pixel value irrelevant where transparent
+            if (alphaResult[i] === 1) {
+                pixelResult[i] = 1; // Pure black pixel
+            } else {
+                pixelResult[i] = 0; // Transparent (pixel value doesn't matter)
+            }
+        }
+        
+        DEBUG.log(`🎯 Black-alpha blur: no gray values, only black pixels with soft alpha edges`);
+        return { pixels: pixelResult, alpha: alphaResult };
+    }
+    
+    blurWhiteWithAlphaOnly(grayscaleData, alphaData, width, height) {
+        // For white-only regions: blur ONLY the alpha channel, keep pure white pixels
+        
+        // Step 1: Blur the alpha channel to create soft falloff
+        const blurredAlpha = this.gaussianBlurAlpha(alphaData, width, height);
+        
+        // Step 2: Dither the blurred alpha to get 1-bit alpha values
+        const normalizedAlpha = new Float32Array(blurredAlpha.length);
+        for (let i = 0; i < blurredAlpha.length; i++) {
+            normalizedAlpha[i] = blurredAlpha[i] / 255; // Convert to 0-1 range
+        }
+        
+        const alphaLayer = {
+            pixels: normalizedAlpha,
+            width: width,
+            height: height
+        };
+        
+        const dithering = new DitheringEffects();
+        const ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, this.blurDitherMethod);
+        
+        // Step 3: Create result - pure white pixels where opaque, transparent elsewhere
+        const pixelResult = new Uint8Array(grayscaleData.length);
+        const alphaResult = new Uint8Array(grayscaleData.length);
+        
+        for (let i = 0; i < grayscaleData.length; i++) {
+            alphaResult[i] = ditheredAlpha[i];
+            
+            // Keep pure white pixels where opaque, pixel value irrelevant where transparent
+            if (alphaResult[i] === 1) {
+                pixelResult[i] = 0; // Pure white pixel
+            } else {
+                pixelResult[i] = 0; // Transparent (pixel value doesn't matter)
+            }
+        }
+        
+        DEBUG.log(`🎯 White-alpha blur: no gray values, only white pixels with soft alpha edges`);
+        return { pixels: pixelResult, alpha: alphaResult };
+    }
+    
+    gaussianBlur(data, width, height, alphaData) {
+        // Simple box blur approximation of Gaussian (faster)
+        const radius = Math.max(1, Math.floor(this.blurSize / 2));
+        const result = new Uint8Array(data.length);
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const centerIndex = y * width + x;
+                
+                // Skip transparent pixels
+                if (alphaData[centerIndex] === 0) {
+                    result[centerIndex] = data[centerIndex];
+                    continue;
+                }
+                
+                let sum = 0;
+                let count = 0;
+                
+                // Box blur kernel
+                for (let ky = -radius; ky <= radius; ky++) {
+                    for (let kx = -radius; kx <= radius; kx++) {
+                        const ny = y + ky;
+                        const nx = x + kx;
+                        
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                            const sampleIndex = ny * width + nx;
+                            
+                            // Only include opaque pixels in blur calculation
+                            if (alphaData[sampleIndex] === 1) {
+                                sum += data[sampleIndex];
+                                count++;
+                            }
+                        }
+                    }
+                }
+                
+                result[centerIndex] = count > 0 ? Math.round(sum / count) : data[centerIndex];
+            }
+        }
+        
+        return result;
+    }
+    
+    gaussianBlurAlpha(alphaData, width, height) {
+        // Convert 1-bit alpha to 8-bit for blurring
+        const grayscaleAlpha = new Uint8Array(alphaData.length);
+        for (let i = 0; i < alphaData.length; i++) {
+            grayscaleAlpha[i] = alphaData[i] * 255;
+        }
+        
+        // Apply blur without alpha masking (since we're blurring alpha itself)
+        const radius = Math.max(1, Math.floor(this.blurSize / 2));
+        const result = new Uint8Array(grayscaleAlpha.length);
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const centerIndex = y * width + x;
+                
+                let sum = 0;
+                let count = 0;
+                
+                // Box blur kernel
+                for (let ky = -radius; ky <= radius; ky++) {
+                    for (let kx = -radius; kx <= radius; kx++) {
+                        const ny = y + ky;
+                        const nx = x + kx;
+                        
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                            const sampleIndex = ny * width + nx;
+                            sum += grayscaleAlpha[sampleIndex];
+                            count++;
+                        }
+                    }
+                }
+                
+                result[centerIndex] = count > 0 ? Math.round(sum / count) : grayscaleAlpha[centerIndex];
+            }
+        }
+        
+        return result;
+    }
+    
+    applyDithering(grayscaleData, width, height, method) {
+        // Check if DitheringEffects is available
+        if (typeof DitheringEffects === 'undefined') {
+            DEBUG.warn('DitheringEffects not available, using simple threshold');
+            return grayscaleData.map(pixel => pixel > 128 ? 1 : 0);
+        }
+        
+        // Convert grayscale (0-255) to normalized (0-1) format expected by DitheringEffects
+        const normalizedPixels = new Float32Array(grayscaleData.length);
+        for (let i = 0; i < grayscaleData.length; i++) {
+            normalizedPixels[i] = grayscaleData[i] / 255;
+        }
+        
+        // Create layer object for DitheringEffects.ditherLayer()
+        const layer = {
+            pixels: normalizedPixels,
+            width: width,
+            height: height
+        };
+        
+        // Create DitheringEffects instance and apply dithering
+        const dithering = new DitheringEffects();
+        const ditheredPixels = dithering.ditherLayer(layer, 1.0, method);
+        
+        return ditheredPixels;
+    }
+    
+    applyAlphaDithering(grayscaleAlphaData, width, height, method) {
+        // Check if DitheringEffects is available
+        if (typeof DitheringEffects === 'undefined') {
+            DEBUG.warn('DitheringEffects not available, using simple threshold for alpha');
+            return grayscaleAlphaData.map(pixel => pixel > 128 ? 1 : 0);
+        }
+        
+        // Convert grayscale alpha (0-255) to normalized (0-1) format
+        const normalizedAlpha = new Float32Array(grayscaleAlphaData.length);
+        for (let i = 0; i < grayscaleAlphaData.length; i++) {
+            normalizedAlpha[i] = grayscaleAlphaData[i] / 255;
+        }
+        
+        // Create layer object for DitheringEffects.ditherLayer()
+        const alphaLayer = {
+            pixels: normalizedAlpha,
+            width: width,
+            height: height
+        };
+        
+        // Create DitheringEffects instance and apply dithering to alpha
+        const dithering = new DitheringEffects();
+        const ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, method);
+        
+        return ditheredAlpha;
+    }
+
 }
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -3,8 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BitsDraw v1.0.1</title>
+    <title>BitsDraw - U8G2 Bitmap Editor</title>
+    
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="BitsDraw is a web-based bitmap editor specifically designed to generate U8G2-compatible bitmap data in .h file format. Create pixel art for OLED displays with real-time preview and multiple export formats.">
+    <meta name="keywords" content="bitmap editor, U8G2, OLED display, pixel art, Arduino, ESP32, bitmap generator, monochrome graphics">
+    <meta name="author" content="kurogedelic">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="BitsDraw - U8G2 Bitmap Editor">
+    <meta property="og:description" content="Web-based bitmap editor for U8G2 displays. Create pixel art with real-time preview and export to C header files.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="/icons/BitsDraw.png">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="BitsDraw - U8G2 Bitmap Editor">
+    <meta name="twitter:description" content="Web-based bitmap editor for U8G2 displays. Create pixel art with real-time preview and export to C header files.">
+    <meta name="twitter:image" content="/icons/BitsDraw.png">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/icons/BitsDraw.png">
+    <link rel="apple-touch-icon" href="/icons/BitsDraw.png">
+    
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="msapplication-TileColor" content="#1a1a1a">
+    
+    <!-- Styles -->
     <link rel="stylesheet" href="style.css">
+    
+    <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
 <body>
@@ -13,6 +42,7 @@
         <div class="menu-item" data-menu="file">File</div>
         <div class="menu-item" data-menu="edit">Edit</div>
         <div class="menu-item" data-menu="image">Image</div>
+        <div class="menu-item" data-menu="effects">Effects</div>
         <div class="menu-item" data-menu="view">View</div>
         <div class="menu-item" data-menu="window">Window</div>
         <div class="menu-item" data-menu="help">Help</div>
@@ -22,69 +52,103 @@
 
     <div class="menu-dropdown" id="menu-file">
         <div class="menu-dropdown-item" data-action="new">
-            <span>New</span>
+            <i class="ph ph-file-plus"></i>
+            <span>New Project...</span>
             <span class="menu-shortcut">⌃N</span>
         </div>
         <div class="menu-dropdown-item" data-action="open">
-            <span>Open...</span>
+            <i class="ph ph-folder-open"></i>
+            <span>Open Project...</span>
             <span class="menu-shortcut">⌃O</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="recent-projects">
+            <i class="ph ph-clock-clockwise"></i>
+            <span>Recent Projects...</span>
         </div>
         <div class="menu-divider"></div>
         <div class="menu-dropdown-item" data-action="save">
-            <span>Save</span>
+            <i class="ph ph-floppy-disk"></i>
+            <span>Save Project</span>
             <span class="menu-shortcut">⌃S</span>
         </div>
-        <div class="menu-dropdown-item" data-action="save-as">Save As...</div>
+        <div class="menu-dropdown-item" data-action="save-as">
+            <i class="ph ph-floppy-disk"></i>
+            <span>Save Project As...</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="export-project">
+            <i class="ph ph-export"></i>
+            <span>Export Project (.bdp)</span>
+        </div>
         <div class="menu-divider"></div>
         <div class="menu-dropdown-item has-submenu" data-action="import">
+            <i class="ph ph-download"></i>
             <span>Import</span>
             <span class="menu-arrow">▶</span>
         </div>
         <div class="menu-submenu" id="submenu-import">
-            <div class="menu-dropdown-item" data-action="import-image">Image...</div>
-            <div class="menu-dropdown-item" data-action="import-cpp">CPP Header File...</div>
+            <div class="menu-dropdown-item" data-action="import-image">
+                <i class="ph ph-image"></i>
+                <span>Image...</span>
+            </div>
+            <div class="menu-dropdown-item" data-action="import-cpp">
+                <i class="ph ph-file-code"></i>
+                <span>CPP Header File...</span>
+            </div>
         </div>
         <div class="menu-dropdown-item has-submenu" data-action="export">
+            <i class="ph ph-upload"></i>
             <span>Export</span>
             <span class="menu-arrow">▶</span>
         </div>
         <div class="menu-submenu" id="submenu-export">
             <div class="menu-dropdown-item" data-action="export-cpp">
+                <i class="ph ph-file-code"></i>
                 <span>CPP header file (u8g2)</span>
                 <span class="menu-shortcut">⌃E</span>
             </div>
-            <div class="menu-dropdown-item" data-action="export-png">PNG</div>
+            <div class="menu-dropdown-item" data-action="export-png">
+                <i class="ph ph-image"></i>
+                <span>PNG</span>
+            </div>
+            <div class="menu-divider"></div>
         </div>
     </div>
 
     <div class="menu-dropdown" id="menu-edit">
         <div class="menu-dropdown-item" data-action="undo">
+            <i class="ph ph-arrow-counter-clockwise"></i>
             <span>Undo</span>
             <span class="menu-shortcut">⌃Z</span>
         </div>
         <div class="menu-dropdown-item" data-action="redo">
+            <i class="ph ph-arrow-clockwise"></i>
             <span>Redo</span>
             <span class="menu-shortcut">⌃Y</span>
         </div>
         <div class="menu-divider"></div>
         <div class="menu-dropdown-item" data-action="cut">
+            <i class="ph ph-scissors"></i>
             <span>Cut</span>
             <span class="menu-shortcut">⌃X</span>
         </div>
         <div class="menu-dropdown-item" data-action="copy">
+            <i class="ph ph-copy"></i>
             <span>Copy</span>
             <span class="menu-shortcut">⌃C</span>
         </div>
         <div class="menu-dropdown-item" data-action="paste">
+            <i class="ph ph-clipboard"></i>
             <span>Paste</span>
             <span class="menu-shortcut">⌃V</span>
         </div>
         <div class="menu-dropdown-item" data-action="select-all">
+            <i class="ph ph-selection-all"></i>
             <span>Select All</span>
             <span class="menu-shortcut">⌃A</span>
         </div>
         <div class="menu-divider"></div>
         <div class="menu-dropdown-item" data-action="clear-selection">
+            <i class="ph ph-selection"></i>
             <span>Clear Selection</span>
             <span class="menu-shortcut">Delete</span>
         </div>
@@ -92,60 +156,147 @@
 
     <div class="menu-dropdown" id="menu-image">
         <div class="menu-dropdown-item" data-action="rescale">
+            <i class="ph ph-resize"></i>
             <span>Rescale Canvas...</span>
         </div>
+        <div class="menu-dropdown-item has-submenu" data-action="transform">
+            <i class="ph ph-arrows-out"></i>
+            <span>Transform</span>
+            <span class="menu-arrow">▶</span>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="smart-conversions">
+            <i class="ph ph-magic-wand"></i>
+            <span>Smart Conversions...</span>
+        </div>
+    </div>
+
+    <div class="menu-submenu" id="submenu-transform">
+        <div class="menu-dropdown-item" data-action="rotate-90">
+            <i class="ph ph-arrow-clockwise"></i>
+            <span>Rotate 90° CW</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="rotate-180">
+            <i class="ph ph-arrow-clockwise"></i>
+            <span>Rotate 180°</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="rotate-270">
+            <i class="ph ph-arrow-counter-clockwise"></i>
+            <span>Rotate 270° CW</span>
+        </div>
+        <div class="menu-divider"></div>
+        <div class="menu-dropdown-item" data-action="flip-horizontal">
+            <i class="ph ph-flip-horizontal"></i>
+            <span>Flip Horizontal</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="flip-vertical">
+            <i class="ph ph-flip-vertical"></i>
+            <span>Flip Vertical</span>
+        </div>
+    </div>
+
+    <div class="menu-dropdown" id="menu-effects">
         <div class="menu-dropdown-item" data-action="invert-bitmap">
+            <i class="ph-fill ph-subtract-square"></i>
             <span>Invert</span>
         </div>
         <div class="menu-dropdown-item" data-action="dithering">
+            <i class="ph-fill ph-subtract-square"></i>
             <span>Dithering...</span>
         </div>
     </div>
 
     <div class="menu-dropdown" id="menu-view">
+        <div class="menu-dropdown-item" data-action="view-canvas">
+            <i class="ph ph-grid-four"></i>
+            <span>Canvas View</span>
+            <span class="menu-shortcut">⌃1</span>
+        </div>
+        <div class="menu-divider"></div>
         <div class="menu-dropdown-item" data-action="zoom-in">
+            <i class="ph ph-magnifying-glass-plus"></i>
             <span>Zoom In</span>
             <span class="menu-shortcut">⌃=</span>
         </div>
         <div class="menu-dropdown-item" data-action="zoom-out">
+            <i class="ph ph-magnifying-glass-minus"></i>
             <span>Zoom Out</span>
             <span class="menu-shortcut">⌃-</span>
         </div>
         <div class="menu-divider"></div>
         <div class="menu-dropdown-item" data-action="show-grid">
+            <i class="ph ph-grid-four"></i>
             <span>Show Grid</span>
             <span class="menu-shortcut">⌃G</span>
         </div>
         <div class="menu-dropdown-item" data-action="show-guides">
+            <i class="ph ph-bounding-box"></i>
             <span>Show Guides</span>
         </div>
         <div class="menu-divider"></div>
         <div class="menu-dropdown-item has-submenu" data-action="appearance">
+            <i class="ph ph-palette"></i>
             <span>Appearance</span>
             <span class="menu-arrow">▶</span>
         </div>
     </div>
 
     <div class="menu-submenu" id="submenu-appearance">
-        <div class="menu-dropdown-item" data-action="theme-auto">Auto</div>
-        <div class="menu-dropdown-item" data-action="theme-light">Light</div>
-        <div class="menu-dropdown-item" data-action="theme-dark">Dark</div>
+        <div class="menu-dropdown-item" data-action="theme-auto">
+            <i class="ph-fill ph-sun-horizon"></i>
+            <span>Auto</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="theme-light">
+            <i class="ph-fill ph-sun"></i>
+            <span>Light</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="theme-dark">
+            <i class="ph-fill ph-moon"></i>
+            <span>Dark</span>
+        </div>
     </div>
 
     <div class="menu-dropdown" id="menu-window">
-        <div class="menu-dropdown-item" data-action="show-tools">Tools</div>
-        <div class="menu-dropdown-item" data-action="show-colors">Patterns</div>
-        <div class="menu-dropdown-item" data-action="show-options">Options</div>
-        <div class="menu-dropdown-item" data-action="show-layers">Layers</div>
-        <div class="menu-dropdown-item" data-action="show-guides">Guides</div>
-        <div class="menu-dropdown-item" data-action="show-preview">Preview</div>
-        <div class="menu-dropdown-item" data-action="show-code">Generated Code</div>
+        <div class="menu-dropdown-item" data-action="show-tools">
+            <i class="ph ph-check-square" data-window-icon="tools-window"></i>
+            <span>Tools</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="show-colors">
+            <i class="ph ph-check-square" data-window-icon="colors-window"></i>
+            <span>Patterns</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="show-options">
+            <i class="ph ph-check-square" data-window-icon="options-window"></i>
+            <span>Options</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="show-layers">
+            <i class="ph ph-check-square" data-window-icon="layers-window"></i>
+            <span>Layers</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="show-guides">
+            <i class="ph ph-check-square" data-window-icon="guides-window"></i>
+            <span>Guides</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="show-preview">
+            <i class="ph ph-check-square" data-window-icon="preview-window"></i>
+            <span>Preview</span>
+        </div>
+        <div class="menu-dropdown-item" data-action="show-canvas-controls">
+            <i class="ph ph-check-square" data-window-icon="canvas-controls-window"></i>
+            <span>Controls</span>
+        </div>
     </div>
 
     <div class="menu-dropdown" id="menu-help">
-        <div class="menu-dropdown-item" data-action="about">About BitsDraw...</div>
+        <div class="menu-dropdown-item" data-action="about">
+            <i class="ph ph-info"></i>
+            <span>About BitsDraw...</span>
+        </div>
         <div class="menu-divider"></div>
-        <div class="menu-dropdown-item" data-action="shortcuts">Keyboard Shortcuts</div>
+        <div class="menu-dropdown-item" data-action="shortcuts">
+            <i class="ph ph-keyboard"></i>
+            <span>Keyboard Shortcuts</span>
+        </div>
     </div>
 
     <div class="desktop">
@@ -162,47 +313,6 @@
             <div class="window-content">
                 <div class="canvas-area">
                     <canvas id="bitmap-canvas"></canvas>
-                </div>
-                <div class="canvas-controls">
-                    <div class="control-group">
-                        <button class="dropdown-button" id="zoom-dropdown-btn" title="Zoom Level">
-                            <i class="ph ph-magnifying-glass"></i>
-                            <span id="zoom-current-value">4x</span>
-                            <i class="ph ph-caret-down"></i>
-                        </button>
-                        <select id="zoom-select" style="display: none;">
-                            <option value="1">1x</option>
-                            <option value="2">2x</option>
-                            <option value="4" selected>4x</option>
-                            <option value="8">8x</option>
-                            <option value="16">16x</option>
-                            <option value="32">32x</option>
-                        </select>
-                        <button id="zoom-out-btn" title="Zoom Out"><i class="ph ph-magnifying-glass-minus"></i></button>
-                        <button id="zoom-in-btn" title="Zoom In"><i class="ph ph-magnifying-glass-plus"></i></button>
-                    </div>
-                    <div class="control-group">
-                        <button class="dropdown-button" id="display-dropdown-btn" title="Display Mode">
-                            <i class="ph ph-monitor"></i>
-                            <span id="display-current-value">White</span>
-                            <i class="ph ph-caret-down"></i>
-                        </button>
-                        <select id="display-mode-select" style="display: none;">
-                            <option value="black">Black</option>
-                            <option value="white" selected>White</option>
-                            <option value="lcd-classic">LCD Classic</option>
-                            <option value="lcd-inverted">LCD Inverted</option>
-                            <option value="night-blue">Night Blue</option>
-                            <option value="night-green">Night Green</option>
-                            <option value="amber">Amber</option>
-                            <option value="terminal">Terminal</option>
-                            <option value="blue">Blue</option>
-                            <option value="paper-white">Paper White</option>
-                            <option value="e-ink-gray">E-Ink Gray</option>
-                            <option value="playdate">Playdate</option>
-                        </select>
-                        <button id="show-grid-btn" title="Show Grid"><i class="ph ph-grid-four"></i></button>
-                    </div>
                 </div>
             </div>
             <div class="window-resize-handle"></div>
@@ -225,6 +335,7 @@
                     </div>
                     <div class="tool-row">
                         <button id="bucket-tool" class="tool-icon" title="Bucket Fill"><i class="ph ph-paint-bucket"></i></button>
+                        <button id="eraser-tool" class="tool-icon" title="Eraser"><i class="ph ph-eraser"></i></button>
                     </div>
                     <div class="tool-row">
                         <button id="select-rect-tool" class="tool-icon" title="Rectangle Select"><i class="ph ph-selection"></i></button>
@@ -243,7 +354,10 @@
                         <button id="spray-tool" class="tool-icon" title="Spray"><i class="ph ph-spray-bottle"></i></button>
                     </div>
                     <div class="tool-row">
+                        <button id="blur-tool" class="tool-icon" title="Blur"><i class="ph ph-drop-simple"></i></button>
                         <button id="guide-tool" class="tool-icon" title="Guide"><i class="ph ph-bounding-box"></i></button>
+                    </div>
+                    <div class="tool-row">
                         <button id="hand-tool" class="tool-icon" title="Hand"><i class="ph ph-hand"></i></button>
                     </div>
                 </div>
@@ -302,16 +416,64 @@
                         <label><input type="checkbox" id="smooth-drawing" checked> Smooth</label>
                     </div>
                     
+                    <!-- Pencil options -->
+                    <div class="option-section" id="pencil-options" style="display: none;">
+                        <label><input type="checkbox" id="pencil-smooth" checked> Smooth</label>
+                        <span class="option-label">Smooth drawing with curve interpolation</span>
+                    </div>
+                    
+                    <!-- Eraser options -->
+                    <div class="option-section" id="eraser-options" style="display: none;">
+                        <label>Size: <input type="range" id="eraser-size" min="1" max="10" value="2"> <span id="eraser-size-value">2</span>px</label>
+                        <label><input type="checkbox" id="eraser-smooth" checked> Smooth</label>
+                        <span class="option-label">Sets alpha=0, draw=0 for transparency</span>
+                    </div>
+                    
                     <!-- Shape tools options -->
                     <div class="option-section" id="shape-options" style="display: none;">
                         <label><input type="checkbox" id="draw-border" checked> <i class="ph ph-square"></i> Border</label>
                         <label><input type="checkbox" id="draw-fill"> <i class="ph ph-square-fill"></i> Fill</label>
                     </div>
                     
+                    <!-- Circle tool options -->
+                    <div class="option-section" id="circle-options" style="display: none;">
+                        <label><input type="checkbox" id="circle-draw-border" checked> <i class="ph ph-square"></i> Border</label>
+                        <label><input type="checkbox" id="circle-draw-fill"> <i class="ph ph-square-fill"></i> Fill</label>
+                        <div class="circle-help">
+                            <span class="option-label">Hold Shift for perfect circle</span>
+                            <span class="option-label">Hold Option for center mode</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Circle select tool options -->
+                    <div class="option-section" id="circle-select-options" style="display: none;">
+                        <div class="circle-help">
+                            <span class="option-label">Hold Shift for perfect circle</span>
+                            <span class="option-label">Hold Option for center mode</span>
+                        </div>
+                    </div>
+                    
                     <!-- Spray options -->
                     <div class="option-section" id="spray-options" style="display: none;">
-                        <label>Size: <input type="range" id="spray-radius" min="2" max="15" value="5"> <span id="spray-radius-value">5</span>px</label>
-                        <label>Density: <input type="range" id="spray-density" min="10" max="100" value="30"> <span id="spray-density-value">30</span>%</label>
+                        <label>Size: <input type="range" id="spray-radius" min="2" max="15" value="8"> <span id="spray-radius-value">8</span>px</label>
+                        <label>Density: <input type="range" id="spray-density" min="10" max="100" value="60"> <span id="spray-density-value">60</span>%</label>
+                    </div>
+                    
+                    <!-- Blur options -->
+                    <div class="option-section" id="blur-options" style="display: none;">
+                        <label>Blur Size: <input type="range" id="blur-size" min="1" max="10" value="3"> <span id="blur-size-value">3</span>px</label>
+                        <label>Dither Method: 
+                            <select id="blur-dither-method">
+                                <option value="FloydSteinberg">Floyd-Steinberg</option>
+                                <option value="Burkes">Burkes</option>
+                                <option value="Atkinson">Atkinson</option>
+                                <option value="Bayer2x2">Bayer 2×2</option>
+                                <option value="Bayer4x4" selected>Bayer 4×4</option>
+                                <option value="Bayer8x8">Bayer 8×8</option>
+                            </select>
+                        </label>
+                        <label><input type="checkbox" id="blur-alpha-channel" checked> Dither Alpha Channel</label>
+                        <span class="option-label">Click and drag to apply blur effect</span>
                     </div>
                     
                     <!-- Selection options -->
@@ -336,6 +498,17 @@
                         <label>Guide Name: <input type="text" id="guide-name" value="Guide" placeholder="Guide name"></label>
                         <label><input type="checkbox" id="guide-snap" checked> <i class="ph ph-magnet"></i> Snap to Grid</label>
                         <span class="option-label">Click and drag to create guides</span>
+                    </div>
+                    
+                    <!-- Move tool options -->
+                    <div class="option-section" id="move-options" style="display: none;">
+                        <label><input type="checkbox" id="move-loop" checked> <i class="ph ph-arrow-clockwise"></i> Loop</label>
+                        <span class="option-label">Loop wraps pixels around edges</span>
+                    </div>
+                    
+                    <!-- Hand tool options -->
+                    <div class="option-section" id="hand-options" style="display: none;">
+                        <span class="option-label">Click and drag to pan the canvas</span>
                     </div>
                     
                     <!-- Bucket fill options -->
@@ -373,7 +546,7 @@
                     </div>
                     <div class="about-info">
                         <h2>BitsDraw</h2>
-                        <p class="version">Version 1.0.1</p>
+                        <p class="version">Version 1.0.2 (Beta)</p>
                         
                         <div class="about-section">
                             <h3>Copyright</h3>
@@ -570,15 +743,92 @@
             </div>
             <div class="window-content">
                 <div class="guides-controls">
-                    <button id="add-guide-btn" title="Add Guide"><i class="ph ph-plus"></i> Add Guide</button>
-                    <button id="export-guides-btn" title="Export Guides"><i class="ph ph-download"></i> Export</button>
-                    <button id="clear-guides-btn" title="Clear All"><i class="ph ph-trash"></i> Clear All</button>
+                    <button id="add-guide-btn" title="Add Guide"><i class="ph ph-plus"></i></button>
+                    <button id="export-guides-btn" title="Export Guides"><i class="ph ph-download"></i></button>
+                    <button id="clear-guides-btn" title="Clear All"><i class="ph ph-trash"></i></button>
                 </div>
                 <div class="guides-list" id="guides-list">
                     <!-- Guides will be dynamically added here -->
                 </div>
             </div>
         </div>
+
+        <!-- Canvas Controls Window -->
+        <div class="window small-titlebar" id="canvas-controls-window" style="left: 300px; top: 570px; width: 84px; min-width: 84px; max-width: 84px; resize: none; height: auto;">
+            <div class="window-title-bar">
+                <div class="window-controls">
+                    <div class="window-control close"><i class="ph ph-x"></i></div>
+                    <div class="window-control minimize"><i class="ph ph-minus"></i></div>
+                </div>
+                <div class="window-title">Controls</div>
+            </div>
+            <div class="window-content">
+                <div class="canvas-controls-vertical">
+                    <!-- Zoom Level -->
+                    <div class="control-block">
+                        <button class="dropdown-button" id="zoom-dropdown-btn" title="Zoom Level">
+                            <span id="zoom-current-value">4x</span>
+                            <i class="ph ph-caret-down"></i>
+                        </button>
+                        <select id="zoom-select" style="display: none;">
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="4" selected>4x</option>
+                            <option value="8">8x</option>
+                            <option value="16">16x</option>
+                            <option value="32">32x</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Zoom Buttons -->
+                    <div class="control-block">
+                        <div class="zoom-buttons">
+                            <button id="zoom-out-btn" title="Zoom Out"><i class="ph ph-magnifying-glass-minus"></i></button>
+                            <button id="zoom-in-btn" title="Zoom In"><i class="ph ph-magnifying-glass-plus"></i></button>
+                        </div>
+                    </div>
+                    
+                    <!-- Display Mode -->
+                    <div class="control-block">
+                        <button class="dropdown-button" id="display-dropdown-btn" title="Display Mode">
+                            <div class="display-preview" id="display-preview-icon"></div>
+                            <i class="ph ph-caret-down"></i>
+                        </button>
+                        <select id="display-mode-select" style="display: none;">
+                            <option value="black">Black</option>
+                            <option value="white" selected>White</option>
+                            <option value="lcd-classic">LCD Classic</option>
+                            <option value="lcd-inverted">LCD Inverted</option>
+                            <option value="night-blue">Night Blue</option>
+                            <option value="night-green">Night Green</option>
+                            <option value="amber">Amber</option>
+                            <option value="terminal">Terminal</option>
+                            <option value="blue">Blue</option>
+                            <option value="paper-white">Paper White</option>
+                            <option value="e-ink-gray">E-Ink Gray</option>
+                            <option value="playdate">Playdate</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Grid and Checkerboard -->
+                    <div class="control-block">
+                        <div class="grid-buttons">
+                            <button id="show-grid-btn" title="Show Grid"><i class="ph ph-grid-four"></i></button>
+                            <button id="show-checkerboard-btn" title="Show Checkerboard"><i class="ph ph-checkerboard"></i></button>
+                        </div>
+                    </div>
+                    
+                    <!-- Guides -->
+                    <div class="control-block">
+                        <div class="grid-buttons">
+                            <button id="show-guides-btn" title="Show Guides"><i class="ph ph-bounding-box"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
     </div>
 
     <!-- New Canvas Dialog -->
@@ -754,6 +1004,34 @@
                                 <option value="transparent-black">Transparent → Black</option>
                             </select>
                         </div>
+                        <div class="control-group">
+                            <label>Conversion Method:</label>
+                            <select id="dither-method-select">
+                                <option value="threshold">Simple Threshold</option>
+                                <option value="floyd-steinberg">Floyd-Steinberg Dithering</option>
+                                <option value="atkinson">Atkinson Dithering</option>
+                                <option value="burkes">Burkes Dithering</option>
+                                <option value="bayer-2x2">Bayer 2×2 Dithering</option>
+                                <option value="bayer-4x4">Bayer 4×4 Dithering</option>
+                                <option value="bayer-8x8">Bayer 8×8 Dithering</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Color Processing:</label>
+                            <div class="checkbox-group">
+                                <label><input type="checkbox" id="invert-colors-checkbox"> Invert Colors</label>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Alpha Channel Mode:</label>
+                            <select id="alpha-mode-select">
+                                <option value="ignore">Ignore Alpha (Opaque)</option>
+                                <option value="preserve">Preserve Original Alpha</option>
+                                <option value="white-to-alpha">White → Transparent</option>
+                                <option value="black-to-alpha">Black → Transparent</option>
+                                <option value="no-alpha">Force Opaque</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -805,9 +1083,13 @@
                                 <input type="range" id="dithering-alpha" min="0" max="100" value="100" step="1">
                             </div>
                             <div class="control-group">
+                                <label><input type="checkbox" id="dithering-alpha-channel"> Dither Alpha Channel</label>
+                                <span class="dithering-info-small">Apply dithering to transparency</span>
+                            </div>
+                            <div class="control-group">
                                 <div class="dithering-info">
-                                    <span>Alpha controls the fill rate/transparency simulation</span>
-                                    <span>1.0 = Original, 0.0 = Transparent</span>
+                                    <span>Level controls the dithering intensity</span>
+                                    <span>Higher values = more dithering</span>
                                 </div>
                             </div>
                         </div>
@@ -821,6 +1103,7 @@
         </div>
     </div>
 
+    
     <!-- Core utilities -->
     <script src="utils/optimizedBitmap.js"></script>
     <script src="utils/export.js"></script>
@@ -842,11 +1125,33 @@
     <script src="src/core/StateManager.js"></script>
     <script src="src/core/CommandSystem.js"></script>
     <script src="src/tools/ToolSystem.js"></script>
+    
+    <!-- CanvasUnit System (Phase 1) -->
+    <script src="src/core/CanvasUnit.js"></script>
+    <script src="src/core/CanvasUnitManager.js"></script>
+    <script src="src/core/LegacyAdapter.js"></script>
+    
+    <!-- Advanced Tools (Phase 4) -->
+    <script src="src/tools/SmartCopyTool.js"></script>
+    <script src="src/tools/ConversionManager.js"></script>
+    <script src="src/ui/ConversionDialog.js"></script>
+    
+    <!-- Animation Export (Phase 5) -->
+    <script src="src/export/AnimationExporter.js"></script>
+    <script src="src/ui/AnimationExportDialog.js"></script>
+    
+    <!-- Project Management (Phase 6) -->
+    <script src="src/core/ProjectManager.js"></script>
+    <script src="src/ui/ProjectDialog.js"></script>
+    
     <script src="src/core/Application.js"></script>
     <script src="src/RefactorBridge.js"></script>
     <script src="src/RefactorMonitor.js"></script>
     
     <!-- Main application -->
     <script src="main.js"></script>
+    
+    <!-- Vite ES Module entry point for development features -->
+    <script type="module" src="/src/main.js"></script>
 </body>
 </html>
