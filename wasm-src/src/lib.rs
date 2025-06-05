@@ -140,9 +140,9 @@ fn bayer_dither_impl(pixels: &[u8], width: u32, height: u32, params: &[f32]) -> 
             let idx = y * w + x;
             let pixel = result[idx];
             let dither_value = bayer_matrix[(y % matrix_size) * matrix_size + (x % matrix_size)];
-            let adjusted_threshold = threshold + (dither_value as i16 - 128) / 4;
+            let adjusted_threshold = threshold as i16 + (dither_value as i16 - 128) / 4;
             
-            result[idx] = if pixel as i16 > adjusted_threshold { 255 } else { 0 };
+            result[idx] = if (pixel as i16) > adjusted_threshold { 255 } else { 0 };
         }
     }
     
