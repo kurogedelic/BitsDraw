@@ -1,8 +1,7 @@
 {
   "name": "bitsdraw",
   "version": "1.0.1",
-  "description": "Professional 1-bit graphics editor for U8G2 displays with WASM acceleration",
-  "type": "module",
+  "description": "Professional 1-bit graphics editor for U8G2 displays",
   "main": "src/main.js",
   "scripts": {
     "dev": "vite",
