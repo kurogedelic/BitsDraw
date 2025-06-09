@@ -2194,6 +2194,36 @@ body {
     border-color 0.2s ease;
 }
 
+.project-inputs {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.project-inputs label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: color 0.2s ease;
+}
+
+.project-inputs input {
+  width: 200px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
 #swap-dimensions-btn {
   width: 32px;
   height: 32px;

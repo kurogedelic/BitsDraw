@@ -6489,6 +6489,7 @@ class BitsDraw {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
                     <label>Intensity: <input type="range" id="blur-intensity-bar" min="1" max="5" value="${this.blurIntensity || 2}"> <span id="blur-intensity-value-bar">${this.blurIntensity || 2}</span></label>
+                    <label><input type="checkbox" id="blur-alpha-channel" ${this.blurAlphaChannel ? 'checked' : ''}> Blur Alpha</label>
                 </div>
             `;
             
@@ -6497,6 +6498,13 @@ class BitsDraw {
                 blurIntensityBar.addEventListener('input', (e) => {
                     this.blurIntensity = parseInt(e.target.value);
                     document.getElementById('blur-intensity-value-bar').textContent = this.blurIntensity;
+                });
+            }
+            
+            const blurAlphaChannelBar = document.getElementById('blur-alpha-channel');
+            if (blurAlphaChannelBar) {
+                blurAlphaChannelBar.addEventListener('change', (e) => {
+                    this.blurAlphaChannel = e.target.checked;
                 });
             }
         }
