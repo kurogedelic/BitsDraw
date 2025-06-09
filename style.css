@@ -2733,6 +2733,31 @@ body {
   background: rgba(255, 0, 0, 0.1);
 }
 
+.brush-cursor-overlay.pixelated {
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  border-radius: 0;
+  background: transparent;
+  position: relative;
+}
+
+.brush-cursor-pixel {
+  position: absolute;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.brush-cursor-pixel:nth-child(odd) {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.brush-cursor-pixel:nth-child(even) {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 /* Image Placement Dialog Styles */
 .image-placement-dialog {
   width: 900px;

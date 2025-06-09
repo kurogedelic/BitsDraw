@@ -1681,16 +1681,49 @@ class BitsDraw {
         const toolSize = this.currentTool === 'eraser' ? this.eraserSize : 
                         this.currentTool === 'blur' ? this.blurSize :
                         this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
-        const size = toolSize * this.editor.zoom;
-        this.brushCursorOverlay.style.width = size + 'px';
-        this.brushCursorOverlay.style.height = size + 'px';
+        
+        const zoom = this.editor.zoom;
         
         // Update appearance based on tool
         this.brushCursorOverlay.className = 'brush-cursor-overlay';
-        if (this.currentTool === 'pencil' && this.brushSize === 1) {
-            this.brushCursorOverlay.classList.add('square');
-        } else if (this.currentTool === 'eraser') {
-            this.brushCursorOverlay.classList.add('eraser');
+        
+        if (this.currentTool === 'brush' || this.currentTool === 'pencil') {
+            // Create pixelated cursor showing individual pixels
+            this.createPixelatedCursor(toolSize, zoom);
+            this.brushCursorOverlay.classList.add('pixelated');
+        } else {
+            // Use simple outline for other tools
+            const size = toolSize * zoom;
+            this.brushCursorOverlay.style.width = size + 'px';
+            this.brushCursorOverlay.style.height = size + 'px';
+            this.brushCursorOverlay.innerHTML = '';
+            
+            if (this.currentTool === 'eraser') {
+                this.brushCursorOverlay.classList.add('eraser');
+            }
+        }
+    }
+    
+    createPixelatedCursor(brushSize, zoom) {
+        // Create a grid of pixels to show the brush area
+        const totalSize = brushSize * zoom;
+        this.brushCursorOverlay.style.width = totalSize + 'px';
+        this.brushCursorOverlay.style.height = totalSize + 'px';
+        
+        // Clear previous content
+        this.brushCursorOverlay.innerHTML = '';
+        
+        // Create individual pixel squares
+        for (let y = 0; y < brushSize; y++) {
+            for (let x = 0; x < brushSize; x++) {
+                const pixel = document.createElement('div');
+                pixel.className = 'brush-cursor-pixel';
+                pixel.style.left = (x * zoom) + 'px';
+                pixel.style.top = (y * zoom) + 'px';
+                pixel.style.width = zoom + 'px';
+                pixel.style.height = zoom + 'px';
+                this.brushCursorOverlay.appendChild(pixel);
+            }
         }
     }
 
@@ -3393,6 +3426,11 @@ class BitsDraw {
         // Update brush cursor visibility
         if (tool === 'brush' || tool === 'pencil' || tool === 'spray') {
             this.updateBrushCursorSize();
+            // Show cursor if mouse is over canvas
+            const canvas = document.getElementById('bitmap-canvas');
+            if (canvas && canvas.matches(':hover')) {
+                this.showBrushCursor();
+            }
         } else {
             this.hideBrushCursor();
         }
@@ -6264,6 +6302,7 @@ class BitsDraw {
                 brushSizeBar.addEventListener('input', (e) => {
                     this.brushSize = parseInt(e.target.value);
                     document.getElementById('brush-size-value-bar').textContent = this.brushSize;
+                    this.updateBrushCursorSize();
                     // Sync with original controls if they exist
                     const original = document.getElementById('brush-size');
                     if (original) {
