@@ -1,4 +1,5 @@
 // Debug utility - automatically detects dev vs production
+// Cache buster: v1.0.3-fixed-project-name-refs
 const DEBUG = {
     // Auto-detect development environment
     isDev: () => {
