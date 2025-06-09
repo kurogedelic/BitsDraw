@@ -1672,8 +1672,20 @@ class BitsDraw {
 
     updateBrushCursor(clientX, clientY) {
         if (!this.brushCursorOverlay) return;
-        this.brushCursorOverlay.style.left = clientX + 'px';
-        this.brushCursorOverlay.style.top = clientY + 'px';
+        
+        // Get pixel coordinates (snapped to grid)
+        const pixelCoords = this.editor.getCanvasCoordinates(clientX, clientY);
+        
+        // Convert back to screen coordinates, centered on the pixel
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const zoom = this.editor.zoom;
+        
+        // Calculate the center of the pixel in screen coordinates
+        const screenX = canvasRect.left + (pixelCoords.x * zoom) + (zoom / 2);
+        const screenY = canvasRect.top + (pixelCoords.y * zoom) + (zoom / 2);
+        
+        this.brushCursorOverlay.style.left = screenX + 'px';
+        this.brushCursorOverlay.style.top = screenY + 'px';
     }
 
     updateBrushCursorSize() {
@@ -1713,18 +1725,30 @@ class BitsDraw {
         // Clear previous content
         this.brushCursorOverlay.innerHTML = '';
         
+        // Calculate offset to center the brush (for even-sized brushes)
+        const offsetPixels = Math.floor(brushSize / 2);
+        const pixelOffset = -offsetPixels * zoom;
+        
         // Create individual pixel squares
         for (let y = 0; y < brushSize; y++) {
             for (let x = 0; x < brushSize; x++) {
                 const pixel = document.createElement('div');
                 pixel.className = 'brush-cursor-pixel';
-                pixel.style.left = (x * zoom) + 'px';
-                pixel.style.top = (y * zoom) + 'px';
+                
+                // Position relative to center
+                const pixelX = (x - offsetPixels) * zoom;
+                const pixelY = (y - offsetPixels) * zoom;
+                
+                pixel.style.left = (pixelX + offsetPixels * zoom) + 'px';
+                pixel.style.top = (pixelY + offsetPixels * zoom) + 'px';
                 pixel.style.width = zoom + 'px';
                 pixel.style.height = zoom + 'px';
                 this.brushCursorOverlay.appendChild(pixel);
             }
         }
+        
+        // Adjust the overlay transform to center the cursor properly
+        this.brushCursorOverlay.style.transform = `translate(-50%, -50%)`;
     }
 
     setupColorPalette() {

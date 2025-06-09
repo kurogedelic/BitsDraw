@@ -2738,24 +2738,26 @@ body {
   border-radius: 0;
   background: transparent;
   position: relative;
+  transform: translate(-50%, -50%);
 }
 
 .brush-cursor-pixel {
   position: absolute;
-  border: 1px solid rgba(0, 0, 0, 0.4);
-  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.2);
   box-sizing: border-box;
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
+  pointer-events: none;
 }
 
 .brush-cursor-pixel:nth-child(odd) {
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .brush-cursor-pixel:nth-child(even) {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* Image Placement Dialog Styles */
