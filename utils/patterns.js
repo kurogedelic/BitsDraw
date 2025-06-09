@@ -4,80 +4,150 @@
  */
 
 class Patterns {
+    static _patterns = {
+        'solid-black': {
+            name: 'Solid Black',
+            alphaPattern: [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            ]
+        },
+        'solid-white': {
+            name: 'Solid White',
+            alphaPattern: [
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        },
+        'checkerboard': {
+            name: 'Checkerboard',
+            alphaPattern: [
+                1, 1, 0, 0, 1, 1, 0, 0,
+                1, 1, 0, 0, 1, 1, 0, 0,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                1, 1, 0, 0, 1, 1, 0, 0,
+                1, 1, 0, 0, 1, 1, 0, 0,
+                0, 0, 1, 1, 0, 0, 1, 1,
+                0, 0, 1, 1, 0, 0, 1, 1
+            ]
+        },
+        'diagonal-checkerboard': {
+            name: 'Diagonal Checkerboard',
+            alphaPattern: [
+                1, 0, 1, 0, 1, 0, 1, 0,
+                0, 1, 0, 1, 0, 1, 0, 1,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                0, 1, 0, 1, 0, 1, 0, 1,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                0, 1, 0, 1, 0, 1, 0, 1,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                0, 1, 0, 1, 0, 1, 0, 1
+            ]
+        },
+        'horizontal-stripes': {
+            name: 'Horizontal Stripes',
+            alphaPattern: [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                0, 0, 0, 0, 0, 0, 0, 0
+            ]
+        },
+        'vertical-stripes': {
+            name: 'Vertical Stripes',
+            alphaPattern: [
+                1, 0, 1, 0, 1, 0, 1, 0,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                1, 0, 1, 0, 1, 0, 1, 0,
+                1, 0, 1, 0, 1, 0, 1, 0
+            ]
+        },
+        'diagonal-stripes': {
+            name: 'Diagonal Stripes',
+            alphaPattern: [
+                1, 0, 0, 0, 1, 0, 0, 0,
+                0, 1, 0, 0, 0, 1, 0, 0,
+                0, 0, 1, 0, 0, 0, 1, 0,
+                0, 0, 0, 1, 0, 0, 0, 1,
+                1, 0, 0, 0, 1, 0, 0, 0,
+                0, 1, 0, 0, 0, 1, 0, 0,
+                0, 0, 1, 0, 0, 0, 1, 0,
+                0, 0, 0, 1, 0, 0, 0, 1
+            ]
+        },
+        'bricks': {
+            name: 'Bricks',
+            alphaPattern: [
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 0, 0, 0, 1, 0, 0, 0,
+                1, 0, 0, 0, 1, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                0, 0, 1, 0, 0, 0, 1, 0,
+                0, 0, 1, 0, 0, 0, 1, 0,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 0, 0, 0, 1, 0, 0, 0
+            ]
+        },
+        'dots': {
+            name: 'Dots',
+            alphaPattern: [
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 1, 0, 0, 0, 1, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 1, 0, 0, 0, 1,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 1, 0, 0, 0, 1, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 1, 0, 0, 0, 1
+            ]
+        }
+    };
+
     static getPatterns() {
-        return {
-            'solid-black': {
-                name: 'Solid Black',
-                getValue: (x, y) => 1
-            },
-            'solid-white': {
-                name: 'Solid White', 
-                getValue: (x, y) => 0
-            },
-            'checker-2x2': {
-                name: 'Checker 2x2',
-                getValue: (x, y) => ((Math.floor(x / 2) + Math.floor(y / 2)) % 2)
-            },
-            'checker-4x4': {
-                name: 'Checker 4x4',
-                getValue: (x, y) => ((Math.floor(x / 4) + Math.floor(y / 4)) % 2)
-            },
-            'diagonal-lines': {
-                name: 'Diagonal Lines',
-                getValue: (x, y) => ((x + y) % 3 === 0) ? 1 : 0
-            },
-            'horizontal-lines': {
-                name: 'Horizontal Lines',
-                getValue: (x, y) => (y % 2 === 0) ? 1 : 0
-            },
-            'vertical-lines': {
-                name: 'Vertical Lines',
-                getValue: (x, y) => (x % 2 === 0) ? 1 : 0
-            },
-            'dots-sparse': {
-                name: 'Dots Sparse',
-                getValue: (x, y) => (x % 4 === 0 && y % 4 === 0) ? 1 : 0
-            },
-            'dots-dense': {
-                name: 'Dots Dense',
-                getValue: (x, y) => (x % 2 === 0 && y % 2 === 0) ? 1 : 0
-            },
-            'cross-hatch': {
-                name: 'Cross Hatch',
-                getValue: (x, y) => ((x % 4 === 0) || (y % 4 === 0)) ? 1 : 0
-            },
-            'brick-pattern': {
-                name: 'Brick Pattern',
-                getValue: (x, y) => {
-                    const rowOffset = (Math.floor(y / 2) % 2) * 2;
-                    return ((x + rowOffset) % 4 < 2 && y % 4 < 2) ? 1 : 0;
-                }
-            },
-            'diagonal-fill-25': {
-                name: 'Diagonal 25%',
-                getValue: (x, y) => ((x + y) % 4 === 0) ? 1 : 0
-            },
-            'diagonal-fill-50': {
-                name: 'Diagonal 50%',
-                getValue: (x, y) => ((x + y) % 2 === 0) ? 1 : 0
-            },
-            'diagonal-fill-75': {
-                name: 'Diagonal 75%',
-                getValue: (x, y) => ((x + y) % 4 !== 1) ? 1 : 0
-            }
-        };
+        return this._patterns;
     }
 
-    static applyPattern(patternName, x, y) {
+    static applyPattern(patternName, x, y, primaryDraw = 1, secondaryDraw = 0) {
         const patterns = this.getPatterns();
         const pattern = patterns[patternName];
         
-        if (!pattern) {
-            // Fallback to solid black if pattern not found
-            return 1;
+        if (!pattern || !pattern.alphaPattern) {
+            // Fallback to solid primary color if pattern not found
+            return { alpha: 1, draw: primaryDraw };
         }
         
-        return pattern.getValue(x, y);
+        // Get alpha value from 8x8 pattern array
+        const patternX = x % 8;
+        const patternY = y % 8;
+        const index = patternY * 8 + patternX;
+        const alpha = pattern.alphaPattern[index];
+        
+        // Use primary color for alpha=1, secondary for alpha=0 (when drawing)
+        // For transparent pixels (alpha=0), still set draw but will be ignored during rendering
+        const draw = alpha === 1 ? primaryDraw : secondaryDraw;
+        
+        return { alpha: alpha, draw: draw };
     }
 
     static getPatternNames() {
@@ -87,6 +157,98 @@ class Patterns {
     static getPatternDisplayName(patternName) {
         const patterns = this.getPatterns();
         return patterns[patternName]?.name || patternName;
+    }
+
+    static addPattern(patternName, pattern) {
+        this._patterns[patternName] = pattern;
+        this.saveToStorage();
+    }
+
+    static removePattern(patternName) {
+        delete this._patterns[patternName];
+        this.saveToStorage();
+    }
+
+    static hasPattern(patternName) {
+        return patternName in this._patterns;
+    }
+
+    // Auto-save patterns to localStorage
+    static saveToStorage() {
+        try {
+            const patternsToSave = {};
+            
+            // Only save custom patterns (not built-in ones)
+            Object.keys(this._patterns).forEach(patternName => {
+                if (!this.isBuiltInPattern(patternName)) {
+                    const pattern = this._patterns[patternName];
+                    
+                    // Save the alpha pattern directly
+                    patternsToSave[patternName] = {
+                        name: pattern.name,
+                        alphaPattern: pattern.alphaPattern
+                    };
+                }
+            });
+            
+            localStorage.setItem('bitsdraw-patterns', JSON.stringify(patternsToSave));
+            console.log('Patterns saved to localStorage:', Object.keys(patternsToSave));
+        } catch (error) {
+            console.warn('Failed to save patterns to localStorage:', error);
+        }
+    }
+
+    // Load patterns from localStorage
+    static loadFromStorage() {
+        try {
+            const saved = localStorage.getItem('bitsdraw-patterns');
+            if (saved) {
+                const patternsData = JSON.parse(saved);
+                
+                Object.keys(patternsData).forEach(patternName => {
+                    const patternData = patternsData[patternName];
+                    
+                    // Recreate pattern from alphaPattern
+                    const pattern = {
+                        name: patternData.name,
+                        alphaPattern: patternData.alphaPattern || patternData.gridData || []
+                    };
+                    
+                    this._patterns[patternName] = pattern;
+                });
+                
+                console.log('Patterns loaded from localStorage:', Object.keys(patternsData));
+                return Object.keys(patternsData);
+            }
+        } catch (error) {
+            console.warn('Failed to load patterns from localStorage:', error);
+        }
+        return [];
+    }
+
+    // Check if a pattern is built-in
+    static isBuiltInPattern(patternName) {
+        const builtInPatterns = [
+            'solid-black', 'solid-white', 'checkerboard', 'diagonal-checkerboard', 
+            'horizontal-stripes', 'vertical-stripes', 'diagonal-stripes', 'bricks', 'dots'
+        ];
+        return builtInPatterns.includes(patternName);
+    }
+
+    // Clear all custom patterns from storage
+    static clearStorage() {
+        try {
+            localStorage.removeItem('bitsdraw-patterns');
+            // Remove custom patterns from memory
+            Object.keys(this._patterns).forEach(patternName => {
+                if (!this.isBuiltInPattern(patternName)) {
+                    delete this._patterns[patternName];
+                }
+            });
+            console.log('Patterns cleared from localStorage');
+        } catch (error) {
+            console.warn('Failed to clear patterns from localStorage:', error);
+        }
     }
 }
 

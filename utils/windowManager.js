@@ -13,7 +13,6 @@ class WindowManager {
         windows.forEach(window => {
             this.makeWindowDraggable(window);
             this.setupWindowControls(window);
-            this.setupWindowResize(window);
         });
     }
 
@@ -106,49 +105,6 @@ class WindowManager {
         }
     }
 
-    setupWindowResize(window) {
-        const resizeHandle = window.querySelector('.window-resize-handle');
-        if (!resizeHandle) return;
-
-        let isResizing = false;
-        let startX, startY, startWidth, startHeight;
-
-        resizeHandle.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            startWidth = parseInt(window.offsetWidth);
-            startHeight = parseInt(window.offsetHeight);
-            
-            window.style.zIndex = this.getTopZIndex() + 1;
-            e.preventDefault();
-            e.stopPropagation();
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
-            
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            
-            const newWidth = Math.max(200, startWidth + deltaX);
-            const newHeight = Math.max(100, startHeight + deltaY);
-            
-            window.style.width = newWidth + 'px';
-            window.style.height = newHeight + 'px';
-            
-            if (window.id === 'canvas-window') {
-                this.updateCanvasSize();
-            }
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                this.saveWindowStates();
-            }
-            isResizing = false;
-        });
-    }
 
     getTopZIndex() {
         let maxZ = 0;

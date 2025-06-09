@@ -297,8 +297,9 @@ class ProjectManager {
     /**
      * Apply project data to application
      * @param {object} project Project data
+     * @param {boolean} isNewProject Whether this is a new project (should clear canvas)
      */
-    applyProjectToApp(project) {
+    applyProjectToApp(project, isNewProject = false) {
         if (!this.legacyAdapter || !this.legacyAdapter.app) return;
 
         const app = this.legacyAdapter.app;
@@ -307,6 +308,12 @@ class ProjectManager {
         if (project.canvas.width !== app.editor.width || 
             project.canvas.height !== app.editor.height) {
             app.editor.resize(project.canvas.width, project.canvas.height);
+        }
+
+        // Clear canvas and fill Background layer with white for new projects
+        if (isNewProject) {
+            app.editor.clear();
+            app.editor.fillBackgroundWithWhite();
         }
 
         // Apply view settings

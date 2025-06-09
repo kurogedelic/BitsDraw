@@ -39,13 +39,27 @@ class OptimizedBitmapEditor {
         this.historyIndex = -1;
         this.maxHistory = 50;
         
-        // Create initial layer and setup
+        // Create initial background layer and setup
+        this.addLayer('Background');
+        this.fillBackgroundWithWhite(); // Fill background layer with white pixels
         this.addLayer('Layer 1');
+        this.setActiveLayer(1); // Make Layer 1 active (index 1, Background is index 0)
         this.setupCanvas();
         this.saveState();
     }
 
     // ===== CORE DATA LAYER =====
+    
+    fillBackgroundWithWhite() {
+        // Fill the Background layer (index 0) with white pixels
+        if (this.layers.length > 0) {
+            const backgroundLayer = this.layers[0];
+            // Fill with white pixels (1=white in BitsDraw) and full alpha
+            backgroundLayer.pixels.fill(1); // 1 = white
+            backgroundLayer.alpha.fill(1);  // 1 = fully opaque
+            this.markCompositeDirty();
+        }
+    }
     
     createEmptyBitmap() {
         // Use Uint8Array for better performance than nested arrays
@@ -109,6 +123,30 @@ class OptimizedBitmapEditor {
             return true;
         }
         return false;
+    }
+
+    swapLayers(fromIndex, toIndex) {
+        if (fromIndex < 0 || fromIndex >= this.layers.length || 
+            toIndex < 0 || toIndex >= this.layers.length || 
+            fromIndex === toIndex) {
+            return false;
+        }
+
+        // Swap the layers in the array
+        const temp = this.layers[fromIndex];
+        this.layers[fromIndex] = this.layers[toIndex];
+        this.layers[toIndex] = temp;
+
+        // Update active layer index if needed
+        if (this.activeLayerIndex === fromIndex) {
+            this.activeLayerIndex = toIndex;
+        } else if (this.activeLayerIndex === toIndex) {
+            this.activeLayerIndex = fromIndex;
+        }
+
+        this.markCompositeDirty();
+        this.scheduleRender();
+        return true;
     }
 
     // ===== DIRTY RECTANGLE TRACKING =====
@@ -182,11 +220,22 @@ class OptimizedBitmapEditor {
         
         const operation = (layer) => {
             const index = this.getPixelIndex(x, y);
-            if (pattern && typeof Patterns !== 'undefined') {
-                const patternValue = Patterns.applyPattern(pattern, x, y);
-                // Only set draw data if alpha is 1
-                if (layer.alpha[index] === 1) {
-                    layer.pixels[index] = patternValue;
+            if (pattern) {
+                let patternValue;
+                if (typeof pattern === 'object' && pattern.getValue) {
+                    // Color pattern object
+                    patternValue = pattern.getValue(x, y);
+                    layer.alpha[index] = patternValue.alpha;
+                    if (patternValue.alpha === 1) {
+                        layer.pixels[index] = patternValue.draw;
+                    }
+                } else if (typeof Patterns !== 'undefined') {
+                    // String pattern name - use proper primary/secondary color mapping
+                    const primary = value !== null ? value : 0; // Use as-is: 0=black, 1=white
+                    const secondary = value !== null ? (1 - value) : 1; // Invert: 0→1, 1→0
+                    patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                    layer.alpha[index] = patternValue.alpha;
+                    layer.pixels[index] = patternValue.draw;
                 }
             } else {
                 layer.pixels[index] = value;
@@ -204,8 +253,22 @@ class OptimizedBitmapEditor {
             const index = this.getPixelIndex(x, y);
             layer.alpha[index] = alphaValue;
             if (alphaValue === 1) {
-                if (pattern && typeof Patterns !== 'undefined') {
-                    layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                if (pattern) {
+                    let patternValue;
+                    if (typeof pattern === 'object' && pattern.getValue) {
+                        // Color pattern object
+                        patternValue = pattern.getValue(x, y);
+                        layer.pixels[index] = patternValue.draw;
+                        layer.alpha[index] = patternValue.alpha;
+                    } else if (typeof Patterns !== 'undefined') {
+                        // String pattern name - use drawValue as primary color for patterns
+                        // Left click (drawValue=0) → primary=0 (black), Right click (drawValue=1) → primary=1 (white) 
+                        const primary = drawValue; // Use as-is: 0=black, 1=white
+                        const secondary = 1 - drawValue; // Invert: 0→1, 1→0
+                        patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                        layer.pixels[index] = patternValue.draw;
+                        layer.alpha[index] = patternValue.alpha;
+                    }
                 } else {
                     layer.pixels[index] = drawValue;
                 }
@@ -265,12 +328,12 @@ class OptimizedBitmapEditor {
 
     // ===== EFFICIENT FLOOD FILL =====
     
-    floodFill(startX, startY, newValue, pattern = null) {
+    floodFill(startX, startY, newValue, pattern = null, drawValue = null) {
         // Use the new alpha-aware flood fill with alpha=1
-        this.floodFillWithAlpha(startX, startY, newValue, 1, pattern);
+        this.floodFillWithAlpha(startX, startY, newValue, 1, pattern, drawValue);
     }
 
-    floodFillWithAlpha(startX, startY, newDrawValue, newAlphaValue, pattern = null) {
+    floodFillWithAlpha(startX, startY, newDrawValue, newAlphaValue, pattern = null, drawValue = null) {
         const activeLayer = this.getActiveLayer();
         if (!activeLayer) return;
         
@@ -282,9 +345,18 @@ class OptimizedBitmapEditor {
         const originalAlphaValue = activeLayer.alpha[startIndex];
         
         // Early exit if trying to fill with the same values
-        if (pattern && typeof Patterns !== 'undefined') {
-            const patternValue = Patterns.applyPattern(pattern, startX, startY);
-            if (originalDrawValue === patternValue && originalAlphaValue === newAlphaValue) return;
+        if (pattern) {
+            let patternValue;
+            if (typeof pattern === 'object' && pattern.getValue) {
+                // Color pattern object
+                patternValue = pattern.getValue(startX, startY);
+            } else if (typeof Patterns !== 'undefined') {
+                // String pattern name - use drawValue for primary/secondary mapping
+                const primary = drawValue !== null ? drawValue : 0; // Use as-is: 0=black, 1=white
+                const secondary = drawValue !== null ? (1 - drawValue) : 1; // Invert: 0→1, 1→0
+                patternValue = Patterns.applyPattern(pattern, startX, startY, primary, secondary);
+            }
+            if (patternValue && originalDrawValue === patternValue.draw && originalAlphaValue === patternValue.alpha) return;
         } else if (originalDrawValue === newDrawValue && originalAlphaValue === newAlphaValue) {
             return;
         }
@@ -323,14 +395,29 @@ class OptimizedBitmapEditor {
             
             // Apply pattern or solid color for draw channel
             if (newAlphaValue === 1) {
-                if (pattern && typeof Patterns !== 'undefined') {
-                    activeLayer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                if (pattern) {
+                    let patternValue;
+                    if (typeof pattern === 'object' && pattern.getValue) {
+                        // Color pattern object
+                        patternValue = pattern.getValue(x, y);
+                        activeLayer.pixels[index] = patternValue.draw;
+                    } else if (typeof Patterns !== 'undefined') {
+                        // String pattern name - use drawValue as color guide
+                        const primary = drawValue !== null ? drawValue : 0; // Use as-is: 0=black, 1=white
+                        const secondary = drawValue !== null ? (1 - drawValue) : 1; // Invert: 0→1, 1→0
+                        patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                        activeLayer.pixels[index] = patternValue.draw;
+                        activeLayer.alpha[index] = patternValue.alpha;
+                    }
+                } else if (drawValue !== null) {
+                    // Use explicit drawValue (no pattern)
+                    activeLayer.pixels[index] = drawValue;
                 } else {
                     activeLayer.pixels[index] = newDrawValue;
                 }
             } else {
                 // For transparent pixels, still set draw value
-                activeLayer.pixels[index] = newDrawValue;
+                activeLayer.pixels[index] = drawValue !== null ? drawValue : newDrawValue;
             }
             
             // Add adjacent pixels to stack
@@ -353,7 +440,7 @@ class OptimizedBitmapEditor {
 
     // ===== OPTIMIZED SHAPE DRAWING =====
     
-    drawRect(x1, y1, x2, y2, filled = false, borderOnly = false, pattern = null) {
+    drawRect(x1, y1, x2, y2, filled = false, borderOnly = false, pattern = null, drawValue = null) {
         const startX = Math.min(x1, x2);
         const startY = Math.min(y1, y2);
         const endX = Math.max(x1, x2);
@@ -369,8 +456,24 @@ class OptimizedBitmapEditor {
                             const index = this.getPixelIndex(x, y);
                             // Set alpha=1 and draw value
                             layer.alpha[index] = 1;
-                            if (pattern && typeof Patterns !== 'undefined') {
-                                layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                            if (pattern) {
+                                let patternValue;
+                                if (typeof pattern === 'object' && pattern.getValue) {
+                                    // Color pattern object
+                                    patternValue = pattern.getValue(x, y);
+                                    layer.pixels[index] = patternValue.draw;
+                                    layer.alpha[index] = patternValue.alpha;
+                                } else if (typeof Patterns !== 'undefined') {
+                                    // String pattern name - use drawValue for primary/secondary color mapping
+                                    const primary = drawValue !== null ? drawValue : 0; // Use as-is: 0=black, 1=white
+                                    const secondary = drawValue !== null ? (1 - drawValue) : 1; // Invert: 0→1, 1→0
+                                    patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                                    layer.pixels[index] = patternValue.draw;
+                                    layer.alpha[index] = patternValue.alpha;
+                                }
+                            } else if (drawValue !== null) {
+                                // Use explicit drawValue (no pattern)
+                                layer.pixels[index] = drawValue;
                             } else {
                                 layer.pixels[index] = 1;
                             }
@@ -412,8 +515,21 @@ class OptimizedBitmapEditor {
                         const index = this.getPixelIndex(x, y);
                         // Set alpha=1 and draw value
                         layer.alpha[index] = 1;
-                        if (pattern && typeof Patterns !== 'undefined') {
-                            layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                        if (pattern) {
+                            let patternValue;
+                            if (typeof pattern === 'object' && pattern.getValue) {
+                                // Color pattern object
+                                patternValue = pattern.getValue(x, y);
+                                layer.pixels[index] = patternValue.draw;
+                                layer.alpha[index] = patternValue.alpha;
+                            } else if (typeof Patterns !== 'undefined') {
+                                // String pattern name - use proper primary/secondary color mapping
+                                const primary = 0; // Default to black for circle (no drawValue parameter)
+                                const secondary = 1; // Default to white for circle
+                                patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                                layer.pixels[index] = patternValue.draw;
+                                layer.alpha[index] = patternValue.alpha;
+                            }
                         } else {
                             layer.pixels[index] = 1;
                         }
@@ -426,7 +542,7 @@ class OptimizedBitmapEditor {
         this.addDirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
-    drawEllipse(centerX, centerY, radiusX, radiusY, filled = false, borderOnly = false, pattern = null) {
+    drawEllipse(centerX, centerY, radiusX, radiusY, filled = false, borderOnly = false, pattern = null, drawValue = null) {
         const radiusXSquared = radiusX * radiusX;
         const radiusYSquared = radiusY * radiusY;
         const minX = Math.max(0, Math.floor(centerX - radiusX));
@@ -463,8 +579,24 @@ class OptimizedBitmapEditor {
                         const index = this.getPixelIndex(x, y);
                         // Set alpha=1 and draw value
                         layer.alpha[index] = 1;
-                        if (pattern && typeof Patterns !== 'undefined') {
-                            layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                        if (pattern) {
+                            let patternValue;
+                            if (typeof pattern === 'object' && pattern.getValue) {
+                                // Color pattern object
+                                patternValue = pattern.getValue(x, y);
+                                layer.pixels[index] = patternValue.draw;
+                                layer.alpha[index] = patternValue.alpha;
+                            } else if (typeof Patterns !== 'undefined') {
+                                // String pattern name - use drawValue as color guide
+                                const primary = drawValue !== null ? drawValue : 0; // Use as-is: 0=black, 1=white
+                                const secondary = drawValue !== null ? (1 - drawValue) : 1; // Invert: 0→1, 1→0
+                                patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                                layer.pixels[index] = patternValue.draw;
+                                layer.alpha[index] = patternValue.alpha;
+                            }
+                        } else if (drawValue !== null) {
+                            // Use explicit drawValue (no pattern)
+                            layer.pixels[index] = drawValue;
                         } else {
                             layer.pixels[index] = 1;
                         }
@@ -517,8 +649,8 @@ class OptimizedBitmapEditor {
                         this.compositeCache.pixels[j] = layerPixel;
                         this.compositeCache.alpha[j] = layerAlpha;
                     } else {
-                        // Blend with existing pixel (OR operation for monochrome)
-                        this.compositeCache.pixels[j] = this.compositeCache.pixels[j] || layerPixel;
+                        // Blend with existing pixel - upper layer takes priority
+                        this.compositeCache.pixels[j] = layerPixel;
                     }
                 }
             }
@@ -875,26 +1007,53 @@ class OptimizedBitmapEditor {
     }
 
     // Spray tool implementation
-    spray(centerX, centerY, radius = 5, density = 0.3, pattern = null) {
+    spray(centerX, centerY, radius = 5, density = 0.3, pattern = null, drawValue = null) {
         const radiusSquared = radius * radius;
-        const operations = [];
         
-        for (let i = 0; i < 20; i++) { // 20 random points per spray
-            if (Math.random() > density) continue;
-            
-            const angle = Math.random() * 2 * Math.PI;
-            const distance = Math.random() * radius;
-            const x = Math.round(centerX + Math.cos(angle) * distance);
-            const y = Math.round(centerY + Math.sin(angle) * distance);
-            
-            if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
-                this.setPixelWithAlpha(x, y, 1, 1, pattern);
+        const operation = (layer) => {
+            for (let i = 0; i < 20; i++) { // 20 random points per spray
+                if (Math.random() > density) continue;
+                
+                const angle = Math.random() * 2 * Math.PI;
+                const distance = Math.random() * radius;
+                const x = Math.round(centerX + Math.cos(angle) * distance);
+                const y = Math.round(centerY + Math.sin(angle) * distance);
+                
+                if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+                    const index = this.getPixelIndex(x, y);
+                    // Set alpha=1 and draw value
+                    layer.alpha[index] = 1;
+                    if (pattern) {
+                        let patternValue;
+                        if (typeof pattern === 'object' && pattern.getValue) {
+                            // Color pattern object
+                            patternValue = pattern.getValue(x, y);
+                            layer.pixels[index] = patternValue.draw;
+                            layer.alpha[index] = patternValue.alpha;
+                        } else if (typeof Patterns !== 'undefined') {
+                            // String pattern name - use drawValue as color guide
+                            const primary = drawValue !== null ? drawValue : 0; // Use as-is: 0=black, 1=white
+                            const secondary = drawValue !== null ? (1 - drawValue) : 1; // Invert: 0→1, 1→0
+                            patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                            layer.pixels[index] = patternValue.draw;
+                            layer.alpha[index] = patternValue.alpha;
+                        }
+                    } else if (drawValue !== null) {
+                        // Use explicit drawValue (no pattern)
+                        layer.pixels[index] = drawValue;
+                    } else {
+                        layer.pixels[index] = 1;
+                    }
+                }
             }
-        }
+        };
+        
+        this.batchPixelOperation(operation);
+        this.addDirtyRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
     }
 
     // Line drawing using Bresenham's algorithm
-    drawLine(x1, y1, x2, y2, pattern = null) {
+    drawLine(x1, y1, x2, y2, pattern = null, drawValue = null) {
         const dx = Math.abs(x2 - x1);
         const dy = Math.abs(y2 - y1);
         const sx = x1 < x2 ? 1 : -1;
@@ -910,8 +1069,24 @@ class OptimizedBitmapEditor {
                 if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
                     // Set alpha=1 and draw value
                     layer.alpha[index] = 1;
-                    if (pattern && typeof Patterns !== 'undefined') {
-                        layer.pixels[index] = Patterns.applyPattern(pattern, x, y);
+                    if (pattern) {
+                        let patternValue;
+                        if (typeof pattern === 'object' && pattern.getValue) {
+                            // Color pattern object
+                            patternValue = pattern.getValue(x, y);
+                            layer.pixels[index] = patternValue.draw;
+                            layer.alpha[index] = patternValue.alpha;
+                        } else if (typeof Patterns !== 'undefined') {
+                            // String pattern name - use drawValue as color guide
+                            const primary = drawValue !== null ? drawValue : 0; // Use as-is: 0=black, 1=white
+                            const secondary = drawValue !== null ? (1 - drawValue) : 1; // Invert: 0→1, 1→0
+                            patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                            layer.pixels[index] = patternValue.draw;
+                            layer.alpha[index] = patternValue.alpha;
+                        }
+                    } else if (drawValue !== null) {
+                        // Use explicit drawValue (no pattern)
+                        layer.pixels[index] = drawValue;
                     } else {
                         layer.pixels[index] = 1;
                     }

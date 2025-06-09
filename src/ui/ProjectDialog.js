@@ -570,7 +570,7 @@ class ProjectDialog {
             };
 
             const project = this.projectManager.createNewProject(config);
-            this.projectManager.applyProjectToApp(project);
+            this.projectManager.applyProjectToApp(project, true); // true = isNewProject
 
             this.hide();
             console.log(`Created new project: ${name}`);

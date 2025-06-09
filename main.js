@@ -67,8 +67,10 @@ class BitsDraw {
         this.currentPattern = 'solid-black';
         this.selection = null;
         this.showGrid = false;
-        this.showCheckerboard = true; // Default to showing checkerboard
+        this.showCheckerboard = false; // Checkerboard feature removed
         this.showGuides = true;
+        this.primaryColor = '#000000'; // Black
+        this.secondaryColor = '#ffffff'; // White
         this.selectionClipboard = null;
         this.isDraggingSelection = false;
         this.isDraggingSelectionGraphics = false;
@@ -77,6 +79,7 @@ class BitsDraw {
         this.textBalloonPos = null;
         this.brushSize = 2;
         this.eraserSize = 2;
+        this.currentDrawValue = 0; // Track current draw value for stroke
         this.eraserSmooth = true;
         this.sprayRadius = 8;
         this.sprayDensity = 0.6;
@@ -85,7 +88,7 @@ class BitsDraw {
         this.circleDrawFill = false;
         this.blurDitherMethod = 'Bayer4x4';
         this.blurAlphaChannel = true;
-        this.currentDisplayMode = 'white';
+        this.currentDisplayMode = 'black';
         this.moveLoop = true;
         
         // Guides system
@@ -189,6 +192,13 @@ class BitsDraw {
         };
         
         this.initializeEventListeners();
+        
+        // Load saved patterns from localStorage
+        this.loadSavedPatterns();
+        
+        // Setup new panel system
+        this.setupPanelSystem();
+        
         this.setupColorPalette();
         this.detectAndApplyPlatform();
         this.setupMenuBar();
@@ -207,18 +217,30 @@ class BitsDraw {
         this.setupGuidesPanel();
         this.loadWindowStates();
         
+        // Ensure canvas window opens maximized by default
+        const canvasWindow = document.getElementById('canvas-window');
+        if (canvasWindow) {
+            canvasWindow.style.width = '100%';
+            canvasWindow.style.height = '100%';
+            canvasWindow.style.left = '0px';
+            canvasWindow.style.top = '0px';
+        }
+        
         // Initialize image placement dialog
         this.imagePlacementDialog = new ImagePlacementDialog(this);
         this.updateWindowMenu();
+        
+        // Setup tool options bar
+        this.setupToolOptionsBar();
         this.updateOutput();
         this.setupBrushCursor();
         this.setupThemeManagement();
         
         // Initialize button states
         this.updateGridButton();
-        this.updateCheckerboardDisplay();
-        this.updateCheckerboardButton();
+        // Checkerboard functionality removed
         this.updateGuidesButton();
+        this.updateColorDisplay();
         
         // Test ImageImporter availability
         if (typeof ImageImporter !== 'undefined') {
@@ -228,10 +250,10 @@ class BitsDraw {
         }
         
         // Initialize display mode
-        this.setDisplayMode('white');
+        this.setDisplayMode('black');
         
         // Initialize tool options display
-        this.updateToolOptions('brush');
+        // Tool options will be updated by updateToolOptionsBar()
         
         // Initialize canvas view
     }
@@ -241,6 +263,7 @@ class BitsDraw {
         this.setupToolbarEvents();
         this.setupKeyboardShortcuts();
         this.setupWindowEvents();
+        this.setupColorPanelEvents();
     }
 
     setupCanvasEvents() {
@@ -344,30 +367,39 @@ class BitsDraw {
                 
                 if (this.currentTool === 'rect') {
                     this.clearShapePreview();
-                    this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, this.drawFill, false, this.currentPattern);
+                    // Left click = primary color (black), Right click = secondary color (white)
+                    const drawValue = e.button === 0 ? 0 : 1;
+                    // Use selected pattern instead of color override
+                    this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, this.drawFill, false, this.currentPattern, drawValue);
                     this.editor.saveState();
                     this.updateOutput();
                 } else if (this.currentTool === 'circle') {
                     this.clearShapePreview();
+                    // Left click = primary color (black), Right click = secondary color (white)
+                    const drawValue = e.button === 0 ? 0 : 1;
+                    // Use selected pattern instead of color override
                     const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
                         this.startPos.x, this.startPos.y, coords.x, coords.y, 
                         this.shiftPressed, this.altPressed
                     );
                     if (this.circleDrawBorder && !this.circleDrawFill) {
                         // Border only
-                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, false, true, this.currentPattern);
+                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, false, true, this.currentPattern, drawValue);
                     } else if (this.circleDrawFill && !this.circleDrawBorder) {
                         // Fill only
-                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern);
+                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
                     } else if (this.circleDrawBorder && this.circleDrawFill) {
                         // Both border and fill
-                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern);
+                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
                     }
                     this.editor.saveState();
                     this.updateOutput();
                 } else if (this.currentTool === 'line') {
                     this.clearLinePreview();
-                    this.editor.drawLine(this.startPos.x, this.startPos.y, coords.x, coords.y, this.currentPattern);
+                    // Left click = primary color (black), Right click = secondary color (white)
+                    const drawValue = e.button === 0 ? 0 : 1;
+                    // Use selected pattern instead of color override
+                    this.editor.drawLine(this.startPos.x, this.startPos.y, coords.x, coords.y, this.currentPattern, drawValue);
                     this.editor.saveState();
                 } else if (this.currentTool === 'select-rect') {
                     this.selection = this.editor.createSelection(this.startPos.x, this.startPos.y, coords.x, coords.y, 'rect');
@@ -466,34 +498,51 @@ class BitsDraw {
             }
         });
 
-        // Draw mode checkboxes
-        document.getElementById('draw-border').addEventListener('change', (e) => {
-            this.drawBorder = e.target.checked;
-        });
+        // Draw mode checkboxes (optional - may not exist after moving to top bar)
+        const drawBorderEl = document.getElementById('draw-border');
+        if (drawBorderEl) {
+            drawBorderEl.addEventListener('change', (e) => {
+                this.drawBorder = e.target.checked;
+            });
+        }
 
-        document.getElementById('draw-fill').addEventListener('change', (e) => {
-            this.drawFill = e.target.checked;
-        });
+        const drawFillEl = document.getElementById('draw-fill');
+        if (drawFillEl) {
+            drawFillEl.addEventListener('change', (e) => {
+                this.drawFill = e.target.checked;
+            });
+        }
 
+        // Circle border and fill checkboxes (optional)
+        const circleDrawBorderEl = document.getElementById('circle-draw-border');
+        if (circleDrawBorderEl) {
+            circleDrawBorderEl.addEventListener('change', (e) => {
+                this.circleDrawBorder = e.target.checked;
+            });
+        }
 
-        // Circle border and fill checkboxes
-        document.getElementById('circle-draw-border').addEventListener('change', (e) => {
-            this.circleDrawBorder = e.target.checked;
-        });
+        const circleDrawFillEl = document.getElementById('circle-draw-fill');
+        if (circleDrawFillEl) {
+            circleDrawFillEl.addEventListener('change', (e) => {
+                this.circleDrawFill = e.target.checked;
+            });
+        }
 
-        document.getElementById('circle-draw-fill').addEventListener('change', (e) => {
-            this.circleDrawFill = e.target.checked;
-        });
+        // Move tool loop option (optional)
+        const moveLoopEl = document.getElementById('move-loop');
+        if (moveLoopEl) {
+            moveLoopEl.addEventListener('change', (e) => {
+                this.moveLoop = e.target.checked;
+            });
+        }
 
-        // Move tool loop option
-        document.getElementById('move-loop').addEventListener('change', (e) => {
-            this.moveLoop = e.target.checked;
-        });
-
-        // Guide tool options
-        document.getElementById('guide-snap').addEventListener('change', (e) => {
-            this.guideSnap = e.target.checked;
-        });
+        // Guide tool options (optional)
+        const guideSnapEl = document.getElementById('guide-snap');
+        if (guideSnapEl) {
+            guideSnapEl.addEventListener('change', (e) => {
+                this.guideSnap = e.target.checked;
+            });
+        }
 
         // Zoom dropdown button
         document.getElementById('zoom-dropdown-btn').addEventListener('click', () => {
@@ -507,14 +556,29 @@ class BitsDraw {
         });
 
         // Display mode dropdown button  
-        document.getElementById('display-dropdown-btn').addEventListener('click', () => {
-            this.showDisplayModeDropdown();
-        });
+        const displayDropdownBtn = document.getElementById('display-dropdown-btn');
+        const displayModeSelect = document.getElementById('display-mode-select');
+        
+        if (displayDropdownBtn) {
+            displayDropdownBtn.addEventListener('click', (e) => {
+                DEBUG.log('Display dropdown button clicked');
+                e.preventDefault();
+                e.stopPropagation();
+                this.showDisplayModeDropdown();
+            });
+        } else {
+            DEBUG.error('Element not found: display-dropdown-btn');
+        }
 
-        document.getElementById('display-mode-select').addEventListener('change', (e) => {
-            this.setDisplayMode(e.target.value);
-            this.updateDisplayModeDisplay();
-        });
+        if (displayModeSelect) {
+            displayModeSelect.addEventListener('change', (e) => {
+                DEBUG.log('Display mode changed to:', e.target.value);
+                this.setDisplayMode(e.target.value);
+                this.updateDisplayModeDisplay();
+            });
+        } else {
+            DEBUG.error('Element not found: display-mode-select');
+        }
 
 
         // Canvas controls
@@ -533,11 +597,6 @@ class BitsDraw {
             this.updateGridButton();
         });
 
-        document.getElementById('show-checkerboard-btn').addEventListener('click', () => {
-            this.showCheckerboard = !this.showCheckerboard;
-            this.updateCheckerboardDisplay();
-            this.updateCheckerboardButton();
-        });
 
         document.getElementById('show-guides-btn').addEventListener('click', () => {
             this.showGuides = !this.showGuides;
@@ -545,11 +604,14 @@ class BitsDraw {
             this.updateGuidesButton();
         });
 
-        // Selection controls
-        document.getElementById('clear-selection-btn').addEventListener('click', () => {
-            this.selection = null;
-            this.editor.redraw();
-        });
+        // Selection controls (optional)
+        const clearSelectionBtn = document.getElementById('clear-selection-btn');
+        if (clearSelectionBtn) {
+            clearSelectionBtn.addEventListener('click', () => {
+                this.selection = null;
+                this.editor.redraw();
+            });
+        }
     }
 
 
@@ -562,6 +624,9 @@ class BitsDraw {
         // Update zoom select and display
         document.getElementById('zoom-select').value = zoom;
         this.updateZoomDisplay();
+        
+        // Update viewport frame for new zoom level
+        this.updateViewportFrame();
     }
 
     showZoomDropdown() {
@@ -578,10 +643,20 @@ class BitsDraw {
         const button = document.getElementById(buttonId);
         const select = document.getElementById(selectId);
         
+        DEBUG.log('showDisplayModeCustomDropdown called with:', buttonId, selectId);
+        DEBUG.log('Button found:', !!button);
+        DEBUG.log('Select found:', !!select);
+        
+        if (!button || !select) {
+            DEBUG.error('Required elements not found for display mode dropdown');
+            return;
+        }
+        
         // Remove existing dropdown
         const existingDropdown = document.querySelector('.custom-dropdown');
         if (existingDropdown) {
             existingDropdown.remove();
+            DEBUG.log('Removed existing dropdown');
         }
         
         // Create dropdown
@@ -592,7 +667,15 @@ class BitsDraw {
         const rect = button.getBoundingClientRect();
         dropdown.style.position = 'fixed';
         dropdown.style.left = rect.left + 'px';
-        dropdown.style.top = (rect.bottom + 2) + 'px';
+        
+        // Check if button is in bottom controls bar and position dropdown upward
+        const isBottomControl = button.closest('.bottom-controls-bar');
+        if (isBottomControl) {
+            dropdown.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
+        } else {
+            dropdown.style.top = (rect.bottom + 2) + 'px';
+        }
+        
         dropdown.style.minWidth = rect.width + 'px';
         
         // Add options with color previews
@@ -667,6 +750,8 @@ class BitsDraw {
         });
         
         document.body.appendChild(dropdown);
+        DEBUG.log('Dropdown added to body with', dropdown.children.length, 'items');
+        DEBUG.log('Dropdown positioned at:', dropdown.style.left, dropdown.style.top);
         
         // Close on outside click
         setTimeout(() => {
@@ -674,6 +759,7 @@ class BitsDraw {
                 if (!dropdown.contains(e.target) && e.target !== button) {
                     dropdown.remove();
                     document.removeEventListener('click', closeDropdown);
+                    DEBUG.log('Dropdown closed by outside click');
                 }
             });
         }, 0);
@@ -697,7 +783,15 @@ class BitsDraw {
         const rect = button.getBoundingClientRect();
         dropdown.style.position = 'fixed';
         dropdown.style.left = rect.left + 'px';
-        dropdown.style.top = (rect.bottom + 2) + 'px';
+        
+        // Check if button is in bottom controls bar and position dropdown upward
+        const isBottomControl = button.closest('.bottom-controls-bar');
+        if (isBottomControl) {
+            dropdown.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
+        } else {
+            dropdown.style.top = (rect.bottom + 2) + 'px';
+        }
+        
         dropdown.style.minWidth = rect.width + 'px';
         
         // Add options
@@ -736,11 +830,28 @@ class BitsDraw {
     updateDisplayModeDisplay() {
         const select = document.getElementById('display-mode-select');
         const previewIcon = document.getElementById('display-preview-icon');
+        const displayModeName = document.getElementById('display-mode-name');
         
-        // Update preview icon with current display mode colors
-        const displayMode = this.displayModes[this.currentDisplayMode];
-        if (displayMode) {
-            previewIcon.style.background = `linear-gradient(45deg, ${displayMode.background_color} 0%, ${displayMode.background_color} 40%, ${displayMode.draw_color} 60%, ${displayMode.draw_color} 100%)`;
+        DEBUG.log('updateDisplayModeDisplay called');
+        DEBUG.log('Elements found - select:', !!select, 'previewIcon:', !!previewIcon, 'displayModeName:', !!displayModeName);
+        
+        // Update display mode name
+        if (displayModeName && select) {
+            const selectedOption = select.options[select.selectedIndex];
+            if (selectedOption) {
+                displayModeName.textContent = selectedOption.textContent;
+                DEBUG.log('Display mode name updated to:', selectedOption.textContent);
+            }
+        } else {
+            DEBUG.warn('Could not update display mode name - missing elements');
+        }
+        
+        // Update preview icon with current display mode colors (if it exists)
+        if (previewIcon) {
+            const displayMode = this.displayModes[this.currentDisplayMode];
+            if (displayMode) {
+                previewIcon.style.background = `linear-gradient(45deg, ${displayMode.background_color} 0%, ${displayMode.background_color} 40%, ${displayMode.draw_color} 60%, ${displayMode.draw_color} 100%)`;
+            }
         }
     }
 
@@ -893,6 +1004,39 @@ class BitsDraw {
                 this.stopGuideDrag(e);
             }
         });
+    }
+
+    setupColorPanelEvents() {
+        console.log('Setting up color panel events...');
+        
+        // Primary color block click
+        const primaryColour = document.getElementById('primary-colour');
+        if (primaryColour) {
+            console.log('Primary color element found');
+            primaryColour.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Primary color clicked');
+                this.openColorPicker('primary');
+            });
+        } else {
+            console.error('Primary color element not found');
+        }
+
+        // Secondary color block click
+        const secondaryColour = document.getElementById('secondary-colour');
+        if (secondaryColour) {
+            console.log('Secondary color element found');
+            secondaryColour.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Secondary color clicked');
+                this.openColorPicker('secondary');
+            });
+        } else {
+            console.error('Secondary color element not found');
+        }
+
     }
 
     setupMenuBar() {
@@ -1228,6 +1372,9 @@ class BitsDraw {
             case 'invert-bitmap':
                 this.applyInvertEffect();
                 break;
+            case 'draw-edge':
+                this.showDrawEdgeDialog();
+                break;
             case 'dithering':
                 this.showDitheringDialog();
                 break;
@@ -1367,7 +1514,6 @@ class BitsDraw {
         windows.forEach(window => {
             this.makeWindowDraggable(window);
             this.setupWindowControls(window);
-            this.setupWindowResize(window);
         });
     }
 
@@ -1479,50 +1625,6 @@ class BitsDraw {
         return maxZ;
     }
 
-    setupWindowResize(window) {
-        const resizeHandle = window.querySelector('.window-resize-handle');
-        if (!resizeHandle) return;
-
-        let isResizing = false;
-        let startX, startY, startWidth, startHeight;
-
-        resizeHandle.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            startX = e.clientX;
-            startY = e.clientY;
-            startWidth = parseInt(window.offsetWidth);
-            startHeight = parseInt(window.offsetHeight);
-            
-            window.style.zIndex = this.getTopZIndex() + 1;
-            e.preventDefault();
-            e.stopPropagation(); // Prevent window dragging
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
-            
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            
-            const newWidth = Math.max(200, startWidth + deltaX);
-            const newHeight = Math.max(100, startHeight + deltaY);
-            
-            window.style.width = newWidth + 'px';
-            window.style.height = newHeight + 'px';
-            
-            // Special handling for canvas window
-            if (window.id === 'canvas-window') {
-                this.updateCanvasSize();
-            }
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                this.saveWindowStates();
-            }
-            isResizing = false;
-        });
-    }
 
     updateCanvasSize() {
         // Canvas automatically adjusts to its container
@@ -1592,21 +1694,174 @@ class BitsDraw {
     }
 
     setupColorPalette() {
-        const swatches = document.querySelectorAll('.color-swatch');
+        console.log('Setting up color palette');
         
-        swatches.forEach(swatch => {
+        // Clear any user-created patterns to show only MacPaint patterns
+        Patterns.clearStorage();
+        
+        // Clear any cached loaded patterns since we just cleared storage
+        this.loadedCustomPatterns = [];
+        
+        this.populatePatternPalette();
+        
+        // Skip loading patterns since we just cleared them
+        // this.addLoadedPatternsToUI();
+    }
+
+    populatePatternPalette() {
+        const palette = document.querySelector('.color-palette');
+        palette.innerHTML = ''; // Clear existing content
+        
+        // Get all built-in patterns
+        const patterns = Patterns.getPatterns();
+        const patternNames = Object.keys(patterns);
+        
+        // Create pattern rows (3 patterns per row)
+        const patternsPerRow = 3;
+        let currentRow = null;
+        
+        patternNames.forEach((patternName, index) => {
+            // Create new row every 3 patterns
+            if (index % patternsPerRow === 0) {
+                currentRow = document.createElement('div');
+                currentRow.className = 'pattern-row';
+                palette.appendChild(currentRow);
+            }
+            
+            // Create pattern swatch
+            const swatch = document.createElement('div');
+            swatch.className = 'color-swatch';
+            swatch.setAttribute('data-pattern', patternName);
+            swatch.title = patterns[patternName].name;
+            
+            // Make the first pattern (solid-black) selected by default
+            if (patternName === 'solid-black') {
+                swatch.classList.add('selected');
+            }
+            
             // Generate pattern preview
             this.generatePatternPreview(swatch);
             
+            // Add click handler
             swatch.addEventListener('click', () => {
                 // Remove selected class from all swatches
-                swatches.forEach(s => s.classList.remove('selected'));
+                document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
                 // Add selected class to clicked swatch
                 swatch.classList.add('selected');
                 // Update current pattern
                 this.currentPattern = swatch.dataset.pattern;
+                console.log('Selected pattern:', this.currentPattern);
+                // Update delete button state
+                this.updateDeleteButtonState();
             });
+            
+            // Add double-click handler for pattern editor
+            swatch.addEventListener('dblclick', () => {
+                const patternName = swatch.dataset.pattern;
+                console.log('Double-clicked pattern:', patternName);
+                this.showPatternEditor(patternName);
+            });
+            
+            currentRow.appendChild(swatch);
         });
+        
+        // Setup header button event handlers
+        this.setupPatternHeaderButtons();
+    }
+
+    setupPatternHeaderButtons() {
+        // Add pattern button
+        const addBtn = document.getElementById('add-pattern-btn');
+        if (addBtn) {
+            addBtn.replaceWith(addBtn.cloneNode(true)); // Remove existing listeners
+            document.getElementById('add-pattern-btn').addEventListener('click', () => {
+                console.log('Add pattern button clicked');
+                this.createNewPattern();
+            });
+        }
+
+        // Delete pattern button
+        const deleteBtn = document.getElementById('delete-pattern-btn');
+        if (deleteBtn) {
+            deleteBtn.replaceWith(deleteBtn.cloneNode(true)); // Remove existing listeners
+            document.getElementById('delete-pattern-btn').addEventListener('click', () => {
+                console.log('Delete pattern button clicked');
+                this.deleteSelectedPattern();
+            });
+        }
+
+        // Update delete button state based on current selection
+        this.updateDeleteButtonState();
+    }
+
+    deleteSelectedPattern() {
+        if (!this.currentPattern) {
+            console.log('No pattern selected to delete');
+            return;
+        }
+
+        // Cannot delete built-in MacPaint patterns
+        if (Patterns.isBuiltInPattern(this.currentPattern)) {
+            console.log('Cannot delete built-in pattern:', this.currentPattern);
+            alert('Cannot delete built-in patterns. Only custom patterns can be deleted.');
+            return;
+        }
+
+        // Confirm deletion
+        const patternName = Patterns.getPatternDisplayName(this.currentPattern);
+        if (!confirm(`Delete pattern "${patternName}"?`)) {
+            return;
+        }
+
+        // Remove from patterns
+        Patterns.removePattern(this.currentPattern);
+        
+        // Remove from UI
+        const swatch = document.querySelector(`[data-pattern="${this.currentPattern}"]`);
+        if (swatch) {
+            swatch.remove();
+        }
+
+        // Select the first pattern as default
+        this.currentPattern = 'solid-black';
+        const firstSwatch = document.querySelector('[data-pattern="solid-black"]');
+        if (firstSwatch) {
+            document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+            firstSwatch.classList.add('selected');
+        }
+
+        // Update delete button state
+        this.updateDeleteButtonState();
+
+        console.log('Pattern deleted:', this.currentPattern);
+    }
+
+    updateDeleteButtonState() {
+        const deleteBtn = document.getElementById('delete-pattern-btn');
+        if (deleteBtn) {
+            // Visual state change instead of disabling
+            const canDelete = this.currentPattern && !Patterns.isBuiltInPattern(this.currentPattern);
+            
+            if (canDelete) {
+                deleteBtn.style.opacity = '1';
+                deleteBtn.style.cursor = 'pointer';
+                deleteBtn.title = 'Delete Selected Pattern';
+            } else {
+                deleteBtn.style.opacity = '0.5';
+                deleteBtn.style.cursor = 'not-allowed';
+                if (!this.currentPattern) {
+                    deleteBtn.title = 'No pattern selected';
+                } else {
+                    deleteBtn.title = 'Cannot delete built-in patterns';
+                }
+            }
+            
+            console.log('Delete button state update:', {
+                currentPattern: this.currentPattern,
+                isBuiltIn: this.currentPattern ? Patterns.isBuiltInPattern(this.currentPattern) : 'no pattern',
+                canDelete: canDelete
+            });
+        }
     }
 
     generatePatternPreview(swatch) {
@@ -1628,7 +1883,15 @@ class BitsDraw {
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
                 const value = Patterns.applyPattern(pattern, x, y);
-                if (value) {
+                // Check if it's the new {alpha, draw} format or old simple value
+                let shouldDraw = false;
+                if (typeof value === 'object' && value.alpha !== undefined) {
+                    shouldDraw = value.alpha > 0 && value.draw > 0;
+                } else {
+                    shouldDraw = value > 0;
+                }
+                
+                if (shouldDraw) {
                     ctx.fillRect(x, y, 1, 1);
                 }
             }
@@ -1690,7 +1953,7 @@ class BitsDraw {
         const layerList = document.getElementById('layer-list');
         layerList.innerHTML = '';
 
-        // Create layers in reverse order (top to bottom display)
+        // Create layers in reverse order (top rendering layers at top of UI, background at bottom)
         for (let i = this.editor.getLayerCount() - 1; i >= 0; i--) {
             const layerInfo = this.editor.getLayerInfo(i);
             if (!layerInfo) continue;
@@ -1698,6 +1961,7 @@ class BitsDraw {
             const layerItem = document.createElement('div');
             layerItem.className = `layer-item ${layerInfo.isActive ? 'active' : ''}`;
             layerItem.dataset.layerIndex = i;
+            layerItem.draggable = true;
 
             layerItem.innerHTML = `
                 <div class="layer-visibility" data-action="toggle-visibility">
@@ -1722,7 +1986,66 @@ class BitsDraw {
                 this.updateOutput();
             });
 
+            // Drag and drop handlers
+            layerItem.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', i);
+                layerItem.classList.add('dragging');
+            });
+
+            layerItem.addEventListener('dragend', (e) => {
+                layerItem.classList.remove('dragging');
+                // Remove any drag-over indicators
+                document.querySelectorAll('.layer-item').forEach(item => {
+                    item.classList.remove('drag-over');
+                });
+            });
+
+            layerItem.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                layerItem.classList.add('drag-over');
+            });
+
+            layerItem.addEventListener('dragleave', (e) => {
+                layerItem.classList.remove('drag-over');
+            });
+
+            layerItem.addEventListener('drop', (e) => {
+                e.preventDefault();
+                layerItem.classList.remove('drag-over');
+                
+                const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                const targetIndex = i;
+                
+                if (draggedIndex !== targetIndex) {
+                    this.swapLayers(draggedIndex, targetIndex);
+                }
+            });
+
             layerList.appendChild(layerItem);
+        }
+    }
+
+    swapLayers(fromIndex, toIndex) {
+        console.log(`Swapping layers: ${fromIndex} -> ${toIndex}`);
+        
+        // Get layer info before swapping
+        const fromLayer = this.editor.getLayerInfo(fromIndex);
+        const toLayer = this.editor.getLayerInfo(toIndex);
+        
+        if (!fromLayer || !toLayer) {
+            console.error('Invalid layer indices for swapping');
+            return;
+        }
+        
+        // Swap the layers in the editor
+        if (this.editor.swapLayers(fromIndex, toIndex)) {
+            console.log(`Successfully swapped layers "${fromLayer.name}" and "${toLayer.name}"`);
+            this.updateLayersList();
+            this.updateOutput();
+            this.showNotification(`Swapped layers "${fromLayer.name}" and "${toLayer.name}"`, 'success');
+        } else {
+            console.error('Failed to swap layers');
+            this.showNotification('Failed to swap layers', 'error');
         }
     }
 
@@ -1758,18 +2081,7 @@ class BitsDraw {
         }
     }
 
-    updateCheckerboardDisplay() {
-        this.editor.setShowCheckerboard(this.showCheckerboard);
-    }
-
-    updateCheckerboardButton() {
-        const btn = document.getElementById('show-checkerboard-btn');
-        if (this.showCheckerboard) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
-    }
+    // Checkerboard functionality removed
 
     updateGuidesButton() {
         const btn = document.getElementById('show-guides-btn');
@@ -1790,6 +2102,7 @@ class BitsDraw {
             
             if (newWidth > 0 && newHeight > 0 && newWidth <= 256 && newHeight <= 256) {
                 this.editor.resize(newWidth, newHeight);
+                this.setupPreview(); // Recreate preview canvas with new dimensions
                 this.updateOutput();
                 this.showNotification('Canvas rescaled successfully!', 'success');
             } else {
@@ -1817,127 +2130,101 @@ class BitsDraw {
     }
 
     setupToolOptions() {
-        // Brush size
+        // Brush size (optional)
         const brushSizeSlider = document.getElementById('brush-size');
         const brushSizeValue = document.getElementById('brush-size-value');
-        brushSizeSlider.addEventListener('input', (e) => {
-            this.brushSize = parseInt(e.target.value);
-            brushSizeValue.textContent = this.brushSize;
-            this.updateBrushCursorSize();
-        });
+        if (brushSizeSlider && brushSizeValue) {
+            brushSizeSlider.addEventListener('input', (e) => {
+                this.brushSize = parseInt(e.target.value);
+                brushSizeValue.textContent = this.brushSize;
+                this.updateBrushCursorSize();
+            });
+        }
         
-        // Smooth drawing
+        // Smooth drawing (optional)
         const smoothDrawingCheckbox = document.getElementById('smooth-drawing');
-        smoothDrawingCheckbox.addEventListener('change', (e) => {
-            this.smoothDrawing = e.target.checked;
-        });
+        if (smoothDrawingCheckbox) {
+            smoothDrawingCheckbox.addEventListener('change', (e) => {
+                this.smoothDrawing = e.target.checked;
+            });
+        }
 
-        // Eraser size
+        // Eraser size (optional)
         const eraserSizeSlider = document.getElementById('eraser-size');
         const eraserSizeValue = document.getElementById('eraser-size-value');
-        eraserSizeSlider.addEventListener('input', (e) => {
-            this.eraserSize = parseInt(e.target.value);
-            eraserSizeValue.textContent = this.eraserSize;
-            this.updateBrushCursorSize();
-        });
+        if (eraserSizeSlider && eraserSizeValue) {
+            eraserSizeSlider.addEventListener('input', (e) => {
+                this.eraserSize = parseInt(e.target.value);
+                eraserSizeValue.textContent = this.eraserSize;
+                this.updateBrushCursorSize();
+            });
+        }
         
-        // Eraser smooth
+        // Eraser smooth (optional)
         const eraserSmoothCheckbox = document.getElementById('eraser-smooth');
-        eraserSmoothCheckbox.addEventListener('change', (e) => {
-            this.eraserSmooth = e.target.checked;
-        });
+        if (eraserSmoothCheckbox) {
+            eraserSmoothCheckbox.addEventListener('change', (e) => {
+                this.eraserSmooth = e.target.checked;
+            });
+        }
 
-        // Spray radius
+        // Spray radius (optional)
         const sprayRadiusSlider = document.getElementById('spray-radius');
         const sprayRadiusValue = document.getElementById('spray-radius-value');
-        sprayRadiusSlider.addEventListener('input', (e) => {
-            this.sprayRadius = parseInt(e.target.value);
-            sprayRadiusValue.textContent = this.sprayRadius;
-            this.updateBrushCursorSize();
-        });
+        if (sprayRadiusSlider && sprayRadiusValue) {
+            sprayRadiusSlider.addEventListener('input', (e) => {
+                this.sprayRadius = parseInt(e.target.value);
+                sprayRadiusValue.textContent = this.sprayRadius;
+                this.updateBrushCursorSize();
+            });
+        }
 
-        // Spray density
+        // Spray density (optional)
         const sprayDensitySlider = document.getElementById('spray-density');
         const sprayDensityValue = document.getElementById('spray-density-value');
-        sprayDensitySlider.addEventListener('input', (e) => {
-            this.sprayDensity = parseInt(e.target.value) / 100;
-            sprayDensityValue.textContent = e.target.value;
-        });
+        if (sprayDensitySlider && sprayDensityValue) {
+            sprayDensitySlider.addEventListener('input', (e) => {
+                this.sprayDensity = parseInt(e.target.value) / 100;
+                sprayDensityValue.textContent = e.target.value;
+            });
+        }
 
-        // Blur size
+        // Blur size (optional)
         const blurSizeSlider = document.getElementById('blur-size');
         const blurSizeValue = document.getElementById('blur-size-value');
-        blurSizeSlider.addEventListener('input', (e) => {
-            this.blurSize = parseInt(e.target.value);
-            blurSizeValue.textContent = this.blurSize;
-            this.updateBrushCursorSize();
-        });
+        if (blurSizeSlider && blurSizeValue) {
+            blurSizeSlider.addEventListener('input', (e) => {
+                this.blurSize = parseInt(e.target.value);
+                blurSizeValue.textContent = this.blurSize;
+                this.updateBrushCursorSize();
+            });
+        }
 
-        // Blur dither method
-        document.getElementById('blur-dither-method').addEventListener('change', (e) => {
-            this.blurDitherMethod = e.target.value;
-        });
+        // Blur dither method (optional)
+        const blurDitherMethod = document.getElementById('blur-dither-method');
+        if (blurDitherMethod) {
+            blurDitherMethod.addEventListener('change', (e) => {
+                this.blurDitherMethod = e.target.value;
+            });
+        }
 
-        // Blur alpha channel
-        document.getElementById('blur-alpha-channel').addEventListener('change', (e) => {
-            this.blurAlphaChannel = e.target.checked;
-        });
+        // Blur alpha channel (optional)
+        const blurAlphaChannel = document.getElementById('blur-alpha-channel');
+        if (blurAlphaChannel) {
+            blurAlphaChannel.addEventListener('change', (e) => {
+                this.blurAlphaChannel = e.target.checked;
+            });
+        }
 
-        // Select All button
-        document.getElementById('select-all-btn').addEventListener('click', () => {
-            this.selectAll();
-        });
-    }
-
-    updateToolOptions(tool) {
-        // Hide all option sections
-        document.querySelectorAll('.option-section').forEach(section => {
-            section.style.display = 'none';
-        });
-
-        // Show relevant options based on tool
-        switch(tool) {
-            case 'brush':
-                document.getElementById('brush-options').style.display = 'block';
-                break;
-            case 'eraser':
-                document.getElementById('eraser-options').style.display = 'block';
-                break;
-            case 'rect':
-                document.getElementById('shape-options').style.display = 'block';
-                break;
-            case 'circle':
-                document.getElementById('circle-options').style.display = 'block';
-                break;
-            case 'spray':
-                document.getElementById('spray-options').style.display = 'block';
-                break;
-            case 'blur':
-                document.getElementById('blur-options').style.display = 'block';
-                break;
-            case 'select-rect':
-                document.getElementById('selection-options').style.display = 'block';
-                break;
-            case 'select-circle':
-                document.getElementById('circle-select-options').style.display = 'block';
-                break;
-            case 'text':
-                document.getElementById('text-options').style.display = 'block';
-                break;
-            case 'bucket':
-                document.getElementById('bucket-options').style.display = 'block';
-                break;
-            case 'move':
-                document.getElementById('move-options').style.display = 'block';
-                break;
-            case 'guide':
-                document.getElementById('guide-options').style.display = 'block';
-                break;
-            default:
-                document.getElementById('no-options').style.display = 'block';
-                break;
+        // Select All button (optional)
+        const selectAllBtn = document.getElementById('select-all-btn');
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', () => {
+                this.selectAll();
+            });
         }
     }
+
 
     setupNewCanvasDialog() {
         const dialog = document.getElementById('new-canvas-dialog');
@@ -2309,8 +2596,19 @@ class BitsDraw {
         const previewCanvas = document.getElementById('dithering-preview-canvas');
 
         const layer = this.editor.getActiveLayer();
+        if (!layer) {
+            this.showNotification('No active layer for dithering', 'error');
+            return;
+        }
+
         const width = this.editor.width;
         const height = this.editor.height;
+
+        // Store original pixels for dithering
+        this.ditheringData.originalPixels = new Float32Array(layer.pixels.length);
+        for (let i = 0; i < layer.pixels.length; i++) {
+            this.ditheringData.originalPixels[i] = layer.pixels[i];
+        }
 
         // Use 8x zoom for better visibility
         const zoom = 8;
@@ -2504,7 +2802,10 @@ class BitsDraw {
         if (confirm('Create new canvas? Current work will be lost.')) {
             this.editor.resize(width, height);
             this.editor.clear();
+            // Ensure Background layer is filled with white pixels
+            this.editor.fillBackgroundWithWhite();
             this.clearAllGuides();
+            this.setupPreview(); // Recreate preview canvas with new dimensions
             this.updateWindowTitle(width, height);
             this.updateOutput();
             this.showNotification(`New canvas created: ${width}×${height}`, 'success');
@@ -2514,7 +2815,10 @@ class BitsDraw {
     updateWindowTitle(width, height) {
         const projectName = document.getElementById('project-name').value || 'my_bitmap';
         const title = `Canvas - ${projectName} (${width}x${height})`;
-        document.querySelector('#canvas-window .window-title').textContent = title;
+        const titleElement = document.querySelector('#canvas-window .window-title');
+        if (titleElement) {
+            titleElement.textContent = title;
+        }
     }
 
     showTextBalloonAt(clientX, clientY, pixelX, pixelY) {
@@ -2719,13 +3023,8 @@ class BitsDraw {
                     }
                     
                     if (shouldDraw) {
-                        if (alphaValue === 1 && drawValue === 1 && this.currentPattern && this.currentPattern !== 'solid-black') {
-                            // Apply pattern only when drawing (not erasing)
-                            this.editor.setPixelWithAlpha(x, y, drawValue, alphaValue, this.currentPattern);
-                        } else {
-                            // Direct draw/alpha setting
-                            this.editor.setPixelWithAlpha(x, y, drawValue, alphaValue);
-                        }
+                        // Use selected pattern with primary/secondary color determination
+                        this.editor.setPixelWithAlpha(x, y, drawValue, alphaValue, this.currentPattern);
                         pixelsChanged = true;
                     }
                 }
@@ -3104,8 +3403,10 @@ class BitsDraw {
             this.hideTextBalloon();
         }
         
-        // Update tool options display
-        this.updateToolOptions(tool);
+        // Tool options display will be updated by updateToolOptionsBar() below
+        
+        // Update tool options bar
+        this.updateToolOptionsBar();
         
         // Re-render guides to show/hide handles based on active tool
         this.renderGuides();
@@ -3122,42 +3423,39 @@ class BitsDraw {
         
         if (this.currentTool === 'brush') {
             if (e.type === 'mousedown') {
-                // Left click = alpha=1,draw=1, Right click = alpha=1,draw=0
-                const drawValue = e.button === 0 ? 1 : 0;
+                // Left click = primary color (black), Right click = secondary color (white)
+                this.currentDrawValue = e.button === 0 ? 0 : 1; // 0=black, 1=white
                 
                 // Start stroke
                 if (this.smoothDrawing) {
                     this.startSmoothStroke(coords.x, coords.y);
                 }
-                this.drawWithBrush(coords.x, coords.y, drawValue, 1);
+                this.drawWithBrush(coords.x, coords.y, this.currentDrawValue, 1);
             } else if (e.type === 'mousemove' && this.isDrawing) {
-                // Continue stroke
-                const drawValue = e.button === 0 ? 1 : 0;
+                // Continue stroke with same draw value
                 if (this.smoothDrawing) {
-                    this.updateSmoothStroke(coords.x, coords.y, drawValue, 1);
+                    this.updateSmoothStroke(coords.x, coords.y, this.currentDrawValue, 1);
                 } else {
-                    this.drawWithBrush(coords.x, coords.y, drawValue, 1);
+                    this.drawWithBrush(coords.x, coords.y, this.currentDrawValue, 1);
                 }
             } else if (e.type === 'mouseup' && this.isDrawing) {
                 // Finish stroke
-                const drawValue = e.button === 0 ? 1 : 0;
                 if (this.smoothDrawing) {
-                    this.finishSmoothStroke(drawValue, 1);
+                    this.finishSmoothStroke(this.currentDrawValue, 1);
                 }
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'pencil') {
-            // Left click = alpha=1,draw=1, Right click = alpha=1,draw=0
-            const drawValue = e.button === 0 ? 1 : 0;
-            
             if (e.type === 'mousedown') {
+                // Left click = primary color (black), Right click = secondary color (white)
+                this.currentDrawValue = e.button === 0 ? 0 : 1; // 0=black, 1=white
                 // Set pixel with alpha=1 and left/right click draw value
-                this.editor.setPixelWithAlpha(coords.x, coords.y, drawValue, 1);
+                this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1);
                 this.editor.redraw();
                 this.updateOutput();
             } else if (e.type === 'mousemove' && this.isDrawing) {
                 // Continue setting pixels with same draw/alpha values
-                this.editor.setPixelWithAlpha(coords.x, coords.y, drawValue, 1);
+                this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1);
                 this.editor.redraw();
                 this.updateOutput();
             } else if (e.type === 'mouseup' && this.isDrawing) {
@@ -3183,15 +3481,21 @@ class BitsDraw {
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'bucket') {
-            if (e.button === 0) { // Left click = fill with current pattern
-                this.editor.floodFill(coords.x, coords.y, 1, this.currentPattern);
-            } else { // Right click = clear (white fill)
-                this.editor.floodFill(coords.x, coords.y, 0);
-            }
+            // Left click = primary color (black), Right click = secondary color (white)
+            const drawValue = e.button === 0 ? 0 : 1;
+            // Use selected pattern instead of color override
+            this.editor.floodFill(coords.x, coords.y, drawValue, this.currentPattern);
             this.editor.saveState();
             this.updateOutput();
         } else if (this.currentTool === 'spray') {
-            this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern);
+            if (e.type === 'mousedown') {
+                // Left click = primary color (black), Right click = secondary color (white)
+                this.currentDrawValue = e.button === 0 ? 0 : 1;
+                this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern, this.currentDrawValue);
+            } else if (e.type === 'mousemove' && this.isDrawing) {
+                // Continue spraying with same draw value
+                this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern, this.currentDrawValue);
+            }
             this.editor.redraw();
             this.updateOutput();
             if (e.type === 'mouseup') {
@@ -3292,6 +3596,7 @@ class BitsDraw {
         this.previewCanvas.width = this.editor.width;
         this.previewCanvas.height = this.editor.height;
         this.updatePreview();
+        this.setupViewportNavigation();
     }
 
     updatePreview() {
@@ -3336,6 +3641,7 @@ class BitsDraw {
         }
         
         previewCtx.putImageData(imageData, 0, 0);
+        this.updateViewportFrame();
     }
 
     hexToRgb(hex) {
@@ -3345,6 +3651,144 @@ class BitsDraw {
             g: parseInt(result[2], 16),
             b: parseInt(result[3], 16)
         } : {r: 0, g: 0, b: 0};
+    }
+
+    setupViewportNavigation() {
+        const viewportOverlay = document.getElementById('viewport-overlay');
+        const viewportFrame = viewportOverlay.querySelector('.viewport-frame');
+        const previewArea = document.querySelector('.preview-area');
+        
+        this.viewportDragState = {
+            isDragging: false,
+            startX: 0,
+            startY: 0,
+            startScrollX: 0,
+            startScrollY: 0
+        };
+
+        // Handle viewport frame dragging
+        viewportFrame.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const rect = previewArea.getBoundingClientRect();
+            this.viewportDragState.isDragging = true;
+            this.viewportDragState.startX = e.clientX - rect.left;
+            this.viewportDragState.startY = e.clientY - rect.top;
+            
+            // Get current canvas scroll position
+            const canvasArea = document.querySelector('.canvas-area');
+            this.viewportDragState.startScrollX = canvasArea.scrollLeft || 0;
+            this.viewportDragState.startScrollY = canvasArea.scrollTop || 0;
+            
+            viewportFrame.style.cursor = 'grabbing';
+        });
+
+        // Handle mouse move for dragging
+        document.addEventListener('mousemove', (e) => {
+            if (!this.viewportDragState.isDragging) return;
+            
+            e.preventDefault();
+            const rect = previewArea.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            const deltaX = currentX - this.viewportDragState.startX;
+            const deltaY = currentY - this.viewportDragState.startY;
+            
+            // Calculate preview scale (same as in updateViewportFrame)
+            const previewScale = Math.min(
+                this.previewCanvas.width / this.editor.width,
+                this.previewCanvas.height / this.editor.height
+            );
+            
+            // Convert preview delta to bitmap coordinates, then to canvas scroll coordinates
+            const bitmapDeltaX = deltaX / previewScale;
+            const bitmapDeltaY = deltaY / previewScale;
+            const scrollDeltaX = bitmapDeltaX * this.editor.zoom;
+            const scrollDeltaY = bitmapDeltaY * this.editor.zoom;
+            
+            // Calculate new scroll position
+            const canvasArea = document.querySelector('.canvas-area');
+            const newScrollX = this.viewportDragState.startScrollX + scrollDeltaX;
+            const newScrollY = this.viewportDragState.startScrollY + scrollDeltaY;
+            
+            // Apply scroll to canvas area
+            canvasArea.scrollLeft = Math.max(0, newScrollX);
+            canvasArea.scrollTop = Math.max(0, newScrollY);
+            
+            // Update viewport frame position
+            this.updateViewportFrame();
+        });
+
+        // Handle mouse up to stop dragging
+        document.addEventListener('mouseup', () => {
+            if (this.viewportDragState.isDragging) {
+                this.viewportDragState.isDragging = false;
+                const viewportFrame = document.querySelector('.viewport-frame');
+                viewportFrame.style.cursor = 'move';
+            }
+        });
+
+        // Update viewport frame when canvas area is scrolled
+        const canvasArea = document.querySelector('.canvas-area');
+        canvasArea.addEventListener('scroll', () => {
+            this.updateViewportFrame();
+        });
+
+        // Initial viewport frame setup
+        this.updateViewportFrame();
+    }
+
+    updateViewportFrame() {
+        const viewportFrame = document.querySelector('.viewport-frame');
+        const previewArea = document.querySelector('.preview-area');
+        const canvasArea = document.querySelector('.canvas-area');
+        
+        if (!viewportFrame || !previewArea || !canvasArea) return;
+        
+        // Get dimensions
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const canvasAreaRect = canvasArea.getBoundingClientRect();
+        const previewRect = previewArea.getBoundingClientRect();
+        
+        // Calculate what portion of the canvas is visible
+        const scrollX = canvasArea.scrollLeft || 0;
+        const scrollY = canvasArea.scrollTop || 0;
+        
+        // Calculate the visible area in canvas pixels (at current zoom)
+        const visibleCanvasWidth = Math.min(canvasAreaRect.width, canvasRect.width);
+        const visibleCanvasHeight = Math.min(canvasAreaRect.height, canvasRect.height);
+        
+        // Convert to actual bitmap coordinates
+        const zoom = this.editor.zoom;
+        const visibleBitmapWidth = visibleCanvasWidth / zoom;
+        const visibleBitmapHeight = visibleCanvasHeight / zoom;
+        const scrollBitmapX = scrollX / zoom;
+        const scrollBitmapY = scrollY / zoom;
+        
+        // Calculate preview scale (preview canvas size vs bitmap size)
+        const previewScale = Math.min(
+            this.previewCanvas.width / this.editor.width,
+            this.previewCanvas.height / this.editor.height
+        );
+        
+        // Calculate frame position and size in preview coordinates
+        const frameX = scrollBitmapX * previewScale;
+        const frameY = scrollBitmapY * previewScale;
+        const frameWidth = visibleBitmapWidth * previewScale;
+        const frameHeight = visibleBitmapHeight * previewScale;
+        
+        // Apply the position and size to the viewport frame
+        viewportFrame.style.left = `${Math.max(0, frameX)}px`;
+        viewportFrame.style.top = `${Math.max(0, frameY)}px`;
+        viewportFrame.style.width = `${frameWidth}px`;
+        viewportFrame.style.height = `${frameHeight}px`;
+        
+        // Show/hide the viewport frame based on whether scrolling is needed
+        const needsViewport = (canvasRect.width > canvasAreaRect.width) || 
+                            (canvasRect.height > canvasAreaRect.height);
+        viewportFrame.style.display = needsViewport ? 'block' : 'none';
     }
 
     updateGridDisplay() {
@@ -3713,8 +4157,8 @@ class BitsDraw {
         const endY = Math.max(y1, y2);
         
         // Check shape options to determine if we draw border, fill, or both
-        const drawBorder = document.getElementById('draw-border').checked;
-        const drawFill = document.getElementById('draw-fill').checked;
+        const drawBorder = this.drawBorder;
+        const drawFill = this.drawFill;
         
         for (let y = startY; y <= endY; y++) {
             for (let x = startX; x <= endX; x++) {
@@ -3740,8 +4184,8 @@ class BitsDraw {
         const maxY = Math.min(this.editor.height - 1, centerY + radius);
         
         // Check shape options to determine if we draw border, fill, or both
-        const drawBorder = document.getElementById('draw-border').checked;
-        const drawFill = document.getElementById('draw-fill').checked;
+        const drawBorder = this.drawBorder;
+        const drawFill = this.drawFill;
         
         for (let y = minY; y <= maxY; y++) {
             for (let x = minX; x <= maxX; x++) {
@@ -3778,8 +4222,8 @@ class BitsDraw {
         const maxY = Math.min(this.editor.height - 1, Math.ceil(centerY + radiusY));
         
         // Check circle-specific shape options to determine if we draw border, fill, or both
-        const drawBorder = document.getElementById('circle-draw-border').checked;
-        const drawFill = document.getElementById('circle-draw-fill').checked;
+        const drawBorder = this.circleDrawBorder;
+        const drawFill = this.circleDrawFill;
         
         for (let y = minY; y <= maxY; y++) {
             for (let x = minX; x <= maxX; x++) {
@@ -4019,6 +4463,105 @@ class BitsDraw {
                 }
             }, 300);
         }, 2000);
+    }
+
+    // ===== COLOR OVERRIDE PATTERN =====
+    
+    createColorPattern(drawValue) {
+        // Create a pattern that always returns the specified color
+        // This overrides any selected pattern
+        return {
+            name: drawValue === 0 ? 'Primary Color' : 'Secondary Color',
+            getValue: (x, y) => ({
+                alpha: 1,
+                draw: drawValue
+            })
+        };
+    }
+
+    // ===== COLOR MANAGEMENT =====
+    
+    openColorPicker(colorType) {
+        // Create a temporary input element for color picking
+        const colorInput = document.createElement('input');
+        colorInput.type = 'color';
+        colorInput.style.position = 'absolute';
+        colorInput.style.left = '-9999px';
+        colorInput.style.opacity = '0';
+        colorInput.style.width = '1px';
+        colorInput.style.height = '1px';
+        colorInput.style.pointerEvents = 'none';
+        
+        // Set current color
+        const currentColor = colorType === 'primary' ? this.primaryColor : this.secondaryColor;
+        colorInput.value = currentColor;
+        
+        // Add to DOM temporarily
+        document.body.appendChild(colorInput);
+        
+        // Handle color change
+        const handleChange = (e) => {
+            const newColor = e.target.value;
+            console.log(`Color changed to: ${newColor} for ${colorType}`);
+            
+            if (colorType === 'primary') {
+                this.primaryColor = newColor;
+                this.showNotification(`Primary color changed to ${newColor}`, 'success');
+            } else {
+                this.secondaryColor = newColor;
+                this.showNotification(`Secondary color changed to ${newColor}`, 'success');
+            }
+            this.updateColorDisplay();
+            
+            // Clean up
+            setTimeout(() => {
+                if (document.body.contains(colorInput)) {
+                    document.body.removeChild(colorInput);
+                }
+            }, 100);
+        };
+        
+        // Handle input event (for immediate feedback)
+        const handleInput = (e) => {
+            const newColor = e.target.value;
+            if (colorType === 'primary') {
+                this.primaryColor = newColor;
+            } else {
+                this.secondaryColor = newColor;
+            }
+            this.updateColorDisplay();
+        };
+        
+        colorInput.addEventListener('change', handleChange);
+        colorInput.addEventListener('input', handleInput);
+        
+        // Focus and click to open
+        colorInput.focus();
+        setTimeout(() => {
+            colorInput.click();
+        }, 10);
+        
+        // Clean up after some time if no interaction
+        setTimeout(() => {
+            if (document.body.contains(colorInput)) {
+                document.body.removeChild(colorInput);
+            }
+        }, 30000);
+    }
+    
+    
+    updateColorDisplay() {
+        // Update primary color display
+        const primaryDisplay = document.querySelector('#primary-colour .colour-display');
+        if (primaryDisplay) {
+            primaryDisplay.style.backgroundColor = this.primaryColor;
+        }
+        
+        // Update secondary color display
+        const secondaryDisplay = document.querySelector('#secondary-colour .colour-display');
+        if (secondaryDisplay) {
+            secondaryDisplay.style.backgroundColor = this.secondaryColor;
+        }
     }
 
     // ===== THEME MANAGEMENT =====
@@ -4358,7 +4901,9 @@ class BitsDraw {
         
         // Only create guide if it has meaningful size
         if (this.currentGuidePreview.w > 0 && this.currentGuidePreview.h > 0) {
-            const guideName = document.getElementById('guide-name').value || 'Guide';
+            // Auto-generate guide name
+            const nextGuideNumber = this.guides.length + 1;
+            const guideName = 'Guide ' + nextGuideNumber;
             
             const guide = {
                 id: 'guide_' + Date.now(),
@@ -4373,10 +4918,6 @@ class BitsDraw {
             this.guides.push(guide);
             this.guideColorIndex++;
             this.activeGuideId = guide.id;
-            
-            // Update guide name for next guide
-            const nextGuideNumber = this.guides.length + 1;
-            document.getElementById('guide-name').value = 'Guide ' + nextGuideNumber;
             
             this.updateGuidesPanel();
         }
@@ -4690,7 +5231,9 @@ class BitsDraw {
         const addBtn = document.getElementById('add-guide-btn');
         if (addBtn) {
             addBtn.addEventListener('click', () => {
-            const guideName = document.getElementById('guide-name').value || 'Guide';
+            // Auto-generate guide name
+            const nextGuideNumber = this.guides.length + 1;
+            const guideName = 'Guide ' + nextGuideNumber;
             
             // Create a default guide in the center
             const guide = {
@@ -4706,10 +5249,6 @@ class BitsDraw {
             this.guides.push(guide);
             this.guideColorIndex++;
             this.activeGuideId = guide.id;
-            
-            // Update guide name for next guide
-            const nextGuideNumber = this.guides.length + 1;
-            document.getElementById('guide-name').value = 'Guide ' + nextGuideNumber;
             
             this.updateGuidesPanel();
             this.renderGuides();
@@ -4984,24 +5523,975 @@ class BitsDraw {
         return this.legacyAdapter ? this.legacyAdapter.getConversionTools() : null;
     }
 
-    // Phase 4: Smart Conversion Methods
-    showSmartConversions() {
-        if (this.legacyAdapter) {
-            this.legacyAdapter.showConversionDialog();
-        } else {
-            console.log('Smart conversions require CanvasUnit system');
+    // Edge Detection Implementation
+    showDrawEdgeDialog() {
+        console.log('showDrawEdgeDialog() called');
+        const dialog = document.getElementById('draw-edge-dialog');
+        console.log('Dialog element:', dialog);
+        
+        if (!dialog) {
+            console.error('Draw edge dialog not found!');
+            return;
+        }
+        const edgeWidthSlider = document.getElementById('edge-width');
+        const edgeWidthValue = document.getElementById('edge-width-value');
+        const edgeColorSelect = document.getElementById('edge-color');
+        const detectAlphaEdges = document.getElementById('detect-alpha-edges');
+        const detectBitmapEdges = document.getElementById('detect-bitmap-edges');
+        
+        // Remove any existing event listeners to prevent duplicates
+        const newWidthSlider = edgeWidthSlider.cloneNode(true);
+        edgeWidthSlider.parentNode.replaceChild(newWidthSlider, edgeWidthSlider);
+        
+        // Update width value display
+        newWidthSlider.addEventListener('input', () => {
+            edgeWidthValue.textContent = newWidthSlider.value;
+        });
+        
+        // Update initial value
+        edgeWidthValue.textContent = newWidthSlider.value;
+        
+        // Show dialog
+        dialog.style.display = 'flex';
+        
+        // Generate initial preview
+        this.updateEdgePreview();
+        
+        // Handle apply button
+        document.getElementById('draw-edge-apply-btn').onclick = () => {
+            const width = parseInt(newWidthSlider.value);
+            const color = edgeColorSelect.value;
+            const detectAlpha = detectAlphaEdges.checked;
+            const detectBitmap = detectBitmapEdges.checked;
+            
+            console.log('Applying edge detection:', { width, color, detectAlpha, detectBitmap });
+            this.applyEdgeDetection(width, color, detectAlpha, detectBitmap);
+            dialog.style.display = 'none';
+        };
+        
+        // Handle cancel/close buttons
+        document.getElementById('draw-edge-cancel-btn').onclick = () => {
+            dialog.style.display = 'none';
+        };
+        document.getElementById('draw-edge-close-btn').onclick = () => {
+            dialog.style.display = 'none';
+        };
+        
+        // Handle preview update button
+        document.getElementById('edge-preview-update-btn').onclick = () => {
+            this.updateEdgePreview();
+        };
+        
+        // Update preview when parameters change
+        detectAlphaEdges.addEventListener('change', () => {
+            this.updateEdgePreview();
+        });
+        
+        detectBitmapEdges.addEventListener('change', () => {
+            this.updateEdgePreview();
+        });
+        
+        newWidthSlider.addEventListener('input', () => {
+            this.updateEdgePreview();
+        });
+        
+        edgeColorSelect.addEventListener('change', () => {
+            this.updateEdgePreview();
+        });
+    }
+    
+    updateEdgePreview() {
+        const canvas = document.getElementById('edge-preview-canvas');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        
+        // Clear canvas
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        
+        // Get current editor dimensions
+        const editorWidth = this.editor.width;
+        const editorHeight = this.editor.height;
+        
+        // Calculate scale to fit editor canvas in preview
+        const scaleX = canvasWidth / editorWidth;
+        const scaleY = canvasHeight / editorHeight;
+        const scale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond 1:1
+        
+        const previewWidth = Math.floor(editorWidth * scale);
+        const previewHeight = Math.floor(editorHeight * scale);
+        const offsetX = Math.floor((canvasWidth - previewWidth) / 2);
+        const offsetY = Math.floor((canvasHeight - previewHeight) / 2);
+        
+        // Draw current canvas content as background
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(offsetX, offsetY, previewWidth, previewHeight);
+        
+        // Draw bitmap content
+        for (let y = 0; y < editorHeight; y++) {
+            for (let x = 0; x < editorWidth; x++) {
+                const pixel = this.editor.getPixelWithAlpha(x, y);
+                if (pixel.alpha > 0.5) {
+                    ctx.fillStyle = pixel.draw > 0 ? '#000000' : '#ffffff';
+                    const px = offsetX + Math.floor(x * scale);
+                    const py = offsetY + Math.floor(y * scale);
+                    const size = Math.max(1, Math.floor(scale));
+                    ctx.fillRect(px, py, size, size);
+                }
+            }
+        }
+        
+        // Get preview parameters
+        const detectAlpha = document.getElementById('detect-alpha-edges').checked;
+        const detectBitmap = document.getElementById('detect-bitmap-edges').checked;
+        const edgeWidth = parseInt(document.getElementById('edge-width').value);
+        const edgeColor = document.getElementById('edge-color').value;
+        
+        // Detect edges
+        const edges = this.detectEdges(detectAlpha, detectBitmap);
+        
+        // Draw edge preview
+        if (edges.length > 0) {
+            // Set edge color
+            if (edgeColor === 'black') {
+                ctx.fillStyle = '#ff0000'; // Red for preview
+            } else if (edgeColor === 'white') {
+                ctx.fillStyle = '#00ff00'; // Green for preview
+            } else if (edgeColor === 'transparent') {
+                ctx.fillStyle = '#0000ff'; // Blue for preview
+            } else if (edgeColor === 'pattern') {
+                ctx.fillStyle = '#ff00ff'; // Magenta for preview
+            }
+            
+            // Draw edge pixels
+            const halfWidth = Math.floor(edgeWidth / 2);
+            edges.forEach(edge => {
+                for (let dy = -halfWidth; dy <= halfWidth; dy++) {
+                    for (let dx = -halfWidth; dx <= halfWidth; dx++) {
+                        const ex = edge.x + dx;
+                        const ey = edge.y + dy;
+                        
+                        if (ex >= 0 && ex < editorWidth && ey >= 0 && ey < editorHeight) {
+                            const px = offsetX + Math.floor(ex * scale);
+                            const py = offsetY + Math.floor(ey * scale);
+                            const size = Math.max(1, Math.floor(scale));
+                            ctx.fillRect(px, py, size, size);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Draw border around preview area
+        ctx.strokeStyle = '#cccccc';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(offsetX - 0.5, offsetY - 0.5, previewWidth + 1, previewHeight + 1);
+        
+        // Show edge count
+        ctx.fillStyle = '#333333';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(`${edges.length} edges found`, 5, canvasHeight - 5);
+    }
+    
+    applyEdgeDetection(width, color, detectAlpha, detectBitmap) {
+        if (!detectAlpha && !detectBitmap) {
+            console.log('No detection options selected');
+            return;
+        }
+        
+        console.log('Starting edge detection...');
+        
+        // Save current state for undo
+        this.editor.saveState();
+        
+        const edges = this.detectEdges(detectAlpha, detectBitmap);
+        console.log(`Found ${edges.length} edge pixels`);
+        
+        // Draw edges with specified width and color
+        for (const edge of edges) {
+            this.drawEdgePixel(edge.x, edge.y, width, color);
+        }
+        
+        this.editor.redraw();
+        this.updateOutput();
+        console.log('Edge detection complete');
+    }
+    
+    detectEdges(detectAlpha, detectBitmap) {
+        console.log('Detecting edges, alpha:', detectAlpha, 'bitmap:', detectBitmap);
+        const edges = [];
+        const width = this.editor.width;
+        const height = this.editor.height;
+        
+        console.log('Canvas size:', width, 'x', height);
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let isEdge = false;
+                
+                // Check 4-connected neighbors
+                const neighbors = [
+                    {x: x-1, y: y},
+                    {x: x+1, y: y},
+                    {x: x, y: y-1},
+                    {x: x, y: y+1}
+                ];
+                
+                for (const neighbor of neighbors) {
+                    if (neighbor.x >= 0 && neighbor.x < width && neighbor.y >= 0 && neighbor.y < height) {
+                        
+                        if (detectAlpha) {
+                            try {
+                                // Check alpha channel differences
+                                const currentPixel = this.editor.getPixelWithAlpha(x, y);
+                                const neighborPixel = this.editor.getPixelWithAlpha(neighbor.x, neighbor.y);
+                                if ((currentPixel.alpha > 0.5 && neighborPixel.alpha <= 0.5) || 
+                                    (currentPixel.alpha <= 0.5 && neighborPixel.alpha > 0.5)) {
+                                    isEdge = true;
+                                    break;
+                                }
+                            } catch (error) {
+                                console.warn('Error checking alpha at', x, y, ':', error);
+                            }
+                        }
+                        
+                        if (detectBitmap && !isEdge) {
+                            try {
+                                // Check bitmap color differences
+                                const currentValue = this.editor.getPixel(x, y);
+                                const neighborValue = this.editor.getPixel(neighbor.x, neighbor.y);
+                                if (currentValue !== neighborValue) {
+                                    isEdge = true;
+                                    break;
+                                }
+                            } catch (error) {
+                                console.warn('Error checking bitmap at', x, y, ':', error);
+                            }
+                        }
+                    }
+                }
+                
+                if (isEdge) {
+                    edges.push({x, y});
+                }
+            }
+        }
+        
+        console.log('Found edges:', edges.length);
+        if (edges.length > 0) {
+            console.log('First few edges:', edges.slice(0, 5));
+        }
+        
+        return edges;
+    }
+    
+    drawEdgePixel(x, y, width, color) {
+        const halfWidth = Math.floor(width / 2);
+        
+        for (let dy = -halfWidth; dy <= halfWidth; dy++) {
+            for (let dx = -halfWidth; dx <= halfWidth; dx++) {
+                const px = x + dx;
+                const py = y + dy;
+                
+                if (px >= 0 && px < this.editor.width && py >= 0 && py < this.editor.height) {
+                    if (color === 'black') {
+                        // Opaque black pixel
+                        this.editor.setPixelWithAlpha(px, py, 1, 1);
+                    } else if (color === 'white') {
+                        // Opaque white pixel
+                        this.editor.setPixelWithAlpha(px, py, 0, 1);
+                    } else if (color === 'transparent') {
+                        // Transparent pixel (erase)
+                        this.editor.setPixelWithAlpha(px, py, 0, 0);
+                    } else if (color === 'pattern') {
+                        // Pattern: black/transparent only
+                        const patternValue = Patterns.applyPattern(this.currentPattern, px, py);
+                        this.editor.setPixelWithAlpha(px, py, patternValue.draw, patternValue.alpha);
+                    }
+                }
+            }
         }
     }
 
-    quickConversion(type) {
-        if (this.legacyAdapter && this.legacyAdapter.quickConversions) {
-            if (typeof this.legacyAdapter.quickConversions[type] === 'function') {
-                this.legacyAdapter.quickConversions[type]();
-            } else {
-                console.warn(`Unknown quick conversion type: ${type}`);
+    // ===== PATTERN EDITOR IMPLEMENTATION =====
+    
+    showPatternEditor(patternName) {
+        this.currentEditingPattern = patternName;
+        const dialog = document.getElementById('pattern-editor-dialog');
+        const nameInput = document.getElementById('pattern-name-input');
+        
+        // Set pattern name
+        const patterns = Patterns.getPatterns();
+        nameInput.value = patterns[patternName]?.name || patternName;
+        
+        // Initialize the grid
+        this.initializePatternGrid();
+        
+        // Load existing pattern if it exists
+        this.loadPatternIntoGrid(patternName);
+        
+        // Update preview
+        this.updatePatternPreview();
+        
+        // Show dialog
+        dialog.style.display = 'flex';
+        
+        // Setup event handlers
+        this.setupPatternEditorHandlers();
+    }
+    
+    initializePatternGrid() {
+        const grid = document.getElementById('pattern-grid');
+        grid.innerHTML = '';
+        
+        this.patternGridData = new Array(64).fill(false); // 8x8 = 64 cells
+        
+        for (let i = 0; i < 64; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'pattern-cell empty';
+            cell.dataset.index = i;
+            
+            cell.addEventListener('click', () => {
+                this.togglePatternCell(i);
+            });
+            
+            grid.appendChild(cell);
+        }
+    }
+    
+    loadPatternIntoGrid(patternName) {
+        const patterns = Patterns.getPatterns();
+        const pattern = patterns[patternName];
+        
+        if (!pattern) return;
+        
+        // Sample the pattern at 8x8 positions to fill our grid
+        for (let y = 0; y < 8; y++) {
+            for (let x = 0; x < 8; x++) {
+                const index = y * 8 + x;
+                const patternValue = pattern.getValue(x, y);
+                
+                // Check if it's an alpha/draw object or simple value
+                let isFilled = false;
+                if (typeof patternValue === 'object' && patternValue.alpha !== undefined) {
+                    isFilled = patternValue.alpha > 0 && patternValue.draw > 0;
+                } else {
+                    isFilled = patternValue > 0;
+                }
+                
+                this.patternGridData[index] = isFilled;
+                this.updatePatternCell(index);
             }
-        } else {
-            console.log('Quick conversions require CanvasUnit system');
+        }
+    }
+    
+    togglePatternCell(index) {
+        this.patternGridData[index] = !this.patternGridData[index];
+        this.updatePatternCell(index);
+        this.updatePatternPreview();
+    }
+    
+    updatePatternCell(index) {
+        const cell = document.querySelector(`[data-index="${index}"]`);
+        if (cell) {
+            cell.className = this.patternGridData[index] ? 'pattern-cell filled' : 'pattern-cell empty';
+        }
+    }
+    
+    updatePatternPreview() {
+        const canvas = document.getElementById('pattern-preview-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Clear canvas
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 64, 64);
+        
+        // Draw pattern preview (8x8 tiled)
+        ctx.fillStyle = '#000000';
+        for (let ty = 0; ty < 8; ty++) {
+            for (let tx = 0; tx < 8; tx++) {
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const index = y * 8 + x;
+                        if (this.patternGridData[index]) {
+                            const pixelX = tx * 8 + x;
+                            const pixelY = ty * 8 + y;
+                            ctx.fillRect(pixelX, pixelY, 1, 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    setupPatternEditorHandlers() {
+        console.log('Setting up pattern editor handlers');
+        
+        // Clear existing handlers to prevent duplicates
+        const clearBtn = document.getElementById('pattern-clear-btn');
+        const fillBtn = document.getElementById('pattern-fill-btn');
+        const invertBtn = document.getElementById('pattern-invert-btn');
+        const checkerBtn = document.getElementById('pattern-preset-checker-btn');
+        const saveBtn = document.getElementById('pattern-editor-save-btn');
+        const cancelBtn = document.getElementById('pattern-editor-cancel-btn');
+        const closeBtn = document.getElementById('pattern-editor-close-btn');
+        
+        console.log('Pattern editor elements:', {
+            clearBtn, fillBtn, invertBtn, checkerBtn, saveBtn, cancelBtn, closeBtn
+        });
+        
+        if (clearBtn) {
+            clearBtn.onclick = () => {
+                console.log('Clear button clicked');
+                this.patternGridData.fill(false);
+                this.updateAllPatternCells();
+                this.updatePatternPreview();
+            };
+        }
+        
+        if (fillBtn) {
+            fillBtn.onclick = () => {
+                console.log('Fill button clicked');
+                this.patternGridData.fill(true);
+                this.updateAllPatternCells();
+                this.updatePatternPreview();
+            };
+        }
+        
+        if (invertBtn) {
+            invertBtn.onclick = () => {
+                console.log('Invert button clicked');
+                this.patternGridData = this.patternGridData.map(cell => !cell);
+                this.updateAllPatternCells();
+                this.updatePatternPreview();
+            };
+        }
+        
+        if (checkerBtn) {
+            checkerBtn.onclick = () => {
+                console.log('Checker button clicked');
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        const index = y * 8 + x;
+                        this.patternGridData[index] = (x + y) % 2 === 0;
+                    }
+                }
+                this.updateAllPatternCells();
+                this.updatePatternPreview();
+            };
+        }
+        
+        if (saveBtn) {
+            saveBtn.onclick = () => {
+                console.log('Save button clicked');
+                this.savePatternFromEditor();
+            };
+        }
+        
+        if (cancelBtn) {
+            cancelBtn.onclick = () => {
+                console.log('Cancel button clicked');
+                document.getElementById('pattern-editor-dialog').style.display = 'none';
+            };
+        }
+        
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                console.log('Close button clicked');
+                document.getElementById('pattern-editor-dialog').style.display = 'none';
+            };
+        }
+    }
+    
+    updateAllPatternCells() {
+        for (let i = 0; i < 64; i++) {
+            this.updatePatternCell(i);
+        }
+    }
+    
+    savePatternFromEditor() {
+        console.log('savePatternFromEditor called');
+        const nameInput = document.getElementById('pattern-name-input');
+        const patternName = this.currentEditingPattern;
+        const displayName = nameInput.value || patternName;
+        
+        console.log('Pattern data:', {
+            patternName,
+            displayName,
+            gridData: this.patternGridData
+        });
+        
+        // Create new pattern function based on grid data
+        // Capture the current grid data in a closure to avoid context issues
+        const capturedGridData = [...this.patternGridData]; // Make a copy
+        
+        const newPattern = {
+            name: displayName,
+            getValue: (x, y) => {
+                const gridX = x % 8;
+                const gridY = y % 8;
+                const index = gridY * 8 + gridX;
+                const isFilled = capturedGridData[index];
+                
+                return isFilled ? 
+                    { alpha: 1, draw: 1 } :  // Black
+                    { alpha: 0, draw: 0 };   // Transparent
+            }
+        };
+        
+        // Update the pattern in the Patterns class
+        Patterns.addPattern(patternName, newPattern);
+        console.log('Pattern saved to Patterns class');
+        
+        // Regenerate pattern preview in UI
+        this.regeneratePatternPreview(patternName);
+        console.log('Pattern preview regenerated');
+        
+        // Close dialog
+        document.getElementById('pattern-editor-dialog').style.display = 'none';
+        
+        console.log(`Pattern "${patternName}" saved with name "${displayName}"`);
+    }
+    
+    regeneratePatternPreview(patternName) {
+        const swatch = document.querySelector(`[data-pattern="${patternName}"]`);
+        if (swatch) {
+            this.generatePatternPreview(swatch);
+        }
+    }
+    
+    // Regenerate all pattern previews (useful after fixing pattern system)
+    regenerateAllPatternPreviews() {
+        const swatches = document.querySelectorAll('.color-swatch[data-pattern]');
+        swatches.forEach(swatch => {
+            this.generatePatternPreview(swatch);
+        });
+    }
+    
+    // Create a new pattern
+    createNewPattern() {
+        console.log('createNewPattern called');
+        
+        // Generate unique pattern name
+        const patternNames = Patterns.getPatternNames();
+        let newPatternName = 'custom-pattern';
+        let counter = 1;
+        while (Patterns.hasPattern(newPatternName)) {
+            newPatternName = `custom-pattern-${counter}`;
+            counter++;
+        }
+        
+        console.log('Generated pattern name:', newPatternName);
+        
+        // Create blank pattern
+        const newPattern = {
+            name: `Custom Pattern ${counter}`,
+            getValue: (x, y) => ({ alpha: 0, draw: 0 }) // Start with blank pattern
+        };
+        
+        // Add to patterns using the new method
+        Patterns.addPattern(newPatternName, newPattern);
+        console.log('Added pattern to Patterns class');
+        
+        // Create new swatch element
+        this.addPatternSwatch(newPatternName);
+        console.log('Added swatch to UI');
+        
+        // Open pattern editor for the new pattern
+        this.showPatternEditor(newPatternName);
+        console.log('Opened pattern editor');
+    }
+    
+    // Add a new pattern swatch to the UI
+    addPatternSwatch(patternName) {
+        const palette = document.querySelector('.color-palette');
+        
+        // Find the last row or create a new one if needed
+        let lastRow = palette.querySelector('.pattern-row:last-child');
+        if (!lastRow || lastRow.children.length >= 3) {
+            lastRow = document.createElement('div');
+            lastRow.className = 'pattern-row';
+            palette.appendChild(lastRow);
+        }
+        
+        // Create new swatch
+        const swatch = document.createElement('div');
+        swatch.className = 'color-swatch';
+        swatch.dataset.pattern = patternName;
+        swatch.title = Patterns.getPatterns()[patternName].name;
+        
+        // Add swatch to the last row
+        lastRow.appendChild(swatch);
+        
+        // Setup event handlers for the new swatch
+        this.setupSwatchHandlers(swatch);
+        
+        // Generate preview
+        this.generatePatternPreview(swatch);
+    }
+    
+    // Setup event handlers for a swatch
+    setupSwatchHandlers(swatch) {
+        swatch.addEventListener('click', () => {
+            // Remove selected class from all swatches
+            document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+            // Add selected class to clicked swatch
+            swatch.classList.add('selected');
+            // Update current pattern
+            this.currentPattern = swatch.dataset.pattern;
+        });
+        
+        // Add double-click handler for pattern editor
+        swatch.addEventListener('dblclick', () => {
+            const patternName = swatch.dataset.pattern;
+            this.showPatternEditor(patternName);
+        });
+    }
+    
+    // Load saved patterns from localStorage and add to UI
+    loadSavedPatterns() {
+        try {
+            if (typeof Patterns !== 'undefined') {
+                const loadedPatterns = Patterns.loadFromStorage();
+                console.log('Loaded patterns from storage:', loadedPatterns);
+                
+                // Store loaded pattern names for later UI creation
+                this.loadedCustomPatterns = loadedPatterns;
+            }
+        } catch (error) {
+            console.warn('Failed to load patterns:', error);
+            this.loadedCustomPatterns = [];
+        }
+    }
+    
+    // Add loaded patterns to UI after color palette is set up
+    addLoadedPatternsToUI() {
+        if (this.loadedCustomPatterns && this.loadedCustomPatterns.length > 0) {
+            this.loadedCustomPatterns.forEach(patternName => {
+                this.addPatternSwatch(patternName);
+            });
+            console.log('Added loaded patterns to UI:', this.loadedCustomPatterns);
+        }
+    }
+
+    // ===== ADOBE-STYLE PANEL SYSTEM =====
+    
+    setupPanelSystem() {
+        // Panel system is now simplified - no resize/collapse functionality
+        // Panels are fixed in place for better usability
+        
+        // Update left panel width to fixed size
+        setTimeout(() => this.updateLeftPanelWidth(), 100);
+    }
+    
+    
+    
+    
+    
+    
+    
+    updateLeftPanelWidth() {
+        // Calculate the actual width needed by the left panel
+        const leftColumn = document.getElementById('left-column');
+        if (!leftColumn) return;
+        
+        // Calculate optimal width for 3-column tool layout
+        // Tool button: 28px each + 2px gap between = 28*3 + 2*2 = 88px  
+        // Panel padding: 12px on each side = 24px
+        // Panel border: 2px total
+        // Total for tools: 88 + 24 + 2 = 114px
+        const optimalWidth = 140; // A bit more room for comfortable layout
+        
+        // Set a fixed optimal width for clean layout
+        const finalWidth = optimalWidth;
+        
+        // Set CSS custom property for dynamic width (kept for compatibility)
+        document.documentElement.style.setProperty('--left-panel-width', finalWidth + 'px');
+        
+        // Toggle button position is now handled by CSS media queries for consistency
+    }
+    
+    // ===== TOOL OPTIONS BAR =====
+    
+    setupToolOptionsBar() {
+        // Move tool options to the menu bar
+        this.toolOptionsBar = document.getElementById('tool-options-bar');
+        
+        // Setup tool option event listeners for the bar
+        this.setupToolOptionEvents();
+        
+        // Initial tool options update
+        this.updateToolOptionsBar();
+    }
+    
+    setupToolOptionEvents() {
+        // This will be called after each tool options update
+        // to re-attach event listeners to dynamically created elements
+    }
+    
+    updateToolOptionsBar() {
+        if (!this.toolOptionsBar) return;
+        
+        // Clear existing options
+        this.toolOptionsBar.innerHTML = '';
+        
+        // Add options based on current tool
+        const tool = this.currentTool;
+        
+        if (tool === 'brush') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label>Size: <input type="range" id="brush-size-bar" min="1" max="10" value="${this.brushSize}"> <span id="brush-size-value-bar">${this.brushSize}</span>px</label>
+                    <label><input type="checkbox" id="smooth-drawing-bar" ${this.smoothDrawing ? 'checked' : ''}> Smooth</label>
+                </div>
+            `;
+            
+            // Re-attach events for brush
+            const brushSizeBar = document.getElementById('brush-size-bar');
+            const smoothDrawingBar = document.getElementById('smooth-drawing-bar');
+            
+            if (brushSizeBar) {
+                brushSizeBar.addEventListener('input', (e) => {
+                    this.brushSize = parseInt(e.target.value);
+                    document.getElementById('brush-size-value-bar').textContent = this.brushSize;
+                    // Sync with original controls if they exist
+                    const original = document.getElementById('brush-size');
+                    if (original) {
+                        original.value = this.brushSize;
+                        const originalValue = document.getElementById('brush-size-value');
+                        if (originalValue) originalValue.textContent = this.brushSize;
+                    }
+                });
+            }
+            
+            if (smoothDrawingBar) {
+                smoothDrawingBar.addEventListener('change', (e) => {
+                    this.smoothDrawing = e.target.checked;
+                    // Sync with original controls if they exist
+                    const original = document.getElementById('smooth-drawing');
+                    if (original) original.checked = this.smoothDrawing;
+                });
+            }
+            
+        } else if (tool === 'pencil') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label><input type="checkbox" id="pencil-smooth-bar" ${this.smoothDrawing ? 'checked' : ''}> Smooth</label>
+                </div>
+            `;
+            
+            const pencilSmoothBar = document.getElementById('pencil-smooth-bar');
+            if (pencilSmoothBar) {
+                pencilSmoothBar.addEventListener('change', (e) => {
+                    this.smoothDrawing = e.target.checked;
+                    const original = document.getElementById('pencil-smooth');
+                    if (original) original.checked = this.smoothDrawing;
+                });
+            }
+            
+        } else if (tool === 'eraser') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label>Size: <input type="range" id="eraser-size-bar" min="1" max="10" value="${this.eraserSize || 2}"> <span id="eraser-size-value-bar">${this.eraserSize || 2}</span>px</label>
+                    <label><input type="checkbox" id="eraser-smooth-bar" ${this.smoothDrawing ? 'checked' : ''}> Smooth</label>
+                </div>
+            `;
+            
+            const eraserSizeBar = document.getElementById('eraser-size-bar');
+            const eraserSmoothBar = document.getElementById('eraser-smooth-bar');
+            
+            if (eraserSizeBar) {
+                eraserSizeBar.addEventListener('input', (e) => {
+                    this.eraserSize = parseInt(e.target.value);
+                    document.getElementById('eraser-size-value-bar').textContent = this.eraserSize;
+                });
+            }
+            
+            if (eraserSmoothBar) {
+                eraserSmoothBar.addEventListener('change', (e) => {
+                    this.smoothDrawing = e.target.checked;
+                });
+            }
+            
+        } else if (tool === 'rect' || tool === 'circle') {
+            const borderChecked = (tool === 'rect') ? this.drawBorder : this.circleDrawBorder;
+            const fillChecked = (tool === 'rect') ? this.drawFill : this.circleDrawFill;
+            
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label><input type="checkbox" id="shape-border-bar" ${borderChecked ? 'checked' : ''}> Border</label>
+                    <label><input type="checkbox" id="shape-fill-bar" ${fillChecked ? 'checked' : ''}> Fill</label>
+                </div>
+            `;
+            
+            const shapeBorderBar = document.getElementById('shape-border-bar');
+            const shapeFillBar = document.getElementById('shape-fill-bar');
+            
+            if (shapeBorderBar) {
+                shapeBorderBar.addEventListener('change', (e) => {
+                    if (tool === 'rect') {
+                        this.drawBorder = e.target.checked;
+                    } else {
+                        this.circleDrawBorder = e.target.checked;
+                    }
+                });
+            }
+            
+            if (shapeFillBar) {
+                shapeFillBar.addEventListener('change', (e) => {
+                    if (tool === 'rect') {
+                        this.drawFill = e.target.checked;
+                    } else {
+                        this.circleDrawFill = e.target.checked;
+                    }
+                });
+            }
+            
+        } else if (tool === 'spray') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label>Size: <input type="range" id="spray-radius-bar" min="2" max="15" value="${this.sprayRadius || 8}"> <span id="spray-radius-value-bar">${this.sprayRadius || 8}</span>px</label>
+                    <label>Density: <input type="range" id="spray-density-bar" min="10" max="100" value="${this.sprayDensity || 60}"> <span id="spray-density-value-bar">${this.sprayDensity || 60}</span>%</label>
+                </div>
+            `;
+            
+            const sprayRadiusBar = document.getElementById('spray-radius-bar');
+            const sprayDensityBar = document.getElementById('spray-density-bar');
+            
+            if (sprayRadiusBar) {
+                sprayRadiusBar.addEventListener('input', (e) => {
+                    this.sprayRadius = parseInt(e.target.value);
+                    document.getElementById('spray-radius-value-bar').textContent = this.sprayRadius;
+                });
+            }
+            
+            if (sprayDensityBar) {
+                sprayDensityBar.addEventListener('input', (e) => {
+                    this.sprayDensity = parseInt(e.target.value);
+                    document.getElementById('spray-density-value-bar').textContent = this.sprayDensity;
+                });
+            }
+            
+        } else if (tool === 'bucket') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label><input type="checkbox" id="fill-contiguous-bar" ${this.fillContiguous ? 'checked' : ''}> Contiguous</label>
+                </div>
+            `;
+            
+            const fillContiguousBar = document.getElementById('fill-contiguous-bar');
+            if (fillContiguousBar) {
+                fillContiguousBar.addEventListener('change', (e) => {
+                    this.fillContiguous = e.target.checked;
+                });
+            }
+            
+        } else if (tool === 'move') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label><input type="checkbox" id="move-loop-bar" ${this.moveLoop ? 'checked' : ''}> Loop</label>
+                </div>
+            `;
+            
+            const moveLoopBar = document.getElementById('move-loop-bar');
+            if (moveLoopBar) {
+                moveLoopBar.addEventListener('change', (e) => {
+                    this.moveLoop = e.target.checked;
+                });
+            }
+            
+        } else if (tool === 'line') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label>Width: <input type="range" id="line-width-bar" min="1" max="5" value="${this.lineWidth || 1}"> <span id="line-width-value-bar">${this.lineWidth || 1}</span>px</label>
+                </div>
+            `;
+            
+            const lineWidthBar = document.getElementById('line-width-bar');
+            if (lineWidthBar) {
+                lineWidthBar.addEventListener('input', (e) => {
+                    this.lineWidth = parseInt(e.target.value);
+                    document.getElementById('line-width-value-bar').textContent = this.lineWidth;
+                });
+            }
+            
+        } else if (tool === 'text') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label>Font Scale: <input type="range" id="text-scale-bar" min="1" max="4" value="${this.textScale || 1}"> <span id="text-scale-value-bar">${this.textScale || 1}</span>x</label>
+                </div>
+            `;
+            
+            const textScaleBar = document.getElementById('text-scale-bar');
+            if (textScaleBar) {
+                textScaleBar.addEventListener('input', (e) => {
+                    this.textScale = parseInt(e.target.value);
+                    document.getElementById('text-scale-value-bar').textContent = this.textScale;
+                });
+            }
+            
+        } else if (tool === 'select-rect' || tool === 'select-circle') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <button id="select-copy-bar" class="tool-option-btn">Copy</button>
+                    <button id="select-cut-bar" class="tool-option-btn">Cut</button>
+                    <button id="select-paste-bar" class="tool-option-btn">Paste</button>
+                    <button id="select-clear-bar" class="tool-option-btn">Clear</button>
+                </div>
+            `;
+            
+            // Add event listeners for selection actions
+            const copyBtn = document.getElementById('select-copy-bar');
+            const cutBtn = document.getElementById('select-cut-bar');
+            const pasteBtn = document.getElementById('select-paste-bar');
+            const clearBtn = document.getElementById('select-clear-bar');
+            
+            if (copyBtn) copyBtn.addEventListener('click', () => this.copySelection());
+            if (cutBtn) cutBtn.addEventListener('click', () => this.cutSelection());
+            if (pasteBtn) pasteBtn.addEventListener('click', () => this.pasteSelection());
+            if (clearBtn) clearBtn.addEventListener('click', () => {
+                this.selection = null;
+                this.editor.redraw();
+            });
+            
+        } else if (tool === 'guide') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <button id="guide-add-bar" class="tool-option-btn">Add Guide</button>
+                    <button id="guide-clear-bar" class="tool-option-btn">Clear All</button>
+                    <label><input type="checkbox" id="guide-snap-bar" ${this.snapToGuides ? 'checked' : ''}> Snap to Guides</label>
+                </div>
+            `;
+            
+            const addGuideBtn = document.getElementById('guide-add-bar');
+            const clearGuidesBtn = document.getElementById('guide-clear-bar');
+            const snapToGuidesBar = document.getElementById('guide-snap-bar');
+            
+            if (addGuideBtn) addGuideBtn.addEventListener('click', () => this.addGuide());
+            if (clearGuidesBtn) clearGuidesBtn.addEventListener('click', () => this.clearGuides());
+            if (snapToGuidesBar) {
+                snapToGuidesBar.addEventListener('change', (e) => {
+                    this.snapToGuides = e.target.checked;
+                });
+            }
+            
+        } else if (tool === 'blur') {
+            this.toolOptionsBar.innerHTML = `
+                <div class="option-group">
+                    <label>Intensity: <input type="range" id="blur-intensity-bar" min="1" max="5" value="${this.blurIntensity || 2}"> <span id="blur-intensity-value-bar">${this.blurIntensity || 2}</span></label>
+                </div>
+            `;
+            
+            const blurIntensityBar = document.getElementById('blur-intensity-bar');
+            if (blurIntensityBar) {
+                blurIntensityBar.addEventListener('input', (e) => {
+                    this.blurIntensity = parseInt(e.target.value);
+                    document.getElementById('blur-intensity-value-bar').textContent = this.blurIntensity;
+                });
+            }
         }
     }
 

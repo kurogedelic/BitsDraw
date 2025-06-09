@@ -251,17 +251,22 @@ class MenuManager {
                 }
                 break;
 
-            // Image menu
-            case 'smart-conversions':
-                this.app.showSmartConversions();
-                break;
-
-            // Effects menu (moved from Image)
+            // Effects menu
             case 'invert-bitmap':
                 this.app.applyInvertEffect();
                 break;
             case 'dithering':
                 this.app.showDitheringDialog();
+                break;
+            case 'draw-edge':
+                console.log('Draw edge menu action triggered');
+                console.log('App object:', this.app);
+                console.log('showDrawEdgeDialog method exists:', typeof this.app.showDrawEdgeDialog);
+                if (typeof this.app.showDrawEdgeDialog === 'function') {
+                    this.app.showDrawEdgeDialog();
+                } else {
+                    console.error('showDrawEdgeDialog method not found on app object!');
+                }
                 break;
 
             // View menu - Mode switching

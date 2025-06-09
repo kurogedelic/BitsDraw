@@ -99,10 +99,16 @@ wasm-src/Cargo.lock
 !public/wasm/
 
 # Project-specific ignores
-test-optimized.html
+test*.html
+*-backup.*
+*-working.*
+*-original.*
+*-refactored.*
+utils-backup/
+utils-working/
 *.bak
 plan.md.bak
+server.log
 
-# Claude AI
-CLAUDE.md
-claude.md
+# Keep CLAUDE.md (it's documentation)
+# CLAUDE.md
