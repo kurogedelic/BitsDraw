@@ -6530,6 +6530,8 @@ class BitsDraw {
         const grayscaleData = new Uint8Array(width * height);
         const alphaData = new Uint8Array(width * height);
         
+        DEBUG.log(`🔧 Blur region: ${width}x${height}, data length: ${grayscaleData.length}`);
+        
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const srcX = x1 + x;
@@ -6627,7 +6629,7 @@ class BitsDraw {
         } else {
             // Mixed region: use traditional blur + dithering
             const blurredDrawData = this.gaussianBlur(grayscaleData, width, height, alphaData);
-            ditheredDrawData = this.applyDithering(blurredDrawData, width, height, this.blurDitherMethod);
+            ditheredDrawData = this.applyPixelDithering(blurredDrawData, width, height, this.blurDitherMethod);
             
             if (this.blurAlphaChannel) {
                 const blurredAlphaData = this.gaussianBlurAlpha(alphaData, width, height);
@@ -6658,8 +6660,15 @@ class BitsDraw {
             height: height
         };
         
-        const dithering = new DitheringEffects();
-        const ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, this.blurDitherMethod);
+        let ditheredAlpha;
+        if (typeof DitheringEffects === 'undefined') {
+            DEBUG.warn('DitheringEffects not available in blurBlackWithAlphaOnly');
+            // Fallback: simple threshold
+            ditheredAlpha = normalizedAlpha.map(pixel => pixel > 0.5 ? 1 : 0);
+        } else {
+            const dithering = new DitheringEffects();
+            ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, this.blurDitherMethod);
+        }
         
         // Step 3: Create result - pure black pixels where opaque, transparent elsewhere
         const pixelResult = new Uint8Array(grayscaleData.length);
@@ -6698,8 +6707,15 @@ class BitsDraw {
             height: height
         };
         
-        const dithering = new DitheringEffects();
-        const ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, this.blurDitherMethod);
+        let ditheredAlpha;
+        if (typeof DitheringEffects === 'undefined') {
+            DEBUG.warn('DitheringEffects not available in blurWhiteWithAlphaOnly');
+            // Fallback: simple threshold
+            ditheredAlpha = normalizedAlpha.map(pixel => pixel > 0.5 ? 1 : 0);
+        } else {
+            const dithering = new DitheringEffects();
+            ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, this.blurDitherMethod);
+        }
         
         // Step 3: Create result - pure white pixels where opaque, transparent elsewhere
         const pixelResult = new Uint8Array(grayscaleData.length);
@@ -6721,6 +6737,12 @@ class BitsDraw {
     }
     
     gaussianBlur(data, width, height, alphaData) {
+        // Check for valid input
+        if (!data || !data.length) {
+            DEBUG.warn('gaussianBlur: Invalid input data');
+            return new Uint8Array(0);
+        }
+        
         // Simple box blur approximation of Gaussian (faster)
         const radius = Math.max(1, Math.floor(this.blurSize / 2));
         const result = new Uint8Array(data.length);
@@ -6802,7 +6824,13 @@ class BitsDraw {
         return result;
     }
     
-    applyDithering(grayscaleData, width, height, method) {
+    applyPixelDithering(grayscaleData, width, height, method) {
+        // Check for valid input
+        if (!grayscaleData || !grayscaleData.length) {
+            DEBUG.warn('applyDithering: Invalid grayscaleData');
+            return new Uint8Array(0);
+        }
+        
         // Check if DitheringEffects is available
         if (typeof DitheringEffects === 'undefined') {
             DEBUG.warn('DitheringEffects not available, using simple threshold');
@@ -6830,6 +6858,12 @@ class BitsDraw {
     }
     
     applyAlphaDithering(grayscaleAlphaData, width, height, method) {
+        // Check for valid input
+        if (!grayscaleAlphaData || !grayscaleAlphaData.length) {
+            DEBUG.warn('applyAlphaDithering: Invalid grayscaleAlphaData');
+            return new Uint8Array(0);
+        }
+        
         // Check if DitheringEffects is available
         if (typeof DitheringEffects === 'undefined') {
             DEBUG.warn('DitheringEffects not available, using simple threshold for alpha');
