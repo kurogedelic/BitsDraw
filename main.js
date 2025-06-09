@@ -2813,7 +2813,8 @@ class BitsDraw {
     }
 
     updateWindowTitle(width, height) {
-        const projectName = document.getElementById('project-name').value || 'my_bitmap';
+        const projectNameElement = document.getElementById('project-name');
+        const projectName = projectNameElement ? projectNameElement.value || 'my_bitmap' : 'my_bitmap';
         const title = `Canvas - ${projectName} (${width}x${height})`;
         const titleElement = document.querySelector('#canvas-window .window-title');
         if (titleElement) {
@@ -3202,7 +3203,8 @@ class BitsDraw {
     saveBitmapToStorage() {
         try {
             const bitmapData = this.editor.getBitmapData();
-            const projectName = document.getElementById('project-name').value || 'my_bitmap';
+            const projectNameElement = document.getElementById('project-name');
+            const projectName = projectNameElement ? projectNameElement.value || 'my_bitmap' : 'my_bitmap';
             
             const saveData = {
                 bitmap: bitmapData,
@@ -3232,7 +3234,10 @@ class BitsDraw {
                 this.editor.loadBitmapData(saveData.bitmap);
                 
                 if (saveData.projectName) {
-                    document.getElementById('project-name').value = saveData.projectName;
+                    const projectNameElement = document.getElementById('project-name');
+                    if (projectNameElement) {
+                        projectNameElement.value = saveData.projectName;
+                    }
                 }
                 
                 this.updateOutput();
@@ -4314,7 +4319,8 @@ class BitsDraw {
         canvas.toBlob((blob) => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            const projectName = document.getElementById('project-name').value || 'my_bitmap';
+            const projectNameElement = document.getElementById('project-name');
+            const projectName = projectNameElement ? projectNameElement.value || 'my_bitmap' : 'my_bitmap';
             a.href = url;
             a.download = `${projectName}.png`;
             document.body.appendChild(a);
