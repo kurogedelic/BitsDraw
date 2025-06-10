@@ -1673,16 +1673,20 @@ class BitsDraw {
     updateBrushCursor(clientX, clientY) {
         if (!this.brushCursorOverlay) return;
         
-        // Get pixel coordinates (snapped to grid)
+        // Get pixel coordinates (snapped to grid) - this is exactly where drawing will occur
         const pixelCoords = this.editor.getCanvasCoordinates(clientX, clientY);
         
         // Convert back to screen coordinates, centered on the pixel
         const canvasRect = this.canvas.getBoundingClientRect();
         const zoom = this.editor.zoom;
         
+        // Account for canvas transform offset (from hand tool panning)
+        const canvasOffsetX = this.canvasOffset ? this.canvasOffset.x : 0;
+        const canvasOffsetY = this.canvasOffset ? this.canvasOffset.y : 0;
+        
         // Calculate the center of the pixel in screen coordinates
-        const screenX = canvasRect.left + (pixelCoords.x * zoom) + (zoom / 2);
-        const screenY = canvasRect.top + (pixelCoords.y * zoom) + (zoom / 2);
+        const screenX = canvasRect.left + (pixelCoords.x * zoom) + (zoom / 2) + canvasOffsetX;
+        const screenY = canvasRect.top + (pixelCoords.y * zoom) + (zoom / 2) + canvasOffsetY;
         
         this.brushCursorOverlay.style.left = screenX + 'px';
         this.brushCursorOverlay.style.top = screenY + 'px';
@@ -1717,37 +1721,55 @@ class BitsDraw {
     }
     
     createPixelatedCursor(brushSize, zoom) {
-        // Create a grid of pixels to show the brush area
+        // Match exactly how drawWithBrush calculates pixels
+        const radius = Math.floor(brushSize / 2);
         const totalSize = brushSize * zoom;
+        
         this.brushCursorOverlay.style.width = totalSize + 'px';
         this.brushCursorOverlay.style.height = totalSize + 'px';
         
         // Clear previous content
         this.brushCursorOverlay.innerHTML = '';
         
-        // Calculate offset to center the brush (for even-sized brushes)
-        const offsetPixels = Math.floor(brushSize / 2);
-        const pixelOffset = -offsetPixels * zoom;
+        // Create pixels using the same logic as drawWithBrush
+        // centerX, centerY is at 0,0 in our cursor coordinate system
+        const centerX = 0;
+        const centerY = 0;
         
-        // Create individual pixel squares
-        for (let y = 0; y < brushSize; y++) {
-            for (let x = 0; x < brushSize; x++) {
-                const pixel = document.createElement('div');
-                pixel.className = 'brush-cursor-pixel';
+        for (let y = centerY - radius; y <= centerY + radius; y++) {
+            for (let x = centerX - radius; x <= centerX + radius; x++) {
+                let shouldDraw = false;
                 
-                // Position relative to center
-                const pixelX = (x - offsetPixels) * zoom;
-                const pixelY = (y - offsetPixels) * zoom;
+                // Match the exact drawing logic from drawWithBrush
+                if (brushSize === 1) {
+                    if (x === centerX && y === centerY) {
+                        shouldDraw = true;
+                    }
+                } else {
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance <= radius) {
+                        shouldDraw = true;
+                    }
+                }
                 
-                pixel.style.left = (pixelX + offsetPixels * zoom) + 'px';
-                pixel.style.top = (pixelY + offsetPixels * zoom) + 'px';
-                pixel.style.width = zoom + 'px';
-                pixel.style.height = zoom + 'px';
-                this.brushCursorOverlay.appendChild(pixel);
+                if (shouldDraw) {
+                    const pixel = document.createElement('div');
+                    pixel.className = 'brush-cursor-pixel';
+                    
+                    // Position relative to the cursor center
+                    pixel.style.left = ((x + radius) * zoom) + 'px';
+                    pixel.style.top = ((y + radius) * zoom) + 'px';
+                    pixel.style.width = zoom + 'px';
+                    pixel.style.height = zoom + 'px';
+                    this.brushCursorOverlay.appendChild(pixel);
+                }
             }
         }
         
-        // Adjust the overlay transform to center the cursor properly
+        // Center the cursor overlay properly
         this.brushCursorOverlay.style.transform = `translate(-50%, -50%)`;
     }
 
