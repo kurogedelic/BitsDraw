@@ -1680,10 +1680,21 @@ class BitsDraw {
         const canvasRect = this.canvas.getBoundingClientRect();
         const zoom = this.editor.zoom;
         
+        // Get current brush size
+        const toolSize = this.currentTool === 'eraser' ? this.eraserSize : 
+                        this.currentTool === 'blur' ? this.blurSize :
+                        this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
+        
         // Calculate the exact screen position of the pixel where drawing will occur
         // Move cursor 1 canvas pixel left and 1 canvas pixel up to align with drawing pixels
-        const screenX = canvasRect.left + (pixelCoords.x * zoom) - zoom;
-        const screenY = canvasRect.top + (pixelCoords.y * zoom) - zoom;
+        let screenX = canvasRect.left + (pixelCoords.x * zoom) - zoom;
+        let screenY = canvasRect.top + (pixelCoords.y * zoom) - zoom;
+        
+        // For brush sizes larger than 4px, shift center an additional 1 document pixel to top-left
+        if (toolSize > 4) {
+            screenX -= 1;
+            screenY -= 1;
+        }
         
         this.brushCursorOverlay.style.left = screenX + 'px';
         this.brushCursorOverlay.style.top = screenY + 'px';
