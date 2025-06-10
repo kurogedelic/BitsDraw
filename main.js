@@ -6778,9 +6778,17 @@ class BitsDraw {
         } else if (tool === 'guide') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <button id="guide-add-bar" class="tool-option-btn">Add Guide</button>
-                    <button id="guide-clear-bar" class="tool-option-btn">Clear All</button>
-                    <label><input type="checkbox" id="guide-snap-bar" ${this.snapToGuides ? 'checked' : ''}> Snap to Guides</label>
+                    <button id="guide-add-bar" class="btn-toggle">
+                        <i class="ph ph-plus"></i>
+                    </button>
+                    <button id="guide-clear-bar" class="btn-toggle">
+                        <i class="ph ph-trash"></i>
+                    </button>
+                </div>
+                <div class="option-group">
+                    <button class="btn-toggle ${this.snapToGuides ? 'active' : ''}" id="guide-snap-bar">
+                        <i class="ph ph-magnet"></i>
+                    </button>
                 </div>
             `;
             
@@ -6791,8 +6799,9 @@ class BitsDraw {
             if (addGuideBtn) addGuideBtn.addEventListener('click', () => this.addGuide());
             if (clearGuidesBtn) clearGuidesBtn.addEventListener('click', () => this.clearGuides());
             if (snapToGuidesBar) {
-                snapToGuidesBar.addEventListener('change', (e) => {
-                    this.snapToGuides = e.target.checked;
+                snapToGuidesBar.addEventListener('click', () => {
+                    this.snapToGuides = !this.snapToGuides;
+                    snapToGuidesBar.classList.toggle('active', this.snapToGuides);
                 });
             }
             
