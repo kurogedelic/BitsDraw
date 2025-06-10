@@ -6358,90 +6358,164 @@ class BitsDraw {
         if (tool === 'brush') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label>Size: <input type="range" id="brush-size-bar" min="1" max="10" value="${this.brushSize}"> <span id="brush-size-value-bar">${this.brushSize}</span>px</label>
-                    <label>Shape: 
-                        <select id="brush-shape-bar">
-                            <option value="circle" ${this.brushShape === 'circle' ? 'selected' : ''}>Circle</option>
-                            <option value="square" ${this.brushShape === 'square' ? 'selected' : ''}>Square</option>
-                        </select>
-                    </label>
-                    <label><input type="checkbox" id="smooth-drawing-bar" ${this.smoothDrawing ? 'checked' : ''}> Smooth</label>
+                    <span class="tool-option-label"><i class="ph ph-resize"></i>Size</span>
+                    <div class="number-input">
+                        <button type="button" id="brush-size-dec">−</button>
+                        <input type="number" id="brush-size-bar" min="1" max="10" value="${this.brushSize}">
+                        <button type="button" id="brush-size-inc">+</button>
+                    </div>
+                </div>
+                <div class="option-group">
+                    <span class="tool-option-label"><i class="ph ph-shapes"></i>Shape</span>
+                    <div class="btn-group">
+                        <button class="btn-toggle ${this.brushShape === 'circle' ? 'active' : ''}" id="brush-shape-circle">
+                            <i class="ph ph-circle"></i>
+                        </button>
+                        <button class="btn-toggle ${this.brushShape === 'square' ? 'active' : ''}" id="brush-shape-square">
+                            <i class="ph ph-square"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="option-group">
+                    <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="smooth-drawing-bar">
+                        <i class="ph ph-bezier-curve"></i>
+                    </button>
                 </div>
             `;
             
             // Re-attach events for brush
             const brushSizeBar = document.getElementById('brush-size-bar');
-            const brushShapeBar = document.getElementById('brush-shape-bar');
+            const brushSizeInc = document.getElementById('brush-size-inc');
+            const brushSizeDec = document.getElementById('brush-size-dec');
+            const brushShapeCircle = document.getElementById('brush-shape-circle');
+            const brushShapeSquare = document.getElementById('brush-shape-square');
             const smoothDrawingBar = document.getElementById('smooth-drawing-bar');
             
+            // Size input and +/- buttons
             if (brushSizeBar) {
                 brushSizeBar.addEventListener('input', (e) => {
                     this.brushSize = parseInt(e.target.value);
-                    document.getElementById('brush-size-value-bar').textContent = this.brushSize;
                     this.updateBrushCursorSize();
-                    // Sync with original controls if they exist
-                    const original = document.getElementById('brush-size');
-                    if (original) {
-                        original.value = this.brushSize;
-                        const originalValue = document.getElementById('brush-size-value');
-                        if (originalValue) originalValue.textContent = this.brushSize;
+                });
+            }
+            
+            if (brushSizeInc) {
+                brushSizeInc.addEventListener('click', () => {
+                    if (this.brushSize < 10) {
+                        this.brushSize++;
+                        brushSizeBar.value = this.brushSize;
+                        this.updateBrushCursorSize();
                     }
                 });
             }
             
-            if (brushShapeBar) {
-                brushShapeBar.addEventListener('change', (e) => {
-                    this.brushShape = e.target.value;
+            if (brushSizeDec) {
+                brushSizeDec.addEventListener('click', () => {
+                    if (this.brushSize > 1) {
+                        this.brushSize--;
+                        brushSizeBar.value = this.brushSize;
+                        this.updateBrushCursorSize();
+                    }
+                });
+            }
+            
+            // Shape toggle buttons
+            if (brushShapeCircle) {
+                brushShapeCircle.addEventListener('click', () => {
+                    this.brushShape = 'circle';
+                    brushShapeCircle.classList.add('active');
+                    brushShapeSquare.classList.remove('active');
                     this.updateBrushCursorSize();
                 });
             }
             
+            if (brushShapeSquare) {
+                brushShapeSquare.addEventListener('click', () => {
+                    this.brushShape = 'square';
+                    brushShapeSquare.classList.add('active');
+                    brushShapeCircle.classList.remove('active');
+                    this.updateBrushCursorSize();
+                });
+            }
+            
+            // Smooth drawing toggle
             if (smoothDrawingBar) {
-                smoothDrawingBar.addEventListener('change', (e) => {
-                    this.smoothDrawing = e.target.checked;
-                    // Sync with original controls if they exist
-                    const original = document.getElementById('smooth-drawing');
-                    if (original) original.checked = this.smoothDrawing;
+                smoothDrawingBar.addEventListener('click', () => {
+                    this.smoothDrawing = !this.smoothDrawing;
+                    smoothDrawingBar.classList.toggle('active', this.smoothDrawing);
                 });
             }
             
         } else if (tool === 'pencil') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label><input type="checkbox" id="pencil-smooth-bar" ${this.smoothDrawing ? 'checked' : ''}> Smooth</label>
+                    <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="pencil-smooth-bar">
+                        <i class="ph ph-bezier-curve"></i>
+                    </button>
                 </div>
             `;
             
             const pencilSmoothBar = document.getElementById('pencil-smooth-bar');
             if (pencilSmoothBar) {
-                pencilSmoothBar.addEventListener('change', (e) => {
-                    this.smoothDrawing = e.target.checked;
-                    const original = document.getElementById('pencil-smooth');
-                    if (original) original.checked = this.smoothDrawing;
+                pencilSmoothBar.addEventListener('click', () => {
+                    this.smoothDrawing = !this.smoothDrawing;
+                    pencilSmoothBar.classList.toggle('active', this.smoothDrawing);
                 });
             }
             
         } else if (tool === 'eraser') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label>Size: <input type="range" id="eraser-size-bar" min="1" max="10" value="${this.eraserSize || 2}"> <span id="eraser-size-value-bar">${this.eraserSize || 2}</span>px</label>
-                    <label><input type="checkbox" id="eraser-smooth-bar" ${this.smoothDrawing ? 'checked' : ''}> Smooth</label>
+                    <span class="tool-option-label"><i class="ph ph-resize"></i>Size</span>
+                    <div class="number-input">
+                        <button type="button" id="eraser-size-dec">−</button>
+                        <input type="number" id="eraser-size-bar" min="1" max="10" value="${this.eraserSize || 2}">
+                        <button type="button" id="eraser-size-inc">+</button>
+                    </div>
+                </div>
+                <div class="option-group">
+                    <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="eraser-smooth-bar">
+                        <i class="ph ph-bezier-curve"></i>
+                    </button>
                 </div>
             `;
             
             const eraserSizeBar = document.getElementById('eraser-size-bar');
+            const eraserSizeInc = document.getElementById('eraser-size-inc');
+            const eraserSizeDec = document.getElementById('eraser-size-dec');
             const eraserSmoothBar = document.getElementById('eraser-smooth-bar');
             
             if (eraserSizeBar) {
                 eraserSizeBar.addEventListener('input', (e) => {
                     this.eraserSize = parseInt(e.target.value);
-                    document.getElementById('eraser-size-value-bar').textContent = this.eraserSize;
+                    this.updateBrushCursorSize();
+                });
+            }
+            
+            if (eraserSizeInc) {
+                eraserSizeInc.addEventListener('click', () => {
+                    if (this.eraserSize < 10) {
+                        this.eraserSize++;
+                        eraserSizeBar.value = this.eraserSize;
+                        this.updateBrushCursorSize();
+                    }
+                });
+            }
+            
+            if (eraserSizeDec) {
+                eraserSizeDec.addEventListener('click', () => {
+                    if (this.eraserSize > 1) {
+                        this.eraserSize--;
+                        eraserSizeBar.value = this.eraserSize;
+                        this.updateBrushCursorSize();
+                    }
                 });
             }
             
             if (eraserSmoothBar) {
-                eraserSmoothBar.addEventListener('change', (e) => {
-                    this.smoothDrawing = e.target.checked;
+                eraserSmoothBar.addEventListener('click', () => {
+                    this.smoothDrawing = !this.smoothDrawing;
+                    eraserSmoothBar.classList.toggle('active', this.smoothDrawing);
                 });
             }
             
@@ -6451,8 +6525,12 @@ class BitsDraw {
             
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label><input type="checkbox" id="shape-border-bar" ${borderChecked ? 'checked' : ''}> Border</label>
-                    <label><input type="checkbox" id="shape-fill-bar" ${fillChecked ? 'checked' : ''}> Fill</label>
+                    <button class="btn-toggle ${borderChecked ? 'active' : ''}" id="shape-border-bar">
+                        <i class="ph ph-selection-background"></i>
+                    </button>
+                    <button class="btn-toggle ${fillChecked ? 'active' : ''}" id="shape-fill-bar">
+                        <i class="ph ph-paint-bucket"></i>
+                    </button>
                 </div>
             `;
             
@@ -6460,21 +6538,25 @@ class BitsDraw {
             const shapeFillBar = document.getElementById('shape-fill-bar');
             
             if (shapeBorderBar) {
-                shapeBorderBar.addEventListener('change', (e) => {
+                shapeBorderBar.addEventListener('click', () => {
                     if (tool === 'rect') {
-                        this.drawBorder = e.target.checked;
+                        this.drawBorder = !this.drawBorder;
+                        shapeBorderBar.classList.toggle('active', this.drawBorder);
                     } else {
-                        this.circleDrawBorder = e.target.checked;
+                        this.circleDrawBorder = !this.circleDrawBorder;
+                        shapeBorderBar.classList.toggle('active', this.circleDrawBorder);
                     }
                 });
             }
             
             if (shapeFillBar) {
-                shapeFillBar.addEventListener('change', (e) => {
+                shapeFillBar.addEventListener('click', () => {
                     if (tool === 'rect') {
-                        this.drawFill = e.target.checked;
+                        this.drawFill = !this.drawFill;
+                        shapeFillBar.classList.toggle('active', this.drawFill);
                     } else {
-                        this.circleDrawFill = e.target.checked;
+                        this.circleDrawFill = !this.circleDrawFill;
+                        shapeFillBar.classList.toggle('active', this.circleDrawFill);
                     }
                 });
             }

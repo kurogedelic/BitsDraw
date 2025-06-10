@@ -109,20 +109,20 @@ body {
   backdrop-filter: blur(10px);
 }
 
-/* Tool Options Bar */
+/* Tool Options Bar - Bootstrap-like Modern Design */
 .tool-options-bar {
   position: fixed;
   top: 32px;
   left: 0;
   right: 0;
-  height: 36px;
+  height: 48px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-primary);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
   padding: 0 16px;
-  font-size: 11px;
+  font-size: 14px;
   z-index: 999;
   transition: all 0.2s ease;
   backdrop-filter: blur(10px);
@@ -131,9 +131,9 @@ body {
 .tool-options-bar .option-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   border-left: 1px solid var(--border-primary);
-  padding-left: 12px;
+  padding-left: 16px;
 }
 
 .tool-options-bar .option-group:first-child {
@@ -141,56 +141,127 @@ body {
   padding-left: 0;
 }
 
-.tool-options-bar label {
-  display: flex;
+/* Toggle Button Component */
+.btn-toggle {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  white-space: nowrap;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
   color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  white-space: nowrap;
 }
 
-.tool-options-bar input[type='range'] {
-  width: 60px;
-  height: 6px;
-  background: var(--bg-accent);
-  appearance: none;
-  -webkit-appearance: none;
+.btn-toggle:hover {
+  background: var(--button-hover);
+  border-color: var(--border-secondary);
 }
 
-.tool-options-bar input[type='checkbox'] {
+.btn-toggle.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #ffffff;
+}
+
+.btn-toggle i {
+  font-size: 16px;
+}
+
+/* Shape Toggle Group */
+.btn-group {
+  display: inline-flex;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.btn-group .btn-toggle {
+  border-radius: 0;
+  border-right: none;
   margin: 0;
 }
 
-.tool-options-bar select {
-  font-size: 11px;
-  padding: 4px 8px;
-  border: none;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
+.btn-group .btn-toggle:first-child {
+  border-radius: 6px 0 0 6px;
 }
 
-.tool-options-bar button {
-  width: 36px;
-  height: 36px;
+.btn-group .btn-toggle:last-child {
+  border-radius: 0 6px 6px 0;
+  border-right: 1px solid var(--border-primary);
+}
+
+/* Number Input with +/- Buttons */
+.number-input {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.number-input button {
+  width: 28px;
+  height: 30px;
   border: none;
-  background: var(--bg-secondary);
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
   transition: all 0.2s ease;
-  border-radius: var(--radius-medium);
-  color: var(--text-primary);
-}
-.tool-options-bar button:hover {
-  background: var(--button-hover);
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.tool-options-bar button.active {
-  background: var(--accent-primary);
-  color: #ffffff;
+.number-input button:hover {
+  background: var(--button-hover);
+  color: var(--text-primary);
+}
+
+.number-input input {
+  width: 40px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+}
+
+.number-input input::-webkit-outer-spin-button,
+.number-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.number-input input[type=number] {
+  -moz-appearance: textfield;
+}
+
+/* Icon Labels */
+.tool-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tool-option-label i {
+  font-size: 14px;
 }
 .tool-option-btn {
   font-size: 11px;
