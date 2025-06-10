@@ -896,7 +896,7 @@ body {
 
 /* Option Groups */
 .option-group {
-  margin-bottom: 16px;
+  /* Removed margin-bottom for cleaner alignment */
 }
 
 .option-group:last-child {

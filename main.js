@@ -6561,93 +6561,203 @@ class BitsDraw {
         } else if (tool === 'spray') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label>Size: <input type="range" id="spray-radius-bar" min="2" max="15" value="${this.sprayRadius || 8}"> <span id="spray-radius-value-bar">${this.sprayRadius || 8}</span>px</label>
-                    <label>Density: <input type="range" id="spray-density-bar" min="10" max="100" value="${this.sprayDensity || 60}"> <span id="spray-density-value-bar">${this.sprayDensity || 60}</span>%</label>
+                    <div class="number-input">
+                        <button type="button" id="spray-radius-dec">−</button>
+                        <input type="number" id="spray-radius-bar" min="2" max="15" value="${this.sprayRadius || 8}">
+                        <button type="button" id="spray-radius-inc">+</button>
+                    </div>
+                </div>
+                <div class="option-group">
+                    <div class="number-input">
+                        <button type="button" id="spray-density-dec">−</button>
+                        <input type="number" id="spray-density-bar" min="10" max="100" value="${this.sprayDensity || 60}">
+                        <button type="button" id="spray-density-inc">+</button>
+                    </div>
                 </div>
             `;
             
             const sprayRadiusBar = document.getElementById('spray-radius-bar');
+            const sprayRadiusInc = document.getElementById('spray-radius-inc');
+            const sprayRadiusDec = document.getElementById('spray-radius-dec');
             const sprayDensityBar = document.getElementById('spray-density-bar');
+            const sprayDensityInc = document.getElementById('spray-density-inc');
+            const sprayDensityDec = document.getElementById('spray-density-dec');
             
             if (sprayRadiusBar) {
                 sprayRadiusBar.addEventListener('input', (e) => {
                     this.sprayRadius = parseInt(e.target.value);
-                    document.getElementById('spray-radius-value-bar').textContent = this.sprayRadius;
+                });
+            }
+            
+            if (sprayRadiusInc) {
+                sprayRadiusInc.addEventListener('click', () => {
+                    if (this.sprayRadius < 15) {
+                        this.sprayRadius++;
+                        sprayRadiusBar.value = this.sprayRadius;
+                    }
+                });
+            }
+            
+            if (sprayRadiusDec) {
+                sprayRadiusDec.addEventListener('click', () => {
+                    if (this.sprayRadius > 2) {
+                        this.sprayRadius--;
+                        sprayRadiusBar.value = this.sprayRadius;
+                    }
                 });
             }
             
             if (sprayDensityBar) {
                 sprayDensityBar.addEventListener('input', (e) => {
                     this.sprayDensity = parseInt(e.target.value);
-                    document.getElementById('spray-density-value-bar').textContent = this.sprayDensity;
+                });
+            }
+            
+            if (sprayDensityInc) {
+                sprayDensityInc.addEventListener('click', () => {
+                    if (this.sprayDensity < 100) {
+                        this.sprayDensity = Math.min(100, this.sprayDensity + 5);
+                        sprayDensityBar.value = this.sprayDensity;
+                    }
+                });
+            }
+            
+            if (sprayDensityDec) {
+                sprayDensityDec.addEventListener('click', () => {
+                    if (this.sprayDensity > 10) {
+                        this.sprayDensity = Math.max(10, this.sprayDensity - 5);
+                        sprayDensityBar.value = this.sprayDensity;
+                    }
                 });
             }
             
         } else if (tool === 'bucket') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label><input type="checkbox" id="fill-contiguous-bar" ${this.fillContiguous ? 'checked' : ''}> Contiguous</label>
+                    <button class="btn-toggle ${this.fillContiguous ? 'active' : ''}" id="fill-contiguous-bar">
+                        <i class="ph ph-path"></i>
+                    </button>
                 </div>
             `;
             
             const fillContiguousBar = document.getElementById('fill-contiguous-bar');
             if (fillContiguousBar) {
-                fillContiguousBar.addEventListener('change', (e) => {
-                    this.fillContiguous = e.target.checked;
+                fillContiguousBar.addEventListener('click', () => {
+                    this.fillContiguous = !this.fillContiguous;
+                    fillContiguousBar.classList.toggle('active', this.fillContiguous);
                 });
             }
             
         } else if (tool === 'move') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label><input type="checkbox" id="move-loop-bar" ${this.moveLoop ? 'checked' : ''}> Loop</label>
+                    <button class="btn-toggle ${this.moveLoop ? 'active' : ''}" id="move-loop-bar">
+                        <i class="ph ph-arrows-clockwise"></i>
+                    </button>
                 </div>
             `;
             
             const moveLoopBar = document.getElementById('move-loop-bar');
             if (moveLoopBar) {
-                moveLoopBar.addEventListener('change', (e) => {
-                    this.moveLoop = e.target.checked;
+                moveLoopBar.addEventListener('click', () => {
+                    this.moveLoop = !this.moveLoop;
+                    moveLoopBar.classList.toggle('active', this.moveLoop);
                 });
             }
             
         } else if (tool === 'line') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label>Width: <input type="range" id="line-width-bar" min="1" max="5" value="${this.lineWidth || 1}"> <span id="line-width-value-bar">${this.lineWidth || 1}</span>px</label>
+                    <div class="number-input">
+                        <button type="button" id="line-width-dec">−</button>
+                        <input type="number" id="line-width-bar" min="1" max="5" value="${this.lineWidth || 1}">
+                        <button type="button" id="line-width-inc">+</button>
+                    </div>
                 </div>
             `;
             
             const lineWidthBar = document.getElementById('line-width-bar');
+            const lineWidthInc = document.getElementById('line-width-inc');
+            const lineWidthDec = document.getElementById('line-width-dec');
+            
             if (lineWidthBar) {
                 lineWidthBar.addEventListener('input', (e) => {
                     this.lineWidth = parseInt(e.target.value);
-                    document.getElementById('line-width-value-bar').textContent = this.lineWidth;
+                });
+            }
+            
+            if (lineWidthInc) {
+                lineWidthInc.addEventListener('click', () => {
+                    if (this.lineWidth < 5) {
+                        this.lineWidth++;
+                        lineWidthBar.value = this.lineWidth;
+                    }
+                });
+            }
+            
+            if (lineWidthDec) {
+                lineWidthDec.addEventListener('click', () => {
+                    if (this.lineWidth > 1) {
+                        this.lineWidth--;
+                        lineWidthBar.value = this.lineWidth;
+                    }
                 });
             }
             
         } else if (tool === 'text') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label>Font Scale: <input type="range" id="text-scale-bar" min="1" max="4" value="${this.textScale || 1}"> <span id="text-scale-value-bar">${this.textScale || 1}</span>x</label>
+                    <div class="number-input">
+                        <button type="button" id="text-scale-dec">−</button>
+                        <input type="number" id="text-scale-bar" min="1" max="4" value="${this.textScale || 1}">
+                        <button type="button" id="text-scale-inc">+</button>
+                    </div>
                 </div>
             `;
             
             const textScaleBar = document.getElementById('text-scale-bar');
+            const textScaleInc = document.getElementById('text-scale-inc');
+            const textScaleDec = document.getElementById('text-scale-dec');
+            
             if (textScaleBar) {
                 textScaleBar.addEventListener('input', (e) => {
                     this.textScale = parseInt(e.target.value);
-                    document.getElementById('text-scale-value-bar').textContent = this.textScale;
+                });
+            }
+            
+            if (textScaleInc) {
+                textScaleInc.addEventListener('click', () => {
+                    if (this.textScale < 4) {
+                        this.textScale++;
+                        textScaleBar.value = this.textScale;
+                    }
+                });
+            }
+            
+            if (textScaleDec) {
+                textScaleDec.addEventListener('click', () => {
+                    if (this.textScale > 1) {
+                        this.textScale--;
+                        textScaleBar.value = this.textScale;
+                    }
                 });
             }
             
         } else if (tool === 'select-rect' || tool === 'select-circle') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <button id="select-copy-bar" class="tool-option-btn">Copy</button>
-                    <button id="select-cut-bar" class="tool-option-btn">Cut</button>
-                    <button id="select-paste-bar" class="tool-option-btn">Paste</button>
-                    <button id="select-clear-bar" class="tool-option-btn">Clear</button>
+                    <button id="select-copy-bar" class="btn-toggle">
+                        <i class="ph ph-copy"></i>
+                    </button>
+                    <button id="select-cut-bar" class="btn-toggle">
+                        <i class="ph ph-scissors"></i>
+                    </button>
+                    <button id="select-paste-bar" class="btn-toggle">
+                        <i class="ph ph-clipboard"></i>
+                    </button>
+                    <button id="select-clear-bar" class="btn-toggle">
+                        <i class="ph ph-x"></i>
+                    </button>
                 </div>
             `;
             
@@ -6689,23 +6799,52 @@ class BitsDraw {
         } else if (tool === 'blur') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <label>Intensity: <input type="range" id="blur-intensity-bar" min="1" max="5" value="${this.blurIntensity || 2}"> <span id="blur-intensity-value-bar">${this.blurIntensity || 2}</span></label>
-                    <label><input type="checkbox" id="blur-alpha-channel" ${this.blurAlphaChannel ? 'checked' : ''}> Blur Alpha</label>
+                    <div class="number-input">
+                        <button type="button" id="blur-intensity-dec">−</button>
+                        <input type="number" id="blur-intensity-bar" min="1" max="5" value="${this.blurIntensity || 2}">
+                        <button type="button" id="blur-intensity-inc">+</button>
+                    </div>
+                </div>
+                <div class="option-group">
+                    <button class="btn-toggle ${this.blurAlphaChannel ? 'active' : ''}" id="blur-alpha-channel">
+                        <i class="ph ph-drop-half-bottom"></i>
+                    </button>
                 </div>
             `;
             
             const blurIntensityBar = document.getElementById('blur-intensity-bar');
+            const blurIntensityInc = document.getElementById('blur-intensity-inc');
+            const blurIntensityDec = document.getElementById('blur-intensity-dec');
+            const blurAlphaChannelBar = document.getElementById('blur-alpha-channel');
+            
             if (blurIntensityBar) {
                 blurIntensityBar.addEventListener('input', (e) => {
                     this.blurIntensity = parseInt(e.target.value);
-                    document.getElementById('blur-intensity-value-bar').textContent = this.blurIntensity;
                 });
             }
             
-            const blurAlphaChannelBar = document.getElementById('blur-alpha-channel');
+            if (blurIntensityInc) {
+                blurIntensityInc.addEventListener('click', () => {
+                    if (this.blurIntensity < 5) {
+                        this.blurIntensity++;
+                        blurIntensityBar.value = this.blurIntensity;
+                    }
+                });
+            }
+            
+            if (blurIntensityDec) {
+                blurIntensityDec.addEventListener('click', () => {
+                    if (this.blurIntensity > 1) {
+                        this.blurIntensity--;
+                        blurIntensityBar.value = this.blurIntensity;
+                    }
+                });
+            }
+            
             if (blurAlphaChannelBar) {
-                blurAlphaChannelBar.addEventListener('change', (e) => {
-                    this.blurAlphaChannel = e.target.checked;
+                blurAlphaChannelBar.addEventListener('click', () => {
+                    this.blurAlphaChannel = !this.blurAlphaChannel;
+                    blurAlphaChannelBar.classList.toggle('active', this.blurAlphaChannel);
                 });
             }
         }
