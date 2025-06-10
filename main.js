@@ -1681,9 +1681,9 @@ class BitsDraw {
         const zoom = this.editor.zoom;
         
         // Calculate the exact screen position of the pixel where drawing will occur
-        // Move cursor 1px left and 1px up to align with drawing pixels
-        const screenX = canvasRect.left + (pixelCoords.x * zoom) - 1;
-        const screenY = canvasRect.top + (pixelCoords.y * zoom) - 1;
+        // Move cursor 1 canvas pixel left and 1 canvas pixel up to align with drawing pixels
+        const screenX = canvasRect.left + (pixelCoords.x * zoom) - zoom;
+        const screenY = canvasRect.top + (pixelCoords.y * zoom) - zoom;
         
         this.brushCursorOverlay.style.left = screenX + 'px';
         this.brushCursorOverlay.style.top = screenY + 'px';
