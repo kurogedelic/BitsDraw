@@ -79,6 +79,7 @@ class BitsDraw {
         this.previewOverlay = null;
         this.textBalloonPos = null;
         this.brushSize = 2;
+        this.brushShape = 'circle'; // 'circle' or 'square'
         this.eraserSize = 2;
         this.currentDrawValue = 0; // Track current draw value for stroke
         this.eraserSmooth = true;
@@ -1755,12 +1756,19 @@ class BitsDraw {
                         shouldDraw = true;
                     }
                 } else {
-                    const dx = x - centerX;
-                    const dy = y - centerY;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (distance <= radius) {
+                    // Match brush shape logic from drawWithBrush
+                    if (this.brushShape === 'square') {
+                        // Square brush - all pixels within radius bounds
                         shouldDraw = true;
+                    } else {
+                        // Circle brush (default)
+                        const dx = x - centerX;
+                        const dy = y - centerY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance <= radius) {
+                            shouldDraw = true;
+                        }
                     }
                 }
                 
@@ -3102,13 +3110,19 @@ class BitsDraw {
                             shouldDraw = true;
                         }
                     } else {
-                        // For larger sizes, draw circle/square brush
-                        const dx = x - centerX;
-                        const dy = y - centerY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        
-                        if (distance <= radius) {
+                        // For larger sizes, draw based on brush shape
+                        if (this.brushShape === 'square') {
+                            // Square brush - all pixels within radius bounds
                             shouldDraw = true;
+                        } else {
+                            // Circle brush (default)
+                            const dx = x - centerX;
+                            const dy = y - centerY;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (distance <= radius) {
+                                shouldDraw = true;
+                            }
                         }
                     }
                     
@@ -6345,12 +6359,19 @@ class BitsDraw {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
                     <label>Size: <input type="range" id="brush-size-bar" min="1" max="10" value="${this.brushSize}"> <span id="brush-size-value-bar">${this.brushSize}</span>px</label>
+                    <label>Shape: 
+                        <select id="brush-shape-bar">
+                            <option value="circle" ${this.brushShape === 'circle' ? 'selected' : ''}>Circle</option>
+                            <option value="square" ${this.brushShape === 'square' ? 'selected' : ''}>Square</option>
+                        </select>
+                    </label>
                     <label><input type="checkbox" id="smooth-drawing-bar" ${this.smoothDrawing ? 'checked' : ''}> Smooth</label>
                 </div>
             `;
             
             // Re-attach events for brush
             const brushSizeBar = document.getElementById('brush-size-bar');
+            const brushShapeBar = document.getElementById('brush-shape-bar');
             const smoothDrawingBar = document.getElementById('smooth-drawing-bar');
             
             if (brushSizeBar) {
@@ -6365,6 +6386,13 @@ class BitsDraw {
                         const originalValue = document.getElementById('brush-size-value');
                         if (originalValue) originalValue.textContent = this.brushSize;
                     }
+                });
+            }
+            
+            if (brushShapeBar) {
+                brushShapeBar.addEventListener('change', (e) => {
+                    this.brushShape = e.target.value;
+                    this.updateBrushCursorSize();
                 });
             }
             
