@@ -6376,7 +6376,7 @@ class BitsDraw {
                 </div>
                 <div class="option-group">
                     <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="smooth-drawing-bar">
-                        <i class="ph ph-bezier-curve"></i>
+                        <i class="ph ph-sneaker-move"></i>
                     </button>
                 </div>
             `;
@@ -6448,7 +6448,7 @@ class BitsDraw {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
                     <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="pencil-smooth-bar">
-                        <i class="ph ph-bezier-curve"></i>
+                        <i class="ph ph-sneaker-move"></i>
                     </button>
                 </div>
             `;
@@ -6472,7 +6472,7 @@ class BitsDraw {
                 </div>
                 <div class="option-group">
                     <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="eraser-smooth-bar">
-                        <i class="ph ph-bezier-curve"></i>
+                        <i class="ph ph-sneaker-move"></i>
                     </button>
                 </div>
             `;
