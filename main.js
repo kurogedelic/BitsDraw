@@ -1685,18 +1685,17 @@ class BitsDraw {
                         this.currentTool === 'blur' ? this.blurSize :
                         this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
         
-        // Calculate the center point where drawing will occur in screen coordinates
-        // Drawing uses pixel coordinates directly as center point
-        const centerScreenX = canvasRect.left + (pixelCoords.x * zoom);
-        const centerScreenY = canvasRect.top + (pixelCoords.y * zoom);
+        // Position cursor at top-left corner of the center pixel where drawing occurs
+        // The drawWithBrush method draws around pixelCoords as center point
+        const radius = Math.floor(toolSize / 2);
         
-        // Position cursor so its center aligns with the drawing center
-        // Offset by half the cursor size to center it
-        const cursorOffsetX = (toolSize * zoom) / 2;
-        const cursorOffsetY = (toolSize * zoom) / 2;
+        // Calculate where the top-left corner of the brush area should be positioned
+        const brushTopLeftX = pixelCoords.x - radius;
+        const brushTopLeftY = pixelCoords.y - radius;
         
-        const screenX = centerScreenX - cursorOffsetX;
-        const screenY = centerScreenY - cursorOffsetY;
+        // Convert to screen coordinates
+        const screenX = canvasRect.left + (brushTopLeftX * zoom);
+        const screenY = canvasRect.top + (brushTopLeftY * zoom);
         
         this.brushCursorOverlay.style.left = screenX + 'px';
         this.brushCursorOverlay.style.top = screenY + 'px';
