@@ -2738,7 +2738,7 @@ body {
   border-radius: 0;
   background: transparent;
   position: relative;
-  transform: translate(-50%, -50%);
+  transform: none;
 }
 
 .brush-cursor-pixel {

@@ -1676,17 +1676,14 @@ class BitsDraw {
         // Get pixel coordinates (snapped to grid) - this is exactly where drawing will occur
         const pixelCoords = this.editor.getCanvasCoordinates(clientX, clientY);
         
-        // Convert back to screen coordinates, centered on the pixel
+        // Convert back to screen coordinates using the same method as getCanvasCoordinates
         const canvasRect = this.canvas.getBoundingClientRect();
         const zoom = this.editor.zoom;
         
-        // Account for canvas transform offset (from hand tool panning)
-        const canvasOffsetX = this.canvasOffset ? this.canvasOffset.x : 0;
-        const canvasOffsetY = this.canvasOffset ? this.canvasOffset.y : 0;
-        
-        // Calculate the center of the pixel in screen coordinates
-        const screenX = canvasRect.left + (pixelCoords.x * zoom) + (zoom / 2) + canvasOffsetX;
-        const screenY = canvasRect.top + (pixelCoords.y * zoom) + (zoom / 2) + canvasOffsetY;
+        // Calculate the exact screen position of the pixel where drawing will occur
+        // Use the same calculation as getCanvasCoordinates but in reverse
+        const screenX = canvasRect.left + (pixelCoords.x * zoom);
+        const screenY = canvasRect.top + (pixelCoords.y * zoom);
         
         this.brushCursorOverlay.style.left = screenX + 'px';
         this.brushCursorOverlay.style.top = screenY + 'px';
@@ -1769,8 +1766,8 @@ class BitsDraw {
             }
         }
         
-        // Center the cursor overlay properly
-        this.brushCursorOverlay.style.transform = `translate(-50%, -50%)`;
+        // Position cursor overlay at exact pixel location
+        this.brushCursorOverlay.style.transform = 'none';
     }
 
     setupColorPalette() {
