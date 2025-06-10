@@ -131,9 +131,9 @@ body {
 .tool-options-bar .option-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border-left: 1px solid var(--border-primary);
-  padding-left: 16px;
+  padding-left: 12px;
 }
 
 .tool-options-bar .option-group:first-child {
@@ -148,25 +148,24 @@ body {
   justify-content: center;
   min-width: 32px;
   height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  background: var(--bg-tertiary);
+  padding: 0 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   font-size: 14px;
   white-space: nowrap;
 }
 
 .btn-toggle:hover {
   background: var(--button-hover);
-  border-color: var(--border-secondary);
+  color: var(--text-primary);
 }
 
 .btn-toggle.active {
   background: var(--accent-primary);
-  border-color: var(--accent-primary);
   color: #ffffff;
 }
 
@@ -177,38 +176,39 @@ body {
 /* Shape Toggle Group */
 .btn-group {
   display: inline-flex;
-  border-radius: 6px;
-  overflow: hidden;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  padding: 2px;
+  gap: 2px;
 }
 
 .btn-group .btn-toggle {
-  border-radius: 0;
-  border-right: none;
+  border-radius: 3px;
   margin: 0;
+  background: transparent;
 }
 
-.btn-group .btn-toggle:first-child {
-  border-radius: 6px 0 0 6px;
+.btn-group .btn-toggle:hover {
+  background: var(--button-hover);
 }
 
-.btn-group .btn-toggle:last-child {
-  border-radius: 0 6px 6px 0;
-  border-right: 1px solid var(--border-primary);
+.btn-group .btn-toggle.active {
+  background: var(--accent-primary);
+  color: #ffffff;
 }
 
 /* Number Input with +/- Buttons */
 .number-input {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-tertiary);
   overflow: hidden;
 }
 
 .number-input button {
   width: 28px;
-  height: 30px;
+  height: 32px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -216,7 +216,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
   font-size: 14px;
   font-weight: 600;
 }
@@ -228,7 +228,7 @@ body {
 
 .number-input input {
   width: 40px;
-  height: 30px;
+  height: 32px;
   border: none;
   background: transparent;
   color: var(--text-primary);
@@ -248,21 +248,7 @@ body {
   -moz-appearance: textfield;
 }
 
-/* Icon Labels */
-.tool-option-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.tool-option-label i {
-  font-size: 14px;
-}
+/* Flat minimal design - no extra decorative elements needed */
 .tool-option-btn {
   font-size: 11px;
   padding: 8px 16px;

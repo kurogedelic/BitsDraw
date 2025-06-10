@@ -6358,7 +6358,6 @@ class BitsDraw {
         if (tool === 'brush') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <span class="tool-option-label"><i class="ph ph-resize"></i>Size</span>
                     <div class="number-input">
                         <button type="button" id="brush-size-dec">−</button>
                         <input type="number" id="brush-size-bar" min="1" max="10" value="${this.brushSize}">
@@ -6366,7 +6365,6 @@ class BitsDraw {
                     </div>
                 </div>
                 <div class="option-group">
-                    <span class="tool-option-label"><i class="ph ph-shapes"></i>Shape</span>
                     <div class="btn-group">
                         <button class="btn-toggle ${this.brushShape === 'circle' ? 'active' : ''}" id="brush-shape-circle">
                             <i class="ph ph-circle"></i>
@@ -6466,7 +6464,6 @@ class BitsDraw {
         } else if (tool === 'eraser') {
             this.toolOptionsBar.innerHTML = `
                 <div class="option-group">
-                    <span class="tool-option-label"><i class="ph ph-resize"></i>Size</span>
                     <div class="number-input">
                         <button type="button" id="eraser-size-dec">−</button>
                         <input type="number" id="eraser-size-bar" min="1" max="10" value="${this.eraserSize || 2}">
