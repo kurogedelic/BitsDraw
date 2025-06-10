@@ -1686,8 +1686,9 @@ class BitsDraw {
                         this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
         
         // Calculate the center point where drawing will occur in screen coordinates
-        const centerScreenX = canvasRect.left + (pixelCoords.x * zoom) + (zoom / 2);
-        const centerScreenY = canvasRect.top + (pixelCoords.y * zoom) + (zoom / 2);
+        // Drawing uses pixel coordinates directly as center point
+        const centerScreenX = canvasRect.left + (pixelCoords.x * zoom);
+        const centerScreenY = canvasRect.top + (pixelCoords.y * zoom);
         
         // Position cursor so its center aligns with the drawing center
         // Offset by half the cursor size to center it
