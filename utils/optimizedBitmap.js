@@ -15,7 +15,7 @@ class OptimizedBitmapEditor {
         this.ctx = canvas.getContext('2d');
         this.width = width;
         this.height = height;
-        this.zoom = 4;
+        this.zoom = 1;
         this.inverted = false;
         this.showGrid = false;
         this.showCheckerboard = true; // Default to showing checkerboard
@@ -970,6 +970,7 @@ class OptimizedBitmapEditor {
         } else {
             this.historyIndex++;
         }
+        
     }
 
     undo() {
@@ -1010,8 +1011,11 @@ class OptimizedBitmapEditor {
     spray(centerX, centerY, radius = 5, density = 0.3, pattern = null, drawValue = null) {
         const radiusSquared = radius * radius;
         
+        // Adaptive point count based on radius - fewer points for larger canvases
+        const pointCount = Math.min(20, Math.max(5, Math.round(radius * 1.5)));
+        
         const operation = (layer) => {
-            for (let i = 0; i < 20; i++) { // 20 random points per spray
+            for (let i = 0; i < pointCount; i++) {
                 if (Math.random() > density) continue;
                 
                 const angle = Math.random() * 2 * Math.PI;
@@ -1052,8 +1056,18 @@ class OptimizedBitmapEditor {
         this.addDirtyRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
     }
 
-    // Line drawing using Bresenham's algorithm
-    drawLine(x1, y1, x2, y2, pattern = null, drawValue = null) {
+    // Line drawing using Bresenham's algorithm with width support
+    drawLine(x1, y1, x2, y2, pattern = null, drawValue = null, width = 1) {
+        if (width <= 1) {
+            // Single pixel line using Bresenham's algorithm
+            this.drawSinglePixelLine(x1, y1, x2, y2, pattern, drawValue);
+        } else {
+            // Thick line using brush approach
+            this.drawThickLine(x1, y1, x2, y2, pattern, drawValue, width);
+        }
+    }
+
+    drawSinglePixelLine(x1, y1, x2, y2, pattern = null, drawValue = null) {
         const dx = Math.abs(x2 - x1);
         const dy = Math.abs(y2 - y1);
         const sx = x1 < x2 ? 1 : -1;
@@ -1109,6 +1123,94 @@ class OptimizedBitmapEditor {
         this.batchPixelOperation(operation);
         this.addDirtyRect(Math.min(x1, x2), Math.min(y1, y2), 
                           Math.abs(x2 - x1) + 1, Math.abs(y2 - y1) + 1);
+    }
+
+    drawThickLine(x1, y1, x2, y2, pattern = null, drawValue = null, width = 2) {
+        // Get all points on the line using Bresenham
+        const linePoints = this.getLinePoints(x1, y1, x2, y2);
+        
+        const operation = (layer) => {
+            // Draw a circle at each point along the line
+            for (const point of linePoints) {
+                const radius = Math.floor(width / 2);
+                
+                // Draw filled circle at this point
+                for (let dy = -radius; dy <= radius; dy++) {
+                    for (let dx = -radius; dx <= radius; dx++) {
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        if (distance <= radius) {
+                            const px = point.x + dx;
+                            const py = point.y + dy;
+                            
+                            if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
+                                const index = this.getPixelIndex(px, py);
+                                layer.alpha[index] = 1;
+                                
+                                if (pattern) {
+                                    let patternValue;
+                                    if (typeof pattern === 'object' && pattern.getValue) {
+                                        patternValue = pattern.getValue(px, py);
+                                        layer.pixels[index] = patternValue.draw;
+                                        layer.alpha[index] = patternValue.alpha;
+                                    } else if (typeof Patterns !== 'undefined') {
+                                        const primary = drawValue !== null ? drawValue : 0;
+                                        const secondary = drawValue !== null ? (1 - drawValue) : 1;
+                                        patternValue = Patterns.applyPattern(pattern, px, py, primary, secondary);
+                                        layer.pixels[index] = patternValue.draw;
+                                        layer.alpha[index] = patternValue.alpha;
+                                    }
+                                } else if (drawValue !== null) {
+                                    layer.pixels[index] = drawValue;
+                                } else {
+                                    layer.pixels[index] = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        
+        this.batchPixelOperation(operation);
+        
+        // Calculate dirty rect for thick line
+        const radius = Math.floor(width / 2);
+        this.addDirtyRect(
+            Math.min(x1, x2) - radius, 
+            Math.min(y1, y2) - radius, 
+            Math.abs(x2 - x1) + radius * 2 + 1, 
+            Math.abs(y2 - y1) + radius * 2 + 1
+        );
+    }
+
+    getLinePoints(x1, y1, x2, y2) {
+        const points = [];
+        const dx = Math.abs(x2 - x1);
+        const dy = Math.abs(y2 - y1);
+        const sx = x1 < x2 ? 1 : -1;
+        const sy = y1 < y2 ? 1 : -1;
+        let err = dx - dy;
+        
+        let x = x1;
+        let y = y1;
+        
+        while (true) {
+            points.push({ x, y });
+            
+            if (x === x2 && y === y2) break;
+            
+            const e2 = 2 * err;
+            if (e2 > -dy) {
+                err -= dy;
+                x += sx;
+            }
+            if (e2 < dx) {
+                err += dx;
+                y += sy;
+            }
+        }
+        
+        return points;
     }
 
     // Selection management methods
@@ -1395,6 +1497,160 @@ class OptimizedBitmapEditor {
         this.addDirtyRect(0, 0, this.width, this.height);
         this.scheduleRender();
         this.saveState();
+        return true;
+    }
+
+    // ===== LAYER BATCH OPERATIONS =====
+
+    deleteLayers(layerIndices) {
+        if (!Array.isArray(layerIndices) || layerIndices.length === 0) return false;
+        
+        // Sort indices in descending order to delete from top to bottom
+        const sortedIndices = [...layerIndices].sort((a, b) => b - a);
+        
+        // Prevent deletion if it would leave no layers
+        if (sortedIndices.length >= this.layers.length) return false;
+        
+        // Delete layers from highest index to lowest
+        for (const index of sortedIndices) {
+            if (index >= 0 && index < this.layers.length) {
+                this.layers.splice(index, 1);
+            }
+        }
+        
+        // Adjust active layer index
+        const minDeletedIndex = Math.min(...sortedIndices);
+        if (this.activeLayerIndex >= this.layers.length) {
+            this.activeLayerIndex = this.layers.length - 1;
+        } else if (this.activeLayerIndex >= minDeletedIndex) {
+            // Count how many layers were deleted below/at the active index
+            const deletedBelowActive = sortedIndices.filter(i => i <= this.activeLayerIndex).length;
+            this.activeLayerIndex = Math.max(0, this.activeLayerIndex - deletedBelowActive);
+        }
+        
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
+    }
+
+    combineLayers(layerIndices, combinedName = 'Combined Layer') {
+        if (!Array.isArray(layerIndices) || layerIndices.length < 2) return false;
+        
+        // Sort indices to combine from bottom to top
+        const sortedIndices = [...layerIndices].sort((a, b) => a - b);
+        
+        // Validate all indices
+        for (const index of sortedIndices) {
+            if (index < 0 || index >= this.layers.length) return false;
+        }
+        
+        // Create new combined layer
+        const combinedLayer = {
+            id: this.layerIdCounter++,
+            name: combinedName,
+            visible: true,
+            blendMode: 'normal',
+            pixels: this.createEmptyBitmap(),
+            alpha: this.createEmptyAlpha()
+        };
+        
+        // Composite selected layers into the combined layer
+        for (const index of sortedIndices) {
+            const layer = this.layers[index];
+            if (!layer.visible) continue;
+            
+            for (let i = 0; i < combinedLayer.pixels.length; i++) {
+                const layerAlpha = layer.alpha[i];
+                const layerPixel = layer.pixels[i];
+                
+                if (layerAlpha > 0) {
+                    const currentAlpha = combinedLayer.alpha[i];
+                    if (currentAlpha === 0) {
+                        // No previous alpha, just copy
+                        combinedLayer.pixels[i] = layerPixel;
+                        combinedLayer.alpha[i] = layerAlpha;
+                    } else {
+                        // Blend with existing pixel - upper layer takes priority
+                        combinedLayer.pixels[i] = layerPixel;
+                    }
+                }
+            }
+        }
+        
+        // Insert combined layer at the position of the lowest index
+        const insertIndex = sortedIndices[0];
+        this.layers.splice(insertIndex, 0, combinedLayer);
+        
+        // Remove original layers (adjust indices due to insertion)
+        for (let i = sortedIndices.length - 1; i >= 0; i--) {
+            const adjustedIndex = sortedIndices[i] + 1; // +1 because we inserted the combined layer
+            this.layers.splice(adjustedIndex, 1);
+        }
+        
+        // Set the combined layer as active
+        this.activeLayerIndex = insertIndex;
+        
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
+    }
+
+    duplicateLayers(layerIndices) {
+        if (!Array.isArray(layerIndices) || layerIndices.length === 0) return false;
+        
+        const duplicatedLayers = [];
+        
+        for (const index of layerIndices) {
+            if (index < 0 || index >= this.layers.length) continue;
+            
+            const originalLayer = this.layers[index];
+            const duplicatedLayer = {
+                id: this.layerIdCounter++,
+                name: `${originalLayer.name} Copy`,
+                visible: originalLayer.visible,
+                blendMode: originalLayer.blendMode,
+                pixels: new Uint8Array(originalLayer.pixels),
+                alpha: new Uint8Array(originalLayer.alpha)
+            };
+            
+            duplicatedLayers.push(duplicatedLayer);
+        }
+        
+        // Insert all duplicated layers after the highest selected index
+        const maxIndex = Math.max(...layerIndices);
+        for (let i = duplicatedLayers.length - 1; i >= 0; i--) {
+            this.layers.splice(maxIndex + 1, 0, duplicatedLayers[i]);
+        }
+        
+        this.markCompositeDirty();
+        this.addDirtyRect(0, 0, this.width, this.height);
+        this.scheduleRender();
+        this.saveState();
+        return true;
+    }
+
+    toggleLayersVisibility(layerIndices) {
+        if (!Array.isArray(layerIndices) || layerIndices.length === 0) return false;
+        
+        // Determine new visibility state based on first layer
+        const firstLayer = this.layers[layerIndices[0]];
+        if (!firstLayer) return false;
+        
+        const newVisibility = !firstLayer.visible;
+        
+        // Apply to all selected layers
+        for (const index of layerIndices) {
+            if (index >= 0 && index < this.layers.length) {
+                this.layers[index].visible = newVisibility;
+            }
+        }
+        
+        this.markCompositeDirty();
+        this.scheduleRender();
         return true;
     }
 }

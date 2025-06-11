@@ -5,6 +5,7 @@
   "main": "index.html",
   "scripts": {
     "serve": "python3 -m http.server 8080",
+    "dev": "python3 -m http.server 3000 --bind 0.0.0.0",
     "test": "echo \"Open index.html in browser for testing\" && exit 0"
   },
   "keywords": [

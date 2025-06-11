@@ -40,7 +40,7 @@ const DEBUG = {
 class BitsDraw {
     constructor() {
         this.canvas = document.getElementById('bitmap-canvas');
-        this.editor = new OptimizedBitmapEditor(this.canvas, 128, 64);
+        this.editor = new OptimizedBitmapEditor(this.canvas, 480, 320);
         this.previewCanvas = document.getElementById('preview-canvas');
         
         
@@ -77,7 +77,7 @@ class BitsDraw {
         this.isDraggingSelectionGraphics = false;
         this.selectionDragStart = null;
         this.previewOverlay = null;
-        this.textBalloonPos = null;
+        this.textClickPos = null;
         this.brushSize = 2;
         this.brushShape = 'circle'; // 'circle' or 'square'
         this.eraserSize = 2;
@@ -86,12 +86,16 @@ class BitsDraw {
         this.sprayRadius = 8;
         this.sprayDensity = 0.6;
         this.blurSize = 3;
+        this.lineWidth = 1;
         this.circleDrawBorder = true;
         this.circleDrawFill = false;
         this.blurDitherMethod = 'Bayer4x4';
         this.blurAlphaChannel = true;
         this.currentDisplayMode = 'black';
         this.moveLoop = true;
+        
+        // Preview settings
+        this.forcePixelPerfectPreview = false; // Can be toggled via UI
         
         // Guides system
         this.guides = [];
@@ -207,7 +211,7 @@ class BitsDraw {
         this.setupWindowManagement();
         this.setupPreview();
         this.setupLayers();
-        this.setupTextBalloon();
+        this.setupTextConfigDialog();
         this.setupToolOptions();
         this.setupNewCanvasDialog();
         this.setupCppExportDialog();
@@ -242,6 +246,7 @@ class BitsDraw {
         this.updateGridButton();
         // Checkerboard functionality removed
         this.updateGuidesButton();
+        this.updatePixelPerfectButton();
         this.updateColorDisplay();
         
         // Test ImageImporter availability
@@ -258,6 +263,8 @@ class BitsDraw {
         // Tool options will be updated by updateToolOptionsBar()
         
         // Initialize canvas view
+        this.setupCanvasControls();
+        this.setupSheetsPanel();
     }
 
     initializeEventListeners() {
@@ -266,6 +273,292 @@ class BitsDraw {
         this.setupKeyboardShortcuts();
         this.setupWindowEvents();
         this.setupColorPanelEvents();
+        this.setupPanelCollapse();
+    }
+
+    setupCanvasControls() {
+        const controlsBar = document.getElementById('canvas-controls-bar');
+        if (!controlsBar) return;
+
+        // Controls are always visible by default - no hiding/timeout functionality
+
+        // Remove any dynamic positioning styles (controls are fixed position)
+        controlsBar.style.left = '';
+        controlsBar.style.bottom = '';
+        controlsBar.style.transform = '';
+    }
+
+    setupSheetsPanel() {
+        // Initialize sheets system
+        this.sheets = [
+            {
+                id: 1,
+                name: 'Sheet 1',
+                width: 128,
+                height: 64,
+                layers: this.editor.layers.map(layer => ({
+                    ...layer,
+                    pixels: new Uint8Array(layer.pixels),
+                    alpha: new Uint8Array(layer.alpha)
+                }))
+            }
+        ];
+        this.currentSheetId = 1;
+        
+        // Setup event listeners
+        this.setupSheetsEventListeners();
+        
+        // Update thumbnail for current sheet
+        this.updateSheetThumbnail(1);
+    }
+
+    setupSheetsEventListeners() {
+        // Add new sheet button
+        document.getElementById('add-sheet-btn').addEventListener('click', () => {
+            this.addNewSheet();
+        });
+
+        // Duplicate sheet button
+        document.getElementById('duplicate-sheet-btn').addEventListener('click', () => {
+            this.duplicateCurrentSheet();
+        });
+
+        // Delete sheet button
+        document.getElementById('delete-sheet-btn').addEventListener('click', () => {
+            this.deleteCurrentSheet();
+        });
+
+        // Sheet item clicks
+        document.getElementById('sheets-list').addEventListener('click', (e) => {
+            const sheetItem = e.target.closest('.sheet-item');
+            if (sheetItem) {
+                const sheetId = parseInt(sheetItem.dataset.sheetId);
+                this.switchToSheet(sheetId);
+            }
+        });
+
+        // Sheet name editing
+        document.getElementById('sheets-list').addEventListener('blur', (e) => {
+            if (e.target.classList.contains('sheet-name')) {
+                const sheetItem = e.target.closest('.sheet-item');
+                const sheetId = parseInt(sheetItem.dataset.sheetId);
+                this.renameSheet(sheetId, e.target.textContent.trim());
+            }
+        }, true);
+
+        // Handle Enter key on sheet name editing
+        document.getElementById('sheets-list').addEventListener('keydown', (e) => {
+            if (e.target.classList.contains('sheet-name') && e.key === 'Enter') {
+                e.preventDefault();
+                e.target.blur();
+            }
+        });
+    }
+
+    addNewSheet() {
+        const newId = Math.max(...this.sheets.map(s => s.id)) + 1;
+        const newSheet = {
+            id: newId,
+            name: `Sheet ${newId}`,
+            width: this.editor.width,
+            height: this.editor.height,
+            layers: [
+                {
+                    id: 1,
+                    name: 'Background',
+                    visible: true,
+                    blendMode: 'normal',
+                    pixels: new Uint8Array(this.editor.width * this.editor.height).fill(1),
+                    alpha: new Uint8Array(this.editor.width * this.editor.height).fill(1)
+                },
+                {
+                    id: 2,
+                    name: 'Layer 1',
+                    visible: true,
+                    blendMode: 'normal',
+                    pixels: new Uint8Array(this.editor.width * this.editor.height),
+                    alpha: new Uint8Array(this.editor.width * this.editor.height)
+                }
+            ]
+        };
+        
+        this.sheets.push(newSheet);
+        this.renderSheetsList();
+        this.switchToSheet(newId);
+    }
+
+    duplicateCurrentSheet() {
+        const currentSheet = this.sheets.find(s => s.id === this.currentSheetId);
+        if (!currentSheet) return;
+        
+        const newId = Math.max(...this.sheets.map(s => s.id)) + 1;
+        const duplicatedSheet = {
+            id: newId,
+            name: `${currentSheet.name} Copy`,
+            width: currentSheet.width,
+            height: currentSheet.height,
+            layers: currentSheet.layers.map(layer => ({
+                ...layer,
+                id: layer.id,
+                pixels: new Uint8Array(layer.pixels),
+                alpha: new Uint8Array(layer.alpha)
+            }))
+        };
+        
+        this.sheets.push(duplicatedSheet);
+        this.renderSheetsList();
+        this.switchToSheet(newId);
+    }
+
+    deleteCurrentSheet() {
+        if (this.sheets.length <= 1) {
+            alert('Cannot delete the last sheet.');
+            return;
+        }
+        
+        const currentIndex = this.sheets.findIndex(s => s.id === this.currentSheetId);
+        if (currentIndex === -1) return;
+        
+        if (confirm(`Delete "${this.sheets[currentIndex].name}"?`)) {
+            this.sheets.splice(currentIndex, 1);
+            
+            // Switch to adjacent sheet
+            const newIndex = Math.min(currentIndex, this.sheets.length - 1);
+            this.currentSheetId = this.sheets[newIndex].id;
+            
+            this.renderSheetsList();
+            this.loadSheet(this.currentSheetId);
+        }
+    }
+
+    switchToSheet(sheetId) {
+        if (this.currentSheetId === sheetId) return;
+        
+        // Save current sheet state
+        this.saveCurrentSheetState();
+        
+        // Switch to new sheet
+        this.currentSheetId = sheetId;
+        this.loadSheet(sheetId);
+        
+        // Update UI
+        this.renderSheetsList();
+    }
+
+    saveCurrentSheetState() {
+        const currentSheet = this.sheets.find(s => s.id === this.currentSheetId);
+        if (!currentSheet) return;
+        
+        currentSheet.layers = this.editor.layers.map(layer => ({
+            ...layer,
+            pixels: new Uint8Array(layer.pixels),
+            alpha: new Uint8Array(layer.alpha)
+        }));
+    }
+
+    loadSheet(sheetId) {
+        const sheet = this.sheets.find(s => s.id === sheetId);
+        if (!sheet) return;
+        
+        // Resize editor if needed
+        if (sheet.width !== this.editor.width || sheet.height !== this.editor.height) {
+            this.editor.resize(sheet.width, sheet.height);
+        }
+        
+        // Load layers
+        this.editor.layers = sheet.layers.map(layer => ({
+            ...layer,
+            pixels: new Uint8Array(layer.pixels),
+            alpha: new Uint8Array(layer.alpha)
+        }));
+        
+        this.editor.markCompositeDirty();
+        this.editor.scheduleRender();
+        this.updateOutput();
+        this.updateLayersList();
+        
+        // Update thumbnail
+        this.updateSheetThumbnail(sheetId);
+    }
+
+    renameSheet(sheetId, newName) {
+        const sheet = this.sheets.find(s => s.id === sheetId);
+        if (!sheet || !newName) return;
+        
+        sheet.name = newName;
+        this.renderSheetsList();
+    }
+
+    renderSheetsList() {
+        const sheetsList = document.getElementById('sheets-list');
+        if (!sheetsList) return;
+        
+        sheetsList.innerHTML = '';
+        
+        this.sheets.forEach(sheet => {
+            const sheetItem = document.createElement('div');
+            sheetItem.className = `sheet-item ${sheet.id === this.currentSheetId ? 'active' : ''}`;
+            sheetItem.dataset.sheetId = sheet.id;
+            
+            sheetItem.innerHTML = `
+                <div class="sheet-preview">
+                    <canvas class="sheet-thumbnail" width="32" height="16" data-sheet-id="${sheet.id}"></canvas>
+                </div>
+                <div class="sheet-info">
+                    <div class="sheet-name" contenteditable="true">${sheet.name}</div>
+                    <div class="sheet-size">${sheet.width}x${sheet.height}</div>
+                </div>
+            `;
+            
+            sheetsList.appendChild(sheetItem);
+            this.updateSheetThumbnail(sheet.id);
+        });
+    }
+
+    updateSheetThumbnail(sheetId) {
+        const sheet = this.sheets.find(s => s.id === sheetId);
+        const thumbnail = document.querySelector(`canvas[data-sheet-id="${sheetId}"]`);
+        if (!sheet || !thumbnail) return;
+        
+        const ctx = thumbnail.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        
+        // Clear thumbnail
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 32, 16);
+        
+        // Render a simplified version of the sheet
+        const scaleX = 32 / sheet.width;
+        const scaleY = 16 / sheet.height;
+        
+        // Composite all visible layers
+        const composite = new Uint8Array(sheet.width * sheet.height);
+        sheet.layers.forEach(layer => {
+            if (!layer.visible) return;
+            for (let i = 0; i < composite.length; i++) {
+                if (layer.alpha[i] > 0) {
+                    composite[i] = layer.pixels[i];
+                }
+            }
+        });
+        
+        // Render to thumbnail
+        for (let y = 0; y < sheet.height; y++) {
+            for (let x = 0; x < sheet.width; x++) {
+                const index = y * sheet.width + x;
+                const pixelValue = composite[index];
+                
+                if (pixelValue === 0) { // Black pixel
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(
+                        Math.floor(x * scaleX),
+                        Math.floor(y * scaleY),
+                        Math.ceil(scaleX),
+                        Math.ceil(scaleY)
+                    );
+                }
+            }
+        }
     }
 
     setupCanvasEvents() {
@@ -332,13 +625,25 @@ class BitsDraw {
             } else if (this.isDrawing) {
                 if (this.currentTool === 'line' && this.startPos) {
                     const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
-                    this.drawLinePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    // Throttle preview updates for performance
+                    if (!this.previewThrottleTime || Date.now() - this.previewThrottleTime >= 16) {
+                        this.previewThrottleTime = Date.now();
+                        this.drawLinePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    }
                 } else if (this.currentTool === 'rect' && this.startPos) {
                     const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
-                    this.drawRectPreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    // Throttle preview updates for performance
+                    if (!this.previewThrottleTime || Date.now() - this.previewThrottleTime >= 16) {
+                        this.previewThrottleTime = Date.now();
+                        this.drawRectPreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    }
                 } else if (this.currentTool === 'circle' && this.startPos) {
                     const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
-                    this.drawCirclePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    // Throttle preview updates for performance
+                    if (!this.previewThrottleTime || Date.now() - this.previewThrottleTime >= 16) {
+                        this.previewThrottleTime = Date.now();
+                        this.drawCirclePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    }
                 } else if (!['rect', 'circle', 'select-rect', 'select-circle', 'line'].includes(this.currentTool)) {
                     this.handleCanvasClick(e);
                 }
@@ -374,7 +679,8 @@ class BitsDraw {
                     // Use selected pattern instead of color override
                     this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, this.drawFill, false, this.currentPattern, drawValue);
                     this.editor.saveState();
-                    this.updateOutput();
+                    // Defer updateOutput to avoid blocking
+                    requestAnimationFrame(() => this.updateOutput());
                 } else if (this.currentTool === 'circle') {
                     this.clearShapePreview();
                     // Left click = primary color (black), Right click = secondary color (white)
@@ -395,14 +701,17 @@ class BitsDraw {
                         this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
                     }
                     this.editor.saveState();
-                    this.updateOutput();
+                    // Defer updateOutput to avoid blocking
+                    requestAnimationFrame(() => this.updateOutput());
                 } else if (this.currentTool === 'line') {
                     this.clearLinePreview();
                     // Left click = primary color (black), Right click = secondary color (white)
                     const drawValue = e.button === 0 ? 0 : 1;
                     // Use selected pattern instead of color override
-                    this.editor.drawLine(this.startPos.x, this.startPos.y, coords.x, coords.y, this.currentPattern, drawValue);
+                    this.editor.drawLine(this.startPos.x, this.startPos.y, coords.x, coords.y, this.currentPattern, drawValue, this.lineWidth);
                     this.editor.saveState();
+                    // Defer updateOutput to avoid blocking
+                    requestAnimationFrame(() => this.updateOutput());
                 } else if (this.currentTool === 'select-rect') {
                     this.selection = this.editor.createSelection(this.startPos.x, this.startPos.y, coords.x, coords.y, 'rect');
                     this.drawSelectionOverlay();
@@ -416,6 +725,9 @@ class BitsDraw {
                     this.selection = this.editor.createCircleSelection(centerX, centerY, radius);
                     this.drawSelectionOverlay();
                 }
+            } else if (this.isDrawing && !['rect', 'circle', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
+                // Handle mouseup for drawing tools (brush, pencil, eraser, spray, blur)
+                this.handleCanvasClick(e);
             }
             
             this.isDrawing = false;
@@ -606,6 +918,11 @@ class BitsDraw {
             this.updateGuidesButton();
         });
 
+        document.getElementById('pixel-perfect-preview-btn').addEventListener('click', () => {
+            this.forcePixelPerfectPreview = !this.forcePixelPerfectPreview;
+            this.updatePixelPerfectButton();
+        });
+
         // Selection controls (optional)
         const clearSelectionBtn = document.getElementById('clear-selection-btn');
         if (clearSelectionBtn) {
@@ -670,13 +987,8 @@ class BitsDraw {
         dropdown.style.position = 'fixed';
         dropdown.style.left = rect.left + 'px';
         
-        // Check if button is in bottom controls bar and position dropdown upward
-        const isBottomControl = button.closest('.bottom-controls-bar');
-        if (isBottomControl) {
-            dropdown.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
-        } else {
-            dropdown.style.top = (rect.bottom + 2) + 'px';
-        }
+        // Position dropdown below the button (normal dropdown behavior)
+        dropdown.style.top = (rect.bottom + 2) + 'px';
         
         dropdown.style.minWidth = rect.width + 'px';
         
@@ -695,40 +1007,42 @@ class BitsDraw {
                 width: 100%;
             `;
             
-            // Create color boxes
-            const colorBoxes = document.createElement('div');
-            colorBoxes.style.cssText = `
+            // Create color dots container
+            const colorDots = document.createElement('div');
+            colorDots.style.cssText = `
                 display: flex;
                 align-items: center;
-                width: 20px;
-                height: 12px;
-                border: 1px solid #ccc;
-                border-radius: 2px;
-                overflow: hidden;
+                gap: 4px;
                 flex-shrink: 0;
             `;
             
             // Get display mode colors
             const displayMode = this.displayModes[option.value];
             if (displayMode) {
-                // Background color (outer box)
-                const bgBox = document.createElement('div');
-                bgBox.style.cssText = `
-                    width: 50%;
-                    height: 100%;
+                // Background color dot
+                const bgDot = document.createElement('div');
+                bgDot.style.cssText = `
+                    width: 10px;
+                    height: 10px;
                     background-color: ${displayMode.background_color};
+                    border-radius: 50%;
+                    border: 1px solid rgba(0,0,0,0.2);
+                    flex-shrink: 0;
                 `;
                 
-                // Foreground color (inner box)
-                const fgBox = document.createElement('div');
-                fgBox.style.cssText = `
-                    width: 50%;
-                    height: 100%;
+                // Foreground color dot
+                const fgDot = document.createElement('div');
+                fgDot.style.cssText = `
+                    width: 10px;
+                    height: 10px;
                     background-color: ${displayMode.draw_color};
+                    border-radius: 50%;
+                    border: 1px solid rgba(0,0,0,0.2);
+                    flex-shrink: 0;
                 `;
                 
-                colorBoxes.appendChild(bgBox);
-                colorBoxes.appendChild(fgBox);
+                colorDots.appendChild(bgDot);
+                colorDots.appendChild(fgDot);
             }
             
             // Create text label
@@ -739,7 +1053,7 @@ class BitsDraw {
                 margin-left: 8px;
             `;
             
-            colorPreview.appendChild(colorBoxes);
+            colorPreview.appendChild(colorDots);
             colorPreview.appendChild(textLabel);
             item.appendChild(colorPreview);
             
@@ -786,13 +1100,8 @@ class BitsDraw {
         dropdown.style.position = 'fixed';
         dropdown.style.left = rect.left + 'px';
         
-        // Check if button is in bottom controls bar and position dropdown upward
-        const isBottomControl = button.closest('.bottom-controls-bar');
-        if (isBottomControl) {
-            dropdown.style.bottom = (window.innerHeight - rect.top + 2) + 'px';
-        } else {
-            dropdown.style.top = (rect.bottom + 2) + 'px';
-        }
+        // Position dropdown below the button (normal dropdown behavior)
+        dropdown.style.top = (rect.bottom + 2) + 'px';
         
         dropdown.style.minWidth = rect.width + 'px';
         
@@ -833,15 +1142,61 @@ class BitsDraw {
         const select = document.getElementById('display-mode-select');
         const previewIcon = document.getElementById('display-preview-icon');
         const displayModeName = document.getElementById('display-mode-name');
+        const displayDropdownBtn = document.getElementById('display-dropdown-btn');
         
         DEBUG.log('updateDisplayModeDisplay called');
         DEBUG.log('Elements found - select:', !!select, 'previewIcon:', !!previewIcon, 'displayModeName:', !!displayModeName);
         
-        // Update display mode name
-        if (displayModeName && select) {
+        // Update display mode name and add color dots
+        if (displayModeName && select && displayDropdownBtn) {
             const selectedOption = select.options[select.selectedIndex];
             if (selectedOption) {
-                displayModeName.textContent = selectedOption.textContent;
+                // Clear existing content
+                displayModeName.innerHTML = '';
+                
+                // Create container for dots and text
+                const container = document.createElement('div');
+                container.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                `;
+                
+                // Create color dots
+                const displayMode = this.displayModes[this.currentDisplayMode];
+                if (displayMode) {
+                    // Background color dot
+                    const bgDot = document.createElement('div');
+                    bgDot.style.cssText = `
+                        width: 8px;
+                        height: 8px;
+                        background-color: ${displayMode.background_color};
+                        border-radius: 50%;
+                        border: 1px solid rgba(0,0,0,0.2);
+                        flex-shrink: 0;
+                    `;
+                    
+                    // Foreground color dot
+                    const fgDot = document.createElement('div');
+                    fgDot.style.cssText = `
+                        width: 8px;
+                        height: 8px;
+                        background-color: ${displayMode.draw_color};
+                        border-radius: 50%;
+                        border: 1px solid rgba(0,0,0,0.2);
+                        flex-shrink: 0;
+                    `;
+                    
+                    container.appendChild(bgDot);
+                    container.appendChild(fgDot);
+                }
+                
+                // Add text
+                const textSpan = document.createElement('span');
+                textSpan.textContent = selectedOption.textContent;
+                container.appendChild(textSpan);
+                
+                displayModeName.appendChild(container);
                 DEBUG.log('Display mode name updated to:', selectedOption.textContent);
             }
         } else {
@@ -889,11 +1244,13 @@ class BitsDraw {
                 e.preventDefault();
                 if (this.editor.undo()) {
                     this.updateOutput();
+                    this.updateLayerList();
                 }
             } else if (isCtrl && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
                 e.preventDefault();
                 if (this.editor.redo()) {
                     this.updateOutput();
+                    this.updateLayerList();
                 }
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 e.preventDefault();
@@ -1012,7 +1369,7 @@ class BitsDraw {
         console.log('Setting up color panel events...');
         
         // Primary color block click
-        const primaryColour = document.getElementById('primary-colour');
+        const primaryColour = document.getElementById('primary-color');
         if (primaryColour) {
             console.log('Primary color element found');
             primaryColour.addEventListener('click', (e) => {
@@ -1025,20 +1382,52 @@ class BitsDraw {
             console.error('Primary color element not found');
         }
 
-        // Secondary color block click
-        const secondaryColour = document.getElementById('secondary-colour');
+        // Secondary color block click (fixed to white in monochrome mode)
+        const secondaryColour = document.getElementById('secondary-color');
         if (secondaryColour) {
             console.log('Secondary color element found');
             secondaryColour.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Secondary color clicked');
-                this.openColorPicker('secondary');
+                console.log('Secondary color clicked - fixed to white in monochrome mode');
+                // In monochrome mode, secondary is always white, no color picker needed
+                this.secondaryColor = '#ffffff';
+                this.updateColorDisplay('secondary');
             });
-        } else {
-            console.error('Secondary color element not found');
         }
+    }
 
+    setupPanelCollapse() {
+        // Add click handlers to all collapsible panel headers (except sheets panel)
+        const collapsibleHeaders = document.querySelectorAll('.panel-header.collapsible');
+        
+        collapsibleHeaders.forEach(header => {
+            header.addEventListener('click', (e) => {
+                const panel = header.closest('.panel');
+                const caret = header.querySelector('.panel-caret');
+                
+                // Skip sheets panel collapsing
+                if (panel.id === 'sheets-panel') return;
+                
+                // Toggle collapsed state
+                panel.classList.toggle('collapsed');
+                
+                // Optional: Save collapsed state to localStorage
+                const panelId = panel.id;
+                const isCollapsed = panel.classList.contains('collapsed');
+                localStorage.setItem(`panel-${panelId}-collapsed`, isCollapsed);
+            });
+        });
+        
+        // Restore collapsed states from localStorage
+        const panels = document.querySelectorAll('.panel[id]:not(#sheets-panel)');
+        panels.forEach(panel => {
+            const panelId = panel.id;
+            const savedState = localStorage.getItem(`panel-${panelId}-collapsed`);
+            if (savedState === 'true') {
+                panel.classList.add('collapsed');
+            }
+        });
     }
 
     setupMenuBar() {
@@ -1346,6 +1735,9 @@ class BitsDraw {
                 break;
             case 'show-preview':
                 this.toggleWindow('preview-window');
+                break;
+            case 'show-sheets':
+                this.toggleWindow('sheets-panel');
                 break;
             case 'about':
                 this.showWindow('about-window');
@@ -2005,6 +2397,9 @@ class BitsDraw {
     }
 
     setupLayers() {
+        // Initialize layer selection tracking
+        this.selectedLayers = new Set();
+        
         // Add layer button
         document.getElementById('add-layer-btn').addEventListener('click', () => {
             const layerName = `Layer ${this.editor.getLayerCount() + 1}`;
@@ -2043,6 +2438,26 @@ class BitsDraw {
             }
         });
 
+        // Select all layers button
+        document.getElementById('select-all-layers-btn').addEventListener('click', () => {
+            this.selectAllLayers();
+        });
+
+        // Batch delete button
+        document.getElementById('batch-delete-btn').addEventListener('click', () => {
+            this.batchDeleteLayers();
+        });
+
+        // Combine layers button
+        document.getElementById('combine-layers-btn').addEventListener('click', () => {
+            this.combineLayers();
+        });
+
+        // Clear selection button
+        document.getElementById('clear-selection-btn').addEventListener('click', () => {
+            this.clearLayerSelection();
+        });
+
         this.updateLayersList();
     }
 
@@ -2050,17 +2465,22 @@ class BitsDraw {
         const layerList = document.getElementById('layer-list');
         layerList.innerHTML = '';
 
+        // Update batch controls visibility
+        this.updateBatchControlsVisibility();
+
         // Create layers in reverse order (top rendering layers at top of UI, background at bottom)
         for (let i = this.editor.getLayerCount() - 1; i >= 0; i--) {
             const layerInfo = this.editor.getLayerInfo(i);
             if (!layerInfo) continue;
 
             const layerItem = document.createElement('div');
-            layerItem.className = `layer-item ${layerInfo.isActive ? 'active' : ''}`;
+            const isSelected = this.selectedLayers.has(i);
+            layerItem.className = `layer-item ${layerInfo.isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
             layerItem.dataset.layerIndex = i;
             layerItem.draggable = true;
 
             layerItem.innerHTML = `
+                <input type="checkbox" class="layer-checkbox" ${isSelected ? 'checked' : ''} data-action="toggle-selection">
                 <div class="layer-visibility" data-action="toggle-visibility">
                     <i class="ph ${layerInfo.visible ? 'ph-eye' : 'ph-eye-slash'}"></i>
                 </div>
@@ -2070,15 +2490,37 @@ class BitsDraw {
             // Layer click to select
             layerItem.addEventListener('click', (e) => {
                 if (!e.target.dataset.action) {
-                    this.editor.setActiveLayer(i);
-                    this.updateLayersList();
+                    // Handle multi-selection with Ctrl/Cmd key
+                    if (e.ctrlKey || e.metaKey) {
+                        this.toggleLayerSelection(i);
+                    } else if (e.shiftKey && this.lastSelectedLayer !== null) {
+                        this.selectLayerRange(this.lastSelectedLayer, i);
+                    } else {
+                        // Single selection
+                        this.clearLayerSelection();
+                        this.editor.setActiveLayer(i);
+                        this.lastSelectedLayer = i;
+                        this.updateLayersList();
+                    }
                 }
+            });
+
+            // Checkbox toggle
+            layerItem.querySelector('.layer-checkbox').addEventListener('change', (e) => {
+                e.stopPropagation();
+                this.toggleLayerSelection(i);
             });
 
             // Visibility toggle
             layerItem.querySelector('.layer-visibility').addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.editor.toggleLayerVisibility(i);
+                if (this.selectedLayers.size > 1 && this.selectedLayers.has(i)) {
+                    // Toggle visibility for all selected layers
+                    this.editor.toggleLayersVisibility([...this.selectedLayers]);
+                } else {
+                    // Toggle visibility for this layer only
+                    this.editor.toggleLayerVisibility(i);
+                }
                 this.updateLayersList();
                 this.updateOutput();
             });
@@ -2146,6 +2588,104 @@ class BitsDraw {
         }
     }
 
+    // ===== LAYER MULTI-SELECTION METHODS =====
+
+    toggleLayerSelection(layerIndex) {
+        if (this.selectedLayers.has(layerIndex)) {
+            this.selectedLayers.delete(layerIndex);
+        } else {
+            this.selectedLayers.add(layerIndex);
+        }
+        this.lastSelectedLayer = layerIndex;
+        this.updateLayersList();
+    }
+
+    selectLayerRange(fromIndex, toIndex) {
+        const start = Math.min(fromIndex, toIndex);
+        const end = Math.max(fromIndex, toIndex);
+        
+        this.clearLayerSelection();
+        for (let i = start; i <= end; i++) {
+            if (i >= 0 && i < this.editor.getLayerCount()) {
+                this.selectedLayers.add(i);
+            }
+        }
+        this.lastSelectedLayer = toIndex;
+        this.updateLayersList();
+    }
+
+    selectAllLayers() {
+        this.selectedLayers.clear();
+        for (let i = 0; i < this.editor.getLayerCount(); i++) {
+            this.selectedLayers.add(i);
+        }
+        this.updateLayersList();
+    }
+
+    clearLayerSelection() {
+        this.selectedLayers.clear();
+        this.updateLayersList();
+    }
+
+    updateBatchControlsVisibility() {
+        const batchControls = document.getElementById('layer-batch-controls');
+        if (this.selectedLayers.size > 0) {
+            batchControls.style.display = 'flex';
+        } else {
+            batchControls.style.display = 'none';
+        }
+    }
+
+    // ===== LAYER BATCH OPERATIONS =====
+
+    batchDeleteLayers() {
+        if (this.selectedLayers.size === 0) {
+            this.showNotification('No layers selected', 'error');
+            return;
+        }
+
+        if (this.selectedLayers.size >= this.editor.getLayerCount()) {
+            this.showNotification('Cannot delete all layers', 'error');
+            return;
+        }
+
+        const layerNames = [...this.selectedLayers].map(i => this.editor.getLayerInfo(i)?.name).filter(Boolean);
+        const confirmMessage = `Delete ${this.selectedLayers.size} selected layer(s)?\n${layerNames.join(', ')}`;
+        
+        if (confirm(confirmMessage)) {
+            if (this.editor.deleteLayers([...this.selectedLayers])) {
+                this.clearLayerSelection();
+                this.updateLayersList();
+                this.updateOutput();
+                this.showNotification(`Deleted ${layerNames.length} layer(s)`, 'success');
+            } else {
+                this.showNotification('Failed to delete layers', 'error');
+            }
+        }
+    }
+
+    combineLayers() {
+        if (this.selectedLayers.size < 2) {
+            this.showNotification('Select at least 2 layers to combine', 'error');
+            return;
+        }
+
+        const layerNames = [...this.selectedLayers].map(i => this.editor.getLayerInfo(i)?.name).filter(Boolean);
+        const confirmMessage = `Combine ${this.selectedLayers.size} selected layer(s)?\n${layerNames.join(', ')}`;
+        
+        if (confirm(confirmMessage)) {
+            const combinedName = `Combined (${layerNames.join(', ')})`;
+            if (this.editor.combineLayers([...this.selectedLayers], combinedName)) {
+                this.clearLayerSelection();
+                this.updateLayersList();
+                this.updateOutput();
+                this.showNotification(`Combined ${layerNames.length} layer(s)`, 'success');
+            } else {
+                this.showNotification('Failed to combine layers', 'error');
+            }
+        }
+    }
+
     setDisplayMode(mode) {
         if (!this.displayModes[mode]) return;
         
@@ -2189,6 +2729,17 @@ class BitsDraw {
         }
     }
 
+    updatePixelPerfectButton() {
+        const btn = document.getElementById('pixel-perfect-preview-btn');
+        if (this.forcePixelPerfectPreview) {
+            btn.classList.add('active');
+            btn.title = 'Disable Pixel-Perfect Preview';
+        } else {
+            btn.classList.remove('active');
+            btn.title = 'Enable Pixel-Perfect Preview';
+        }
+    }
+
     rescaleCanvas() {
         const width = prompt('New width:', this.editor.width);
         const height = prompt('New height:', this.editor.height);
@@ -2208,22 +2759,124 @@ class BitsDraw {
         }
     }
 
-    setupTextBalloon() {
-        document.getElementById('add-text-balloon-btn').addEventListener('click', () => {
-            this.addTextFromBalloon();
+
+    setupTextConfigDialog() {
+        // Text configuration dialog controls
+        document.getElementById('text-config-close-btn').addEventListener('click', () => {
+            this.hideTextConfigDialog();
         });
 
-        document.getElementById('cancel-text-balloon-btn').addEventListener('click', () => {
-            this.hideTextBalloon();
+        document.getElementById('text-config-cancel-btn').addEventListener('click', () => {
+            this.hideTextConfigDialog();
         });
 
-        document.getElementById('text-input-balloon').addEventListener('keypress', (e) => {
+        document.getElementById('text-config-apply-btn').addEventListener('click', () => {
+            this.applyTextSettings();
+        });
+
+        // Font selection change
+        document.getElementById('text-font-select').addEventListener('change', () => {
+            this.updateTextPreview();
+        });
+
+        // Size selection change
+        document.getElementById('text-size-select').addEventListener('change', () => {
+            this.updateTextPreview();
+        });
+
+        // Preview text input change
+        document.getElementById('text-preview-input').addEventListener('input', () => {
+            this.updateTextPreview();
+        });
+
+        // Text input field enter key support
+        document.getElementById('text-input-field').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                this.addTextFromBalloon();
-            } else if (e.key === 'Escape') {
-                this.hideTextBalloon();
+                this.applyTextSettings();
             }
         });
+
+        // Initial preview update
+        this.updateTextPreview();
+    }
+
+    showTextConfigDialog() {
+        const dialog = document.getElementById('text-config-dialog');
+        
+        // Set current values
+        document.getElementById('text-font-select').value = TextRenderer.getCurrentFont();
+        document.getElementById('text-size-select').value = TextRenderer.getCurrentSize();
+        
+        // Clear and focus text input
+        const textInput = document.getElementById('text-input-field');
+        textInput.value = '';
+        
+        // Show dialog
+        dialog.style.display = 'flex';
+        
+        // Focus text input after dialog is shown
+        setTimeout(() => {
+            textInput.focus();
+        }, 100);
+        
+        // Update preview
+        this.updateTextPreview();
+    }
+
+    hideTextConfigDialog() {
+        document.getElementById('text-config-dialog').style.display = 'none';
+    }
+
+    applyTextSettings() {
+        const fontSelect = document.getElementById('text-font-select');
+        const sizeSelect = document.getElementById('text-size-select');
+        const textInput = document.getElementById('text-input-field');
+        
+        const text = textInput.value.trim();
+        
+        if (!text) {
+            this.hideTextConfigDialog();
+            return;
+        }
+        
+        // Update font settings
+        TextRenderer.setCurrentFont(fontSelect.value);
+        TextRenderer.setCurrentSize(parseInt(sizeSelect.value));
+        
+        // Render text at click position
+        if (this.textClickPos) {
+            TextRenderer.renderText(
+                text, 
+                this.textClickPos.x, 
+                this.textClickPos.y, 
+                this.editor, 
+                this.currentPattern,
+                fontSelect.value,
+                parseInt(sizeSelect.value)
+            );
+            this.editor.scheduleRender();
+            this.editor.saveState();
+            this.updateOutput();
+            this.showNotification('Text added!', 'success');
+        }
+        
+        this.hideTextConfigDialog();
+        
+        // Update tool options bar to show new font info
+        this.updateToolOptionsBar();
+    }
+
+    updateTextPreview() {
+        const canvas = document.getElementById('text-preview-canvas');
+        const fontSelect = document.getElementById('text-font-select');
+        const sizeSelect = document.getElementById('text-size-select');
+        const previewInput = document.getElementById('text-preview-input');
+        
+        const font = fontSelect.value;
+        const size = parseInt(sizeSelect.value);
+        const text = previewInput.value || 'SAMPLE TEXT';
+        
+        TextRenderer.renderTextPreview(text, canvas, font, size);
     }
 
     setupToolOptions() {
@@ -2919,43 +3572,6 @@ class BitsDraw {
         }
     }
 
-    showTextBalloonAt(clientX, clientY, pixelX, pixelY) {
-        const balloon = document.getElementById('text-balloon');
-        const input = document.getElementById('text-input-balloon');
-        
-        this.textBalloonPos = { x: pixelX, y: pixelY };
-        
-        balloon.style.left = (clientX + 10) + 'px';
-        balloon.style.top = (clientY - 30) + 'px';
-        balloon.style.display = 'block';
-        
-        input.value = '';
-        input.focus();
-    }
-
-    hideTextBalloon() {
-        document.getElementById('text-balloon').style.display = 'none';
-        this.textBalloonPos = null;
-    }
-
-    addTextFromBalloon() {
-        const text = document.getElementById('text-input-balloon').value.trim();
-        
-        if (!text) {
-            this.hideTextBalloon();
-            return;
-        }
-        
-        if (this.textBalloonPos) {
-            TextRenderer.renderText(text, this.textBalloonPos.x, this.textBalloonPos.y, this.editor, this.currentPattern);
-            this.editor.redraw();
-            this.editor.saveState();
-            this.updateOutput();
-            this.showNotification('Text added!', 'success');
-        }
-        
-        this.hideTextBalloon();
-    }
 
     showCppExportDialog() {
         const dialog = document.getElementById('cpp-export-dialog');
@@ -3478,6 +4094,9 @@ class BitsDraw {
             toolButton.classList.add('active');
         }
         
+        // Update active tool indicator
+        this.updateActiveToolIndicator(tool);
+        
         // Update cursor based on tool
         this.canvas.className = '';
         if (tool === 'bucket') {
@@ -3511,9 +4130,9 @@ class BitsDraw {
             this.editor.redraw();
         }
         
-        // Hide text balloon if switching away from text tool
+        // Hide text config dialog if switching away from text tool
         if (tool !== 'text') {
-            this.hideTextBalloon();
+            this.hideTextConfigDialog();
         }
         
         // Tool options display will be updated by updateToolOptionsBar() below
@@ -3523,6 +4142,36 @@ class BitsDraw {
         
         // Re-render guides to show/hide handles based on active tool
         this.renderGuides();
+    }
+
+    updateActiveToolIndicator(tool) {
+        const toolIcon = document.getElementById('active-tool-icon');
+        const toolName = document.getElementById('active-tool-name');
+        
+        if (!toolIcon || !toolName) return;
+        
+        const toolData = {
+            'brush': { icon: 'ph-paint-brush', name: 'Brush' },
+            'pencil': { icon: 'ph-pencil', name: 'Pencil' },
+            'bucket': { icon: 'ph-paint-bucket', name: 'Bucket Fill' },
+            'eraser': { icon: 'ph-eraser', name: 'Eraser' },
+            'select-rect': { icon: 'ph-selection', name: 'Rectangle Select' },
+            'select-circle': { icon: 'ph-circle-dashed', name: 'Circle Select' },
+            'move': { icon: 'ph-arrows-out-cardinal', name: 'Move' },
+            'line': { icon: 'ph-line-segment', name: 'Line' },
+            'text': { icon: 'ph-text-aa', name: 'Text' },
+            'rect': { icon: 'ph-rectangle', name: 'Rectangle' },
+            'circle': { icon: 'ph-circle', name: 'Circle' },
+            'spray': { icon: 'ph-spray-bottle', name: 'Spray' },
+            'blur': { icon: 'ph-drop-simple', name: 'Blur' },
+            'guide': { icon: 'ph-bounding-box', name: 'Guide' },
+            'hand': { icon: 'ph-hand', name: 'Hand' }
+        };
+        
+        const currentTool = toolData[tool] || { icon: 'ph-cursor', name: 'Unknown' };
+        
+        toolIcon.className = `ph ${currentTool.icon}`;
+        toolName.textContent = currentTool.name;
     }
 
     async handleCanvasClick(e) {
@@ -3562,17 +4211,34 @@ class BitsDraw {
             if (e.type === 'mousedown') {
                 // Left click = primary color (black), Right click = secondary color (white)
                 this.currentDrawValue = e.button === 0 ? 0 : 1; // 0=black, 1=white
-                // Set pixel with alpha=1 and left/right click draw value
-                this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1);
-                this.editor.redraw();
-                this.updateOutput();
+                
+                // Start stroke
+                if (this.smoothDrawing) {
+                    this.startSmoothStroke(coords.x, coords.y);
+                }
+                // Draw single pixel
+                this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1, this.currentPattern);
+                this.lastDrawPos = { x: coords.x, y: coords.y };
             } else if (e.type === 'mousemove' && this.isDrawing) {
-                // Continue setting pixels with same draw/alpha values
-                this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1);
-                this.editor.redraw();
-                this.updateOutput();
+                // Draw connected line from last position to current position
+                if (this.smoothDrawing) {
+                    this.updateSmoothStroke(coords.x, coords.y, this.currentDrawValue, 1);
+                } else {
+                    // Draw line from last position to current position for pixel-perfect connection
+                    if (this.lastDrawPos) {
+                        this.editor.drawLine(this.lastDrawPos.x, this.lastDrawPos.y, coords.x, coords.y, this.currentPattern, this.currentDrawValue, 1);
+                    } else {
+                        this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1, this.currentPattern);
+                    }
+                    this.lastDrawPos = { x: coords.x, y: coords.y };
+                }
             } else if (e.type === 'mouseup' && this.isDrawing) {
+                // Finish stroke
+                if (this.smoothDrawing) {
+                    this.finishSmoothStroke(this.currentDrawValue, 1);
+                }
                 this.editor.saveState();
+                this.lastDrawPos = null;
             }
         } else if (this.currentTool === 'eraser') {
             // Eraser tool: always sets alpha=0, draw=0
@@ -3597,21 +4263,30 @@ class BitsDraw {
             // Left click = primary color (black), Right click = secondary color (white)
             const drawValue = e.button === 0 ? 0 : 1;
             // Use selected pattern instead of color override
-            this.editor.floodFill(coords.x, coords.y, drawValue, this.currentPattern);
+            this.editor.floodFill(coords.x, coords.y, drawValue, this.currentPattern, drawValue);
             this.editor.saveState();
             this.updateOutput();
         } else if (this.currentTool === 'spray') {
             if (e.type === 'mousedown') {
                 // Left click = primary color (black), Right click = secondary color (white)
                 this.currentDrawValue = e.button === 0 ? 0 : 1;
+                this.sprayLastTime = Date.now();
                 this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern, this.currentDrawValue);
+                // Only update UI on mousedown, not on every move
+                this.editor.redraw();
+                this.updateOutput();
             } else if (e.type === 'mousemove' && this.isDrawing) {
-                // Continue spraying with same draw value
-                this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern, this.currentDrawValue);
-            }
-            this.editor.redraw();
-            this.updateOutput();
-            if (e.type === 'mouseup') {
+                // Throttle spray calls to every 16ms (60fps) for performance
+                const now = Date.now();
+                if (!this.sprayLastTime || now - this.sprayLastTime >= 16) {
+                    this.sprayLastTime = now;
+                    this.editor.spray(coords.x, coords.y, this.sprayRadius, this.sprayDensity, this.currentPattern, this.currentDrawValue);
+                }
+                // Skip redraw and updateOutput on mousemove for performance
+            } else if (e.type === 'mouseup' && this.isDrawing) {
+                // Final update and save state on mouseup
+                this.editor.redraw();
+                this.updateOutput();
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'blur') {
@@ -3620,7 +4295,9 @@ class BitsDraw {
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'text') {
-            this.showTextBalloonAt(e.clientX, e.clientY, coords.x, coords.y);
+            // Store click position and show text config dialog
+            this.textClickPos = { x: coords.x, y: coords.y };
+            this.showTextConfigDialog();
         }
     }
 
@@ -3706,8 +4383,23 @@ class BitsDraw {
     }
 
     setupPreview() {
-        this.previewCanvas.width = this.editor.width;
-        this.previewCanvas.height = this.editor.height;
+        // Get preview area dimensions
+        const previewArea = document.querySelector('.preview-area');
+        if (!previewArea) return;
+        
+        const previewAreaRect = previewArea.getBoundingClientRect();
+        const padding = 8; // 4px padding * 2 sides
+        const availableWidth = previewAreaRect.width - padding;
+        const availableHeight = previewAreaRect.height - padding;
+        
+        // Calculate scale to fit width while maintaining aspect ratio
+        const bitmapAspectRatio = this.editor.height / this.editor.width;
+        const scaledHeight = availableWidth * bitmapAspectRatio;
+        
+        // Set preview canvas size to match main canvas dimensions
+        this.previewCanvas.width = 720;
+        this.previewCanvas.height = 576;
+        
         this.updatePreview();
         this.setupViewportNavigation();
     }
@@ -3719,8 +4411,15 @@ class BitsDraw {
         // Clear canvas to transparent
         previewCtx.clearRect(0, 0, this.previewCanvas.width, this.previewCanvas.height);
         
+        // Create a temporary canvas at bitmap resolution
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = this.editor.width;
+        tempCanvas.height = this.editor.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.imageSmoothingEnabled = false;
+        
         // Copy pixels from main canvas with proper alpha handling
-        const imageData = previewCtx.createImageData(this.editor.width, this.editor.height);
+        const imageData = tempCtx.createImageData(this.editor.width, this.editor.height);
         const data = imageData.data;
         
         const colors = this.displayModes[this.currentDisplayMode];
@@ -3753,7 +4452,12 @@ class BitsDraw {
             }
         }
         
-        previewCtx.putImageData(imageData, 0, 0);
+        // Put bitmap data to temporary canvas
+        tempCtx.putImageData(imageData, 0, 0);
+        
+        // Scale and draw the temporary canvas to preview canvas
+        previewCtx.drawImage(tempCanvas, 0, 0, this.previewCanvas.width, this.previewCanvas.height);
+        
         this.updateViewportFrame();
     }
 
@@ -3810,9 +4514,10 @@ class BitsDraw {
             const deltaY = currentY - this.viewportDragState.startY;
             
             // Calculate preview scale (same as in updateViewportFrame)
+            const previewRect = previewArea.getBoundingClientRect();
             const previewScale = Math.min(
-                this.previewCanvas.width / this.editor.width,
-                this.previewCanvas.height / this.editor.height
+                previewRect.width / this.editor.width,
+                previewRect.height / this.editor.height
             );
             
             // Convert preview delta to bitmap coordinates, then to canvas scroll coordinates
@@ -3865,9 +4570,13 @@ class BitsDraw {
         const canvasAreaRect = canvasArea.getBoundingClientRect();
         const previewRect = previewArea.getBoundingClientRect();
         
-        // Calculate what portion of the canvas is visible
-        const scrollX = canvasArea.scrollLeft || 0;
-        const scrollY = canvasArea.scrollTop || 0;
+        // Calculate canvas position relative to canvas area (accounting for CSS centering)
+        const canvasOffsetX = canvasRect.left - canvasAreaRect.left;
+        const canvasOffsetY = canvasRect.top - canvasAreaRect.top;
+        
+        // Calculate scroll position relative to canvas origin
+        const scrollX = canvasArea.scrollLeft - canvasOffsetX;
+        const scrollY = canvasArea.scrollTop - canvasOffsetY;
         
         // Calculate the visible area in canvas pixels (at current zoom)
         const visibleCanvasWidth = Math.min(canvasAreaRect.width, canvasRect.width);
@@ -3877,13 +4586,14 @@ class BitsDraw {
         const zoom = this.editor.zoom;
         const visibleBitmapWidth = visibleCanvasWidth / zoom;
         const visibleBitmapHeight = visibleCanvasHeight / zoom;
-        const scrollBitmapX = scrollX / zoom;
-        const scrollBitmapY = scrollY / zoom;
+        const scrollBitmapX = Math.max(0, scrollX / zoom);
+        const scrollBitmapY = Math.max(0, scrollY / zoom);
         
-        // Calculate preview scale (preview canvas size vs bitmap size)
+        // Calculate preview scale based on actual preview area display size
+        const previewAreaRect = previewArea.getBoundingClientRect();
         const previewScale = Math.min(
-            this.previewCanvas.width / this.editor.width,
-            this.previewCanvas.height / this.editor.height
+            previewAreaRect.width / this.editor.width,
+            previewAreaRect.height / this.editor.height
         );
         
         // Calculate frame position and size in preview coordinates
@@ -4086,33 +4796,156 @@ class BitsDraw {
     }
 
     drawLinePreview(x1, y1, x2, y2) {
-        // Clear previous preview
-        this.editor.redraw();
+        // Skip preview if coordinates haven't changed significantly
+        if (this.lastPreviewCoords && 
+            Math.abs(x2 - this.lastPreviewCoords.x2) < 2 && 
+            Math.abs(y2 - this.lastPreviewCoords.y2) < 2) {
+            return;
+        }
+        this.lastPreviewCoords = { x1, y1, x2, y2 };
+        
+        const ctx = this.editor.ctx;
+        const zoom = this.editor.zoom;
+        const canvasSize = Math.max(this.editor.width, this.editor.height);
+        
+        // Check if we should use pixel-perfect preview
+        const usePixelPerfect = this.shouldUsePixelPerfectPreview(canvasSize);
+        
+        if (usePixelPerfect) {
+            // Pixel-perfect preview with optimizations for large canvases
+            this.drawPixelPerfectLinePreview(x1, y1, x2, y2, canvasSize);
+        } else {
+            // Fast stroke preview for very large canvases
+            this.drawFastLinePreview(x1, y1, x2, y2);
+        }
+    }
+    
+    shouldUsePixelPerfectPreview(canvasSize) {
+        // Always use pixel-perfect for small canvases
+        if (canvasSize <= 256) return true;
+        
+        // Check user preference (can be toggled via UI)
+        if (this.forcePixelPerfectPreview) return true;
+        
+        // Use pixel-perfect for medium canvases when zoom is high (good performance)
+        if (canvasSize <= 512 && this.editor.zoom >= 4) return true;
+        
+        // Use pixel-perfect for any canvas when zoom is very high (pixels are large)
+        if (this.editor.zoom >= 8) return true;
+        
+        return false;
+    }
+    
+    drawPixelPerfectLinePreview(x1, y1, x2, y2, canvasSize) {
+        const ctx = this.editor.ctx;
+        const zoom = this.editor.zoom;
+        
+        // For large canvases, use optimized partial redraw instead of full redraw
+        if (canvasSize > 256) {
+            // Calculate minimal bounding box for the line
+            const minX = Math.min(x1, x2);
+            const minY = Math.min(y1, y2);
+            const maxX = Math.max(x1, x2);
+            const maxY = Math.max(y1, y2);
+            
+            // Add padding for line thickness
+            const padding = Math.max(2, Math.ceil(zoom / 4));
+            
+            // Only redraw the line area with padding
+            this.editor.renderPartial({
+                x: minX - padding,
+                y: minY - padding,
+                width: maxX - minX + padding * 2 + 1,
+                height: maxY - minY + padding * 2 + 1
+            });
+        } else {
+            // Full redraw for small canvases
+            this.editor.redraw();
+        }
         
         // Draw selection overlay if exists
         if (this.selection) {
             this.drawSelectionOverlay();
         }
         
-        // Draw pixel-perfect line preview using Bresenham algorithm
-        const ctx = this.editor.ctx;
-        const zoom = this.editor.zoom;
-        
-        // Use Bresenham's line algorithm to get exact pixels
+        // Get line pixels using Bresenham algorithm
         const linePixels = this.getLinePixels(x1, y1, x2, y2);
         
-        // Draw preview pixels as red semi-transparent overlay
+        // Batch draw pixels for better performance
         ctx.save();
         ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
         
-        for (const pixel of linePixels) {
-            if (pixel.x >= 0 && pixel.x < this.editor.width && 
-                pixel.y >= 0 && pixel.y < this.editor.height) {
-                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+        // Use ImageData for large pixel counts (faster than individual fillRect calls)
+        if (linePixels.length > 100 && zoom <= 4) {
+            this.drawPixelsWithImageData(linePixels, zoom);
+        } else {
+            // Individual fillRect for smaller lines or high zoom
+            for (const pixel of linePixels) {
+                if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                    pixel.y >= 0 && pixel.y < this.editor.height) {
+                    ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+                }
             }
         }
         
         ctx.restore();
+    }
+    
+    drawFastLinePreview(x1, y1, x2, y2) {
+        const ctx = this.editor.ctx;
+        const zoom = this.editor.zoom;
+        
+        // Minimal redraw area
+        const minX = Math.min(x1, x2) * zoom;
+        const minY = Math.min(y1, y2) * zoom;
+        const maxX = Math.max(x1, x2) * zoom + zoom;
+        const maxY = Math.max(y1, y2) * zoom + zoom;
+        
+        this.editor.renderPartial({
+            x: Math.floor(minX / zoom),
+            y: Math.floor(minY / zoom),
+            width: Math.ceil((maxX - minX) / zoom) + 2,
+            height: Math.ceil((maxY - minY) / zoom) + 2
+        });
+        
+        // Simple dashed line
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(x1 * zoom + zoom/2, y1 * zoom + zoom/2);
+        ctx.lineTo(x2 * zoom + zoom/2, y2 * zoom + zoom/2);
+        ctx.stroke();
+        ctx.restore();
+    }
+    
+    drawPixelsWithImageData(pixels, zoom) {
+        // This method uses ImageData for faster bulk pixel drawing
+        // when zoom is low and there are many pixels
+        const ctx = this.editor.ctx;
+        
+        // Group pixels by scanline for efficient ImageData usage
+        const scanlines = new Map();
+        
+        for (const pixel of pixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                
+                const y = pixel.y * zoom;
+                if (!scanlines.has(y)) {
+                    scanlines.set(y, []);
+                }
+                scanlines.get(y).push(pixel.x * zoom);
+            }
+        }
+        
+        // Draw each scanline
+        for (const [y, xPositions] of scanlines) {
+            for (const x of xPositions) {
+                ctx.fillRect(x, y, zoom, zoom);
+            }
+        }
     }
 
     clearLinePreview() {
@@ -4123,33 +4956,71 @@ class BitsDraw {
     }
 
     drawRectPreview(x1, y1, x2, y2) {
-        // Clear previous preview
-        this.editor.redraw();
-        
-        // Draw selection overlay if exists
-        if (this.selection) {
-            this.drawSelectionOverlay();
+        // Skip preview if coordinates haven't changed significantly
+        if (this.lastRectCoords && 
+            Math.abs(x2 - this.lastRectCoords.x2) < 2 && 
+            Math.abs(y2 - this.lastRectCoords.y2) < 2) {
+            return;
         }
+        this.lastRectCoords = { x1, y1, x2, y2 };
         
-        // Draw pixel-perfect rectangle preview
         const ctx = this.editor.ctx;
         const zoom = this.editor.zoom;
+        const canvasSize = Math.max(this.editor.width, this.editor.height);
         
-        // Get rectangle boundary pixels
-        const rectPixels = this.getRectPixels(x1, y1, x2, y2);
-        
-        // Draw preview pixels as red semi-transparent overlay
-        ctx.save();
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
-        
-        for (const pixel of rectPixels) {
-            if (pixel.x >= 0 && pixel.x < this.editor.width && 
-                pixel.y >= 0 && pixel.y < this.editor.height) {
-                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+        // Use pixel-perfect preview for small canvases (256x256 or less)
+        if (canvasSize <= 256) {
+            // Full redraw for pixel accuracy on small canvases
+            this.editor.redraw();
+            
+            // Draw selection overlay if exists
+            if (this.selection) {
+                this.drawSelectionOverlay();
             }
+            
+            // Draw pixel-perfect rectangle preview
+            const rectPixels = this.getRectPixels(x1, y1, x2, y2);
+            
+            // Draw preview pixels as red semi-transparent overlay
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+            
+            for (const pixel of rectPixels) {
+                if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                    pixel.y >= 0 && pixel.y < this.editor.height) {
+                    ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+                }
+            }
+            
+            ctx.restore();
+        } else {
+            // Optimized preview for large canvases
+            const minX = Math.min(x1, x2);
+            const minY = Math.min(y1, y2);
+            const maxX = Math.max(x1, x2);
+            const maxY = Math.max(y1, y2);
+            
+            // Quick redraw of just the affected area
+            this.editor.renderPartial({
+                x: minX - 1,
+                y: minY - 1,
+                width: maxX - minX + 3,
+                height: maxY - minY + 3
+            });
+            
+            // Draw simple rectangle preview
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+            ctx.strokeRect(
+                minX * zoom + 0.5, 
+                minY * zoom + 0.5, 
+                (maxX - minX + 1) * zoom - 1, 
+                (maxY - minY + 1) * zoom - 1
+            );
+            ctx.restore();
         }
-        
-        ctx.restore();
     }
 
     calculateEllipseParams(startX, startY, endX, endY, isShiftHeld, isAltHeld) {
@@ -4187,38 +5058,79 @@ class BitsDraw {
     }
 
     drawCirclePreview(startX, startY, endX, endY) {
-        // Clear previous preview
-        this.editor.redraw();
-        
-        // Draw selection overlay if exists
-        if (this.selection) {
-            this.drawSelectionOverlay();
+        // Skip preview if coordinates haven't changed significantly
+        if (this.lastCircleCoords && 
+            Math.abs(endX - this.lastCircleCoords.endX) < 2 && 
+            Math.abs(endY - this.lastCircleCoords.endY) < 2) {
+            return;
         }
+        this.lastCircleCoords = { startX, startY, endX, endY };
         
-        // Draw pixel-perfect ellipse/circle preview
         const ctx = this.editor.ctx;
         const zoom = this.editor.zoom;
+        const canvasSize = Math.max(this.editor.width, this.editor.height);
         
         // Calculate ellipse parameters with modifier key support
         const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
             startX, startY, endX, endY, this.shiftPressed, this.altPressed
         );
         
-        // Get ellipse boundary pixels
-        const ellipsePixels = this.getEllipsePixels(centerX, centerY, radiusX, radiusY);
-        
-        // Draw preview pixels as red semi-transparent overlay
-        ctx.save();
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
-        
-        for (const pixel of ellipsePixels) {
-            if (pixel.x >= 0 && pixel.x < this.editor.width && 
-                pixel.y >= 0 && pixel.y < this.editor.height) {
-                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+        // Use pixel-perfect preview for small canvases (256x256 or less)
+        if (canvasSize <= 256) {
+            // Full redraw for pixel accuracy on small canvases
+            this.editor.redraw();
+            
+            // Draw selection overlay if exists
+            if (this.selection) {
+                this.drawSelectionOverlay();
             }
+            
+            // Draw pixel-perfect ellipse preview
+            const ellipsePixels = this.getEllipsePixels(centerX, centerY, radiusX, radiusY);
+            
+            // Draw preview pixels as red semi-transparent overlay
+            ctx.save();
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+            
+            for (const pixel of ellipsePixels) {
+                if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                    pixel.y >= 0 && pixel.y < this.editor.height) {
+                    ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+                }
+            }
+            
+            ctx.restore();
+        } else {
+            // Optimized preview for large canvases
+            const minX = Math.floor(centerX - radiusX) - 1;
+            const minY = Math.floor(centerY - radiusY) - 1;
+            const maxX = Math.ceil(centerX + radiusX) + 1;
+            const maxY = Math.ceil(centerY + radiusY) + 1;
+            
+            // Quick redraw of just the affected area
+            this.editor.renderPartial({
+                x: minX,
+                y: minY,
+                width: maxX - minX + 1,
+                height: maxY - minY + 1
+            });
+            
+            // Draw simple ellipse preview
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath();
+            ctx.ellipse(
+                centerX * zoom + zoom/2, 
+                centerY * zoom + zoom/2, 
+                radiusX * zoom, 
+                radiusY * zoom, 
+                0, 0, 2 * Math.PI
+            );
+            ctx.stroke();
+            ctx.restore();
         }
-        
-        ctx.restore();
     }
 
     clearShapePreview() {
@@ -4374,6 +5286,11 @@ class BitsDraw {
     updateOutput() {
         // Update preview only (code generation is now handled by dialogs)
         this.updatePreview();
+        
+        // Update current sheet thumbnail
+        if (this.currentSheetId) {
+            this.updateSheetThumbnail(this.currentSheetId);
+        }
     }
 
 
@@ -4666,13 +5583,13 @@ class BitsDraw {
     
     updateColorDisplay() {
         // Update primary color display
-        const primaryDisplay = document.querySelector('#primary-colour .colour-display');
+        const primaryDisplay = document.querySelector('#primary-color .color-display');
         if (primaryDisplay) {
             primaryDisplay.style.backgroundColor = this.primaryColor;
         }
         
         // Update secondary color display
-        const secondaryDisplay = document.querySelector('#secondary-colour .colour-display');
+        const secondaryDisplay = document.querySelector('#secondary-color .color-display');
         if (secondaryDisplay) {
             secondaryDisplay.style.backgroundColor = this.secondaryColor;
         }
@@ -6349,14 +7266,22 @@ class BitsDraw {
     updateToolOptionsBar() {
         if (!this.toolOptionsBar) return;
         
-        // Clear existing options
-        this.toolOptionsBar.innerHTML = '';
+        // Define the active tool indicator HTML
+        const activeToolIndicatorHTML = `
+            <div class="active-tool-indicator" id="active-tool-indicator">
+                <div class="active-tool-icon">
+                    <i class="ph ph-paint-brush" id="active-tool-icon"></i>
+                </div>
+                <div class="active-tool-name" id="active-tool-name">Brush</div>
+            </div>
+            <div class="tool-options-separator"></div>
+        `;
         
         // Add options based on current tool
         const tool = this.currentTool;
         
         if (tool === 'brush') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <div class="number-input">
                         <button type="button" id="brush-size-dec">−</button>
@@ -6445,7 +7370,7 @@ class BitsDraw {
             }
             
         } else if (tool === 'pencil') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="pencil-smooth-bar">
                         <i class="ph ph-sneaker-move"></i>
@@ -6462,7 +7387,7 @@ class BitsDraw {
             }
             
         } else if (tool === 'eraser') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <div class="number-input">
                         <button type="button" id="eraser-size-dec">−</button>
@@ -6520,7 +7445,7 @@ class BitsDraw {
             const borderChecked = (tool === 'rect') ? this.drawBorder : this.circleDrawBorder;
             const fillChecked = (tool === 'rect') ? this.drawFill : this.circleDrawFill;
             
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <button class="btn-toggle ${borderChecked ? 'active' : ''}" id="shape-border-bar">
                         <i class="ph ph-selection-background"></i>
@@ -6559,7 +7484,7 @@ class BitsDraw {
             }
             
         } else if (tool === 'spray') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <div class="number-input">
                         <button type="button" id="spray-radius-dec">−</button>
@@ -6632,7 +7557,7 @@ class BitsDraw {
             }
             
         } else if (tool === 'bucket') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <button class="btn-toggle ${this.fillContiguous ? 'active' : ''}" id="fill-contiguous-bar">
                         <i class="ph ph-path"></i>
@@ -6649,7 +7574,7 @@ class BitsDraw {
             }
             
         } else if (tool === 'move') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <button class="btn-toggle ${this.moveLoop ? 'active' : ''}" id="move-loop-bar">
                         <i class="ph ph-arrows-clockwise"></i>
@@ -6666,7 +7591,7 @@ class BitsDraw {
             }
             
         } else if (tool === 'line') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <div class="number-input">
                         <button type="button" id="line-width-dec">−</button>
@@ -6705,46 +7630,31 @@ class BitsDraw {
             }
             
         } else if (tool === 'text') {
-            this.toolOptionsBar.innerHTML = `
+            const currentFont = TextRenderer.getCurrentFont();
+            const currentSize = TextRenderer.getCurrentSize();
+            const fontInfo = TextRenderer.fonts[currentFont];
+            
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
-                    <div class="number-input">
-                        <button type="button" id="text-scale-dec">−</button>
-                        <input type="number" id="text-scale-bar" min="1" max="4" value="${this.textScale || 1}">
-                        <button type="button" id="text-scale-inc">+</button>
-                    </div>
+                    <label>Font:</label>
+                    <span class="text-tool-info">${fontInfo ? fontInfo.name : 'Unknown'} ${currentSize}×</span>
+                </div>
+                <div class="option-group">
+                    <button type="button" id="text-config-btn" class="tool-option-btn">
+                        <i class="ph ph-gear"></i> Configure
+                    </button>
                 </div>
             `;
             
-            const textScaleBar = document.getElementById('text-scale-bar');
-            const textScaleInc = document.getElementById('text-scale-inc');
-            const textScaleDec = document.getElementById('text-scale-dec');
-            
-            if (textScaleBar) {
-                textScaleBar.addEventListener('input', (e) => {
-                    this.textScale = parseInt(e.target.value);
-                });
-            }
-            
-            if (textScaleInc) {
-                textScaleInc.addEventListener('click', () => {
-                    if (this.textScale < 4) {
-                        this.textScale++;
-                        textScaleBar.value = this.textScale;
-                    }
-                });
-            }
-            
-            if (textScaleDec) {
-                textScaleDec.addEventListener('click', () => {
-                    if (this.textScale > 1) {
-                        this.textScale--;
-                        textScaleBar.value = this.textScale;
-                    }
+            const textConfigBtn = document.getElementById('text-config-btn');
+            if (textConfigBtn) {
+                textConfigBtn.addEventListener('click', () => {
+                    this.showTextConfigDialog();
                 });
             }
             
         } else if (tool === 'select-rect' || tool === 'select-circle') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <button id="select-copy-bar" class="btn-toggle">
                         <i class="ph ph-copy"></i>
@@ -6776,7 +7686,7 @@ class BitsDraw {
             });
             
         } else if (tool === 'guide') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <button id="guide-add-bar" class="btn-toggle">
                         <i class="ph ph-plus"></i>
@@ -6806,7 +7716,7 @@ class BitsDraw {
             }
             
         } else if (tool === 'blur') {
-            this.toolOptionsBar.innerHTML = `
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <div class="number-input">
                         <button type="button" id="blur-intensity-dec">−</button>
@@ -6857,6 +7767,9 @@ class BitsDraw {
                 });
             }
         }
+        
+        // Update the active tool indicator for current tool
+        this.updateActiveToolIndicator(this.currentTool);
     }
 
     // ===== BLUR TOOL IMPLEMENTATION =====
