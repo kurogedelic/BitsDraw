@@ -1,4 +1,4 @@
-# BitsDraw v1.0.3 (Beta)
+# BitsDraw v1.0.4
 
 A professional web-based bitmap editor designed specifically for creating graphics compatible with U8G2 monochrome displays. Perfect for Arduino, ESP32, and embedded display projects.
 
@@ -25,7 +25,7 @@ BitsDraw eliminates the need for external tools like image2cpp by providing a co
 2. **GitHub Pages**: Visit the live demo link above
 3. **No installation required** - Pure static web application
 
-## Recent Updates (v1.0.3)
+## Recent Updates (v1.0.4)
 
 ### ✨ New Features
 - **MacPaint Pattern System**: 9 authentic patterns (solid black/white, checkerboard, stripes, bricks, dots)

@@ -1,6 +1,6 @@
 {
   "name": "bitsdraw",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Professional web-based bitmap editor for U8G2 monochrome displays",
   "main": "index.html",
   "scripts": {
