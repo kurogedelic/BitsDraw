@@ -110,5 +110,5 @@ utils-working/
 plan.md.bak
 server.log
 
-# Keep CLAUDE.md (it's documentation)
-# CLAUDE.md
+# Claude Code instructions (local development only)
+CLAUDE.md

@@ -163,6 +163,7 @@
 		<!-- Menus -->
 
 		<div class="menu-dropdown" id="menu-file">
+			<!-- Project management temporarily disabled
 			<div class="menu-dropdown-item" data-action="new">
 				<i class="ph ph-file-plus"></i>
 				<span>New Project...</span>
@@ -173,11 +174,15 @@
 				<span>Open Project...</span>
 				<span class="menu-shortcut">⌃O</span>
 			</div>
+			-->
+			<!-- Recent Projects temporarily disabled
 			<div class="menu-dropdown-item" data-action="recent-projects">
 				<i class="ph ph-clock-clockwise"></i>
 				<span>Recent Projects...</span>
 			</div>
+			-->
 			<div class="menu-divider"></div>
+			<!-- Project save/export temporarily disabled
 			<div class="menu-dropdown-item" data-action="save">
 				<i class="ph ph-floppy-disk"></i>
 				<span>Save Project</span>
@@ -191,6 +196,7 @@
 				<i class="ph ph-export"></i>
 				<span>Export Project (.bdp)</span>
 			</div>
+			-->
 			<div class="menu-divider"></div>
 			<div class="menu-dropdown-item has-submenu" data-action="import">
 				<i class="ph ph-download"></i>
@@ -267,10 +273,12 @@
 		</div>
 
 		<div class="menu-dropdown" id="menu-image">
+			<!-- Rescale temporarily disabled
 			<div class="menu-dropdown-item" data-action="rescale">
 				<i class="ph ph-resize"></i>
 				<span>Rescale Canvas...</span>
 			</div>
+			-->
 			<div class="menu-dropdown-item has-submenu" data-action="transform">
 				<i class="ph ph-arrows-out"></i>
 				<span>Transform</span>
@@ -620,35 +628,43 @@
 				</div>
 			</div>
 
-			<!-- About BitsDraw Window -->
-			<div
-				class="window hidden"
-				id="about-window"
-				style="left: 400px; top: 200px; width: 450px; height: 350px"
-			>
-				<div class="window-title-bar">
-					<div class="window-controls">
-						<div class="window-control close"><i class="ph ph-x"></i></div>
+			<!-- About BitsDraw Modal -->
+			<div class="dialog-overlay" id="about-dialog" style="display: none">
+				<div class="dialog">
+					<div class="dialog-header">
+						<h3>About BitsDraw</h3>
+						<button class="dialog-close" id="about-close-btn">
+							<i class="ph ph-x"></i>
+						</button>
 					</div>
-					<div class="window-title">About BitsDraw</div>
-				</div>
-				<div class="window-content">
-					<div class="about-content">
-						<div class="about-icon">
-							<img
-								src="icons/BitsDraw.png"
-								alt="BitsDraw"
-								class="app-icon-image"
-							/>
-						</div>
-						<div class="about-info">
-							<h2>BitsDraw</h2>
-							<p class="version">Version 1.0.4</p>
+					<div class="dialog-content">
+						<div class="about-content">
+							<div class="about-icon">
+								<img
+									src="icons/BitsDraw.png"
+									alt="BitsDraw"
+									class="app-icon-image"
+								/>
+							</div>
+							<div class="about-info">
+								<h2>BitsDraw</h2>
+								<p class="version">Version 1.0.5</p>
+								<p class="description">Web-based bitmap editor</p>
 
-							<div class="about-section">
-								<h3>Copyright</h3>
-								<p>© 2025 Leo Kuroshita. All rights reserved.</p>
-								<p>Tribute for Bill Atkinson and Susan Kare.</p>
+								<div class="about-section">
+									<h3>Copyright</h3>
+									<p>© 2025 Leo Kuroshita. All rights reserved.</p>
+									<p>Tribute for Bill Atkinson and Susan Kare.</p>
+								</div>
+
+								<div class="about-section">
+									<h3>Support Development</h3>
+									<p>If you find BitsDraw useful, consider supporting its development:</p>
+									<a href="https://www.buymeacoffee.com/kurogek" target="_blank" class="coffee-link">
+										<i class="ph ph-coffee"></i>
+										Buy me a coffee
+									</a>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -754,10 +770,6 @@
 							<div class="shortcut-item">
 								<span class="shortcut-key">S</span>
 								<span class="shortcut-desc">Spray Tool</span>
-							</div>
-							<div class="shortcut-item">
-								<span class="shortcut-key">I</span>
-								<span class="shortcut-desc">Eyedropper Tool</span>
 							</div>
 							<div class="shortcut-item">
 								<span class="shortcut-key">M</span>
@@ -980,76 +992,6 @@
 			</div>
 		</div>
 
-		<!-- Text Tool Configuration Dialog -->
-		<div class="dialog-overlay" id="text-config-dialog" style="display: none">
-			<div class="dialog">
-				<div class="dialog-header">
-					<h3>Text Tool Settings</h3>
-					<button class="dialog-close" id="text-config-close-btn">
-						<i class="ph ph-x"></i>
-					</button>
-				</div>
-				<div class="dialog-content">
-					<div class="input-section">
-						<label for="text-font-select">Font:</label>
-						<select id="text-font-select">
-							<option value="bitmap-5x7" selected>Bitmap 5×7 (Default)</option>
-							<option value="bitmap-3x5">Bitmap 3×5 (Small)</option>
-							<option value="bitmap-7x9">Bitmap 7×9 (Large)</option>
-						</select>
-					</div>
-					<div class="input-section">
-						<label for="text-size-select">Size:</label>
-						<select id="text-size-select">
-							<option value="1" selected>1× (Original)</option>
-							<option value="2">2× (Double)</option>
-							<option value="3">3× (Triple)</option>
-							<option value="4">4× (Quadruple)</option>
-						</select>
-					</div>
-					<div class="input-section">
-						<label for="text-input-field">Text to Render:</label>
-						<input
-							type="text"
-							id="text-input-field"
-							value=""
-							placeholder="Enter text to add..."
-							maxlength="50"
-						/>
-					</div>
-					<div class="input-section">
-						<label for="text-preview-input">Preview Text:</label>
-						<input
-							type="text"
-							id="text-preview-input"
-							value="SAMPLE TEXT"
-							placeholder="Enter preview text..."
-							maxlength="20"
-						/>
-					</div>
-					<div class="input-section">
-						<label>Preview:</label>
-						<div class="text-preview-area">
-							<canvas id="text-preview-canvas" width="200" height="50"></canvas>
-						</div>
-					</div>
-				</div>
-				<div class="dialog-footer">
-					<button
-						class="dialog-btn dialog-btn-cancel"
-						id="text-config-cancel-btn"
-					>
-						Cancel
-					</button>
-					<button
-						class="dialog-btn dialog-btn-primary"
-						id="text-config-apply-btn"
-					>
-						Add Text
-					</button>
-				</div>
-			</div>
-		</div>
 
 
 		<!-- Brush Cursor Overlay -->
@@ -1291,7 +1233,7 @@
 
 		<!-- Dithering Dialog -->
 		<div class="dialog-overlay" id="dithering-dialog" style="display: none">
-			<div class="dialog dithering-dialog-vertical">
+			<div class="dialog dithering-dialog-simple">
 				<div class="dialog-header">
 					<h3>Dithering</h3>
 					<button class="dialog-close" id="dithering-close-btn">
@@ -1299,79 +1241,36 @@
 					</button>
 				</div>
 				<div class="dialog-content">
-					<div class="dithering-content-vertical">
-						<!-- Top half: Before/After preview -->
-						<div class="dithering-preview-area">
-							<div class="preview-comparison-horizontal">
-								<div class="preview-section">
-									<label>Before</label>
-									<canvas id="dithering-original-canvas"></canvas>
-								</div>
-								<div class="preview-section">
-									<label>After</label>
-									<canvas id="dithering-preview-canvas"></canvas>
-								</div>
-							</div>
+					<!-- Single Preview Canvas -->
+					<div class="dithering-preview-simple">
+						<canvas id="dithering-preview-canvas"></canvas>
+					</div>
+					
+					<!-- Minimal Controls -->
+					<div class="dithering-controls-simple">
+						<div class="control-row">
+							<label>Method:</label>
+							<select id="dithering-method">
+								<option value="Bayer2x2">Bayer 2×2</option>
+								<option value="Bayer4x4" selected>Bayer 4×4</option>
+								<option value="Bayer8x8">Bayer 8×8</option>
+								<option value="FloydSteinberg">Floyd-Steinberg</option>
+								<option value="Burkes">Burkes</option>
+								<option value="Atkinson">Atkinson</option>
+							</select>
 						</div>
-						<!-- Bottom half: Controls -->
-						<div class="dithering-controls-area">
-							<div class="dithering-controls-grid">
-								<div class="control-group">
-									<label>Method:</label>
-									<select id="dithering-method">
-										<option value="Bayer2x2">Bayer 2×2</option>
-										<option value="Bayer4x4" selected>Bayer 4×4</option>
-										<option value="Bayer8x8">Bayer 8×8</option>
-										<option value="FloydSteinberg">Floyd-Steinberg</option>
-										<option value="Burkes">Burkes</option>
-										<option value="Atkinson">Atkinson</option>
-									</select>
-								</div>
-								<div class="control-group">
-									<label
-										>Alpha: <span id="dithering-alpha-value">1.0</span></label
-									>
-									<input
-										type="range"
-										id="dithering-alpha"
-										min="0"
-										max="100"
-										value="100"
-										step="1"
-									/>
-								</div>
-								<div class="control-group">
-									<label
-										><input type="checkbox" id="dithering-alpha-channel" />
-										Dither Alpha Channel</label
-									>
-									<span class="dithering-info-small"
-										>Apply dithering to transparency</span
-									>
-								</div>
-								<div class="control-group">
-									<div class="dithering-info">
-										<span>Level controls the dithering intensity</span>
-										<span>Higher values = more dithering</span>
-									</div>
-								</div>
-							</div>
+						<div class="control-row">
+							<label>Intensity: <span id="dithering-alpha-value">100%</span></label>
+							<input type="range" id="dithering-alpha" min="0" max="100" value="100" step="1" />
+						</div>
+						<div class="control-row">
+							<label><input type="checkbox" id="dithering-alpha-channel" /> Dither Transparency</label>
 						</div>
 					</div>
 				</div>
 				<div class="dialog-footer">
-					<button
-						class="dialog-btn dialog-btn-cancel"
-						id="dithering-cancel-btn"
-					>
-						Cancel
-					</button>
-					<button
-						class="dialog-btn dialog-btn-primary"
-						id="dithering-apply-btn"
-					>
-						Apply
-					</button>
+					<button class="dialog-btn dialog-btn-cancel" id="dithering-cancel-btn">Cancel</button>
+					<button class="dialog-btn dialog-btn-primary" id="dithering-apply-btn">Apply</button>
 				</div>
 			</div>
 		</div>

@@ -317,7 +317,7 @@ class MenuManager {
 
             // Help menu
             case 'about':
-                this.app.windowManager.showWindow('about-window');
+                this.app.dialogManager.showDialog('about-dialog');
                 break;
             case 'shortcuts':
                 this.app.windowManager.showWindow('shortcuts-window');

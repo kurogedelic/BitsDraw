@@ -1,5 +1,5 @@
 // Debug utility - automatically detects dev vs production
-// Cache buster: v1.0.4-modal-modernization
+// Cache buster: v1.0.5-pixel-perfect-feedback
 const DEBUG = {
     // Auto-detect development environment
     isDev: () => {
@@ -211,7 +211,6 @@ class BitsDraw {
         this.setupWindowManagement();
         this.setupPreview();
         this.setupLayers();
-        this.setupTextConfigDialog();
         this.setupToolOptions();
         this.setupNewCanvasDialog();
         this.setupCppExportDialog();
@@ -241,6 +240,7 @@ class BitsDraw {
         this.updateOutput();
         this.setupBrushCursor();
         this.setupThemeManagement();
+        this.setupAboutDialog();
         
         // Initialize button states
         this.updateGridButton();
@@ -258,6 +258,9 @@ class BitsDraw {
         
         // Initialize display mode
         this.setDisplayMode('black');
+        
+        // Initialize tool selection and UI state
+        this.setTool('brush');
         
         // Initialize tool options display
         // Tool options will be updated by updateToolOptionsBar()
@@ -589,7 +592,7 @@ class BitsDraw {
             if (this.currentTool === 'bucket') {
                 this.handleCanvasClick(e);
             } else if (this.currentTool === 'hand') {
-                this.startLayerDrag(e);
+                this.startCanvasPan(e);
             } else if (this.currentTool === 'move') {
                 this.startLayerMove(e);
             } else if (this.currentTool === 'guide') {
@@ -608,8 +611,8 @@ class BitsDraw {
         this.canvas.addEventListener('mousemove', (e) => {
             if (this.isPanning) {
                 this.updatePanning(e);
-            } else if (this.isDraggingLayer) {
-                this.updateLayerDrag(e);
+            } else if (this.isPanningCanvas) {
+                this.updateCanvasPan(e);
             } else if (this.isMovingLayer) {
                 this.updateLayerMove(e);
             } else if (this.isCreatingGuide) {
@@ -653,8 +656,8 @@ class BitsDraw {
         this.canvas.addEventListener('mouseup', (e) => {
             if (this.isPanning) {
                 this.stopPanning();
-            } else if (this.isDraggingLayer) {
-                this.stopLayerDrag();
+            } else if (this.isPanningCanvas) {
+                this.stopCanvasPan();
             } else if (this.isMovingLayer) {
                 this.stopLayerMove();
             } else if (this.isCreatingGuide) {
@@ -779,13 +782,45 @@ class BitsDraw {
         document.addEventListener('mousemove', (e) => {
             if (this.isPanning) {
                 this.updatePanning(e);
-            } else if (this.isDrawing && ['brush', 'spray'].includes(this.currentTool)) {
-                // Check if coordinates are within canvas bounds
-                const rect = this.canvas.getBoundingClientRect();
-                if (e.clientX >= rect.left && e.clientX <= rect.right && 
-                    e.clientY >= rect.top && e.clientY <= rect.bottom) {
-                    // Mouse is back inside canvas, continue drawing
-                    this.handleCanvasClick(e);
+            } else if (this.isDrawing) {
+                // Get canvas coordinates, even if outside bounds
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                
+                // Handle different tools when drawing outside canvas
+                if (['brush', 'pencil', 'spray', 'eraser', 'blur'].includes(this.currentTool)) {
+                    // For continuous drawing tools, continue drawing by clamping coordinates to canvas bounds
+                    // This allows drawing to continue at canvas edge when cursor goes outside
+                    const clampedCoords = {
+                        x: Math.max(0, Math.min(this.editor.width - 1, coords.x)),
+                        y: Math.max(0, Math.min(this.editor.height - 1, coords.y))
+                    };
+                    
+                    // Create a synthetic event with clamped coordinates for handleCanvasClick
+                    const rect = this.canvas.getBoundingClientRect();
+                    const syntheticEvent = {
+                        clientX: rect.left + (clampedCoords.x * this.editor.zoom) + (this.editor.zoom / 2),
+                        clientY: rect.top + (clampedCoords.y * this.editor.zoom) + (this.editor.zoom / 2),
+                        button: e.button,
+                        type: 'mousemove'
+                    };
+                    
+                    this.handleCanvasClick(syntheticEvent);
+                } else if (['rect', 'circle', 'line'].includes(this.currentTool) && this.startPos) {
+                    // For shape tools, continue updating preview even outside canvas
+                    // Clamp coordinates to canvas bounds for preview
+                    const clampedCoords = {
+                        x: Math.max(0, Math.min(this.editor.width - 1, coords.x)),
+                        y: Math.max(0, Math.min(this.editor.height - 1, coords.y))
+                    };
+                    
+                    // Update shape preview with clamped coordinates
+                    if (this.currentTool === 'rect') {
+                        this.drawRectPreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
+                    } else if (this.currentTool === 'circle') {
+                        this.drawCirclePreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
+                    } else if (this.currentTool === 'line') {
+                        this.drawLinePreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
+                    }
                 }
             }
         });
@@ -1740,7 +1775,7 @@ class BitsDraw {
                 this.toggleWindow('sheets-panel');
                 break;
             case 'about':
-                this.showWindow('about-window');
+                this.dialogManager.showDialog('about-dialog');
                 break;
             case 'shortcuts':
                 this.showWindow('shortcuts-window');
@@ -2102,8 +2137,14 @@ class BitsDraw {
         
         const zoom = this.editor.zoom;
         
+        // Store current display state before updating classes
+        const currentDisplay = this.brushCursorOverlay.style.display;
+        
         // Update appearance based on tool
         this.brushCursorOverlay.className = 'brush-cursor-overlay';
+        
+        // Restore display state
+        this.brushCursorOverlay.style.display = currentDisplay;
         
         if (this.currentTool === 'brush' || this.currentTool === 'pencil') {
             // Create pixelated cursor showing individual pixels
@@ -2137,6 +2178,8 @@ class BitsDraw {
         // centerX, centerY is at 0,0 in our cursor coordinate system
         const centerX = 0;
         const centerY = 0;
+        
+        let pixelCount = 0;
         
         for (let y = centerY - radius; y <= centerY + radius; y++) {
             for (let x = centerX - radius; x <= centerX + radius; x++) {
@@ -2174,6 +2217,8 @@ class BitsDraw {
                     pixel.style.width = zoom + 'px';
                     pixel.style.height = zoom + 'px';
                     this.brushCursorOverlay.appendChild(pixel);
+                    pixelCount++;
+                    
                 }
             }
         }
@@ -2760,123 +2805,134 @@ class BitsDraw {
     }
 
 
-    setupTextConfigDialog() {
-        // Text configuration dialog controls
-        document.getElementById('text-config-close-btn').addEventListener('click', () => {
-            this.hideTextConfigDialog();
-        });
 
-        document.getElementById('text-config-cancel-btn').addEventListener('click', () => {
-            this.hideTextConfigDialog();
-        });
 
-        document.getElementById('text-config-apply-btn').addEventListener('click', () => {
-            this.applyTextSettings();
+    createInPlaceTextInput(canvasX, canvasY, screenX, screenY) {
+        // Remove any existing text input
+        this.removeInPlaceTextInput();
+        
+        // Create text input element
+        const textInput = document.createElement('input');
+        textInput.id = 'in-place-text-input';
+        textInput.type = 'text';
+        textInput.style.position = 'absolute';
+        textInput.style.left = screenX + 'px';
+        textInput.style.top = screenY + 'px';
+        textInput.style.zIndex = '10000';
+        textInput.style.padding = '4px 8px';
+        textInput.style.border = '2px solid var(--accent-primary)';
+        textInput.style.borderRadius = '4px';
+        textInput.style.background = 'var(--bg-primary)';
+        textInput.style.color = 'var(--text-primary)';
+        textInput.style.fontSize = '14px';
+        textInput.style.fontFamily = 'monospace';
+        textInput.style.outline = 'none';
+        textInput.placeholder = 'Type text...';
+        
+        // Store position for rendering
+        this.textClickPos = { x: canvasX, y: canvasY };
+        
+        // Add preview canvas
+        const previewCanvas = document.createElement('canvas');
+        previewCanvas.id = 'in-place-text-preview';
+        previewCanvas.style.position = 'absolute';
+        previewCanvas.style.left = screenX + 'px';
+        previewCanvas.style.top = (screenY + 35) + 'px';
+        previewCanvas.style.zIndex = '9999';
+        previewCanvas.style.border = '1px solid var(--border-primary)';
+        previewCanvas.style.background = 'var(--bg-primary)';
+        previewCanvas.style.borderRadius = '4px';
+        previewCanvas.style.imageRendering = 'pixelated';
+        previewCanvas.width = 200;
+        previewCanvas.height = 50;
+        
+        // Add to document
+        document.body.appendChild(textInput);
+        document.body.appendChild(previewCanvas);
+        
+        // Event listeners
+        textInput.addEventListener('input', () => {
+            this.updateInPlaceTextPreview(textInput.value, previewCanvas);
         });
-
-        // Font selection change
-        document.getElementById('text-font-select').addEventListener('change', () => {
-            this.updateTextPreview();
-        });
-
-        // Size selection change
-        document.getElementById('text-size-select').addEventListener('change', () => {
-            this.updateTextPreview();
-        });
-
-        // Preview text input change
-        document.getElementById('text-preview-input').addEventListener('input', () => {
-            this.updateTextPreview();
-        });
-
-        // Text input field enter key support
-        document.getElementById('text-input-field').addEventListener('keypress', (e) => {
+        
+        textInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                this.applyTextSettings();
+                const inputValue = e.target.value || '';
+                this.applyInPlaceText(inputValue);
+                e.preventDefault();
+            } else if (e.key === 'Escape') {
+                this.removeInPlaceTextInput();
+                e.preventDefault();
             }
         });
-
-        // Initial preview update
-        this.updateTextPreview();
-    }
-
-    showTextConfigDialog() {
-        const dialog = document.getElementById('text-config-dialog');
         
-        // Set current values
-        document.getElementById('text-font-select').value = TextRenderer.getCurrentFont();
-        document.getElementById('text-size-select').value = TextRenderer.getCurrentSize();
-        
-        // Clear and focus text input
-        const textInput = document.getElementById('text-input-field');
-        textInput.value = '';
-        
-        // Show dialog
-        dialog.style.display = 'flex';
-        
-        // Focus text input after dialog is shown
+        // Remove on click outside (delay to avoid immediate removal)
+        this.textClickOutsideHandler = (e) => {
+            if (!textInput.contains(e.target) && !previewCanvas.contains(e.target)) {
+                this.removeInPlaceTextInput();
+            }
+        };
+        // Use longer delay to ensure current click event is fully processed
         setTimeout(() => {
-            textInput.focus();
-        }, 100);
+            if (this.textClickOutsideHandler) { // Only add if not already removed
+                document.addEventListener('click', this.textClickOutsideHandler);
+            }
+        }, 200);
         
-        // Update preview
-        this.updateTextPreview();
+        // Focus and show initial preview
+        textInput.focus();
+        this.updateInPlaceTextPreview('', previewCanvas);
     }
 
-    hideTextConfigDialog() {
-        document.getElementById('text-config-dialog').style.display = 'none';
+    updateInPlaceTextPreview(text, previewCanvas) {
+        if (TextRenderer && previewCanvas) {
+            try {
+                const textStr = String(text || '');
+                const displayText = textStr.toUpperCase() || 'TYPE HERE';
+                TextRenderer.renderTextPreview(displayText, previewCanvas);
+            } catch (error) {
+                console.error('In-place text preview error:', error);
+            }
+        }
     }
 
-    applyTextSettings() {
-        const fontSelect = document.getElementById('text-font-select');
-        const sizeSelect = document.getElementById('text-size-select');
-        const textInput = document.getElementById('text-input-field');
+    applyInPlaceText(text) {
+        // Ensure text is a string
+        const textStr = String(text || '').trim();
         
-        const text = textInput.value.trim();
+        if (textStr && this.textClickPos && TextRenderer) {
+            try {
+                const upperText = textStr.toUpperCase();
+                TextRenderer.renderText(upperText, this.textClickPos.x, this.textClickPos.y, this.editor, this.currentPattern);
+                this.editor.saveState();
+                this.updateOutput();
+                this.showNotification(`Text "${upperText}" added`, 'success');
+            } catch (error) {
+                console.error('Text render error:', error);
+                this.showNotification('Failed to add text', 'error');
+            }
+        }
+        this.removeInPlaceTextInput();
+    }
+
+    removeInPlaceTextInput() {
+        const textInput = document.getElementById('in-place-text-input');
+        const previewCanvas = document.getElementById('in-place-text-preview');
         
-        if (!text) {
-            this.hideTextConfigDialog();
-            return;
+        if (textInput) {
+            textInput.remove();
+        }
+        if (previewCanvas) {
+            previewCanvas.remove();
         }
         
-        // Update font settings
-        TextRenderer.setCurrentFont(fontSelect.value);
-        TextRenderer.setCurrentSize(parseInt(sizeSelect.value));
-        
-        // Render text at click position
-        if (this.textClickPos) {
-            TextRenderer.renderText(
-                text, 
-                this.textClickPos.x, 
-                this.textClickPos.y, 
-                this.editor, 
-                this.currentPattern,
-                fontSelect.value,
-                parseInt(sizeSelect.value)
-            );
-            this.editor.scheduleRender();
-            this.editor.saveState();
-            this.updateOutput();
-            this.showNotification('Text added!', 'success');
+        // Remove click outside handler if it exists
+        if (this.textClickOutsideHandler) {
+            document.removeEventListener('click', this.textClickOutsideHandler);
+            this.textClickOutsideHandler = null;
         }
         
-        this.hideTextConfigDialog();
-        
-        // Update tool options bar to show new font info
-        this.updateToolOptionsBar();
-    }
-
-    updateTextPreview() {
-        const canvas = document.getElementById('text-preview-canvas');
-        const fontSelect = document.getElementById('text-font-select');
-        const sizeSelect = document.getElementById('text-size-select');
-        const previewInput = document.getElementById('text-preview-input');
-        
-        const font = fontSelect.value;
-        const size = parseInt(sizeSelect.value);
-        const text = previewInput.value || 'SAMPLE TEXT';
-        
-        TextRenderer.renderTextPreview(text, canvas, font, size);
+        this.textClickPos = null;
     }
 
     setupToolOptions() {
@@ -3277,7 +3333,7 @@ class BitsDraw {
         alphaSlider.addEventListener('input', (e) => {
             const alpha = parseInt(e.target.value) / 100;
             this.ditheringData.alpha = alpha;
-            alphaValue.textContent = alpha.toFixed(2);
+            alphaValue.textContent = e.target.value + '%';
             this.updateDitheringPreview();
         });
 
@@ -3310,9 +3366,9 @@ class BitsDraw {
             }
         }
 
-        // Copy current layer data (both pixels and alpha)
-        this.ditheringData.originalPixels = new Uint8Array(activeLayer.pixels);
-        this.ditheringData.originalAlpha = new Uint8Array(activeLayer.alpha || this.editor.createEmptyAlpha());
+        // Copy current layer data (both pixels and alpha) as Float32Array for dithering
+        this.ditheringData.originalPixels = new Float32Array(activeLayer.pixels);
+        this.ditheringData.originalAlpha = new Float32Array(activeLayer.alpha || this.editor.createEmptyAlpha());
         
         // Reset parameters
         this.ditheringData.alpha = 1.0;
@@ -3322,7 +3378,7 @@ class BitsDraw {
         // Update UI
         document.getElementById('dithering-method').value = this.ditheringData.method;
         document.getElementById('dithering-alpha').value = 100;
-        document.getElementById('dithering-alpha-value').textContent = '1.00';
+        document.getElementById('dithering-alpha-value').textContent = '100%';
         document.getElementById('dithering-alpha-channel').checked = this.ditheringData.ditherAlphaChannel;
 
         // Setup preview canvases
@@ -3342,7 +3398,6 @@ class BitsDraw {
     }
 
     setupDitheringPreview() {
-        const originalCanvas = document.getElementById('dithering-original-canvas');
         const previewCanvas = document.getElementById('dithering-preview-canvas');
 
         const layer = this.editor.getActiveLayer();
@@ -3354,23 +3409,8 @@ class BitsDraw {
         const width = this.editor.width;
         const height = this.editor.height;
 
-        // Store original pixels for dithering
-        this.ditheringData.originalPixels = new Float32Array(layer.pixels.length);
-        for (let i = 0; i < layer.pixels.length; i++) {
-            this.ditheringData.originalPixels[i] = layer.pixels[i];
-        }
-
-        // Use 8x zoom for better visibility
-        const zoom = 8;
-
-        // Render original
-        this.ditheringEffects.renderToCanvas(
-            originalCanvas,
-            this.ditheringData.originalPixels,
-            width,
-            height,
-            zoom
-        );
+        // Use 3x zoom for compact preview
+        const zoom = 3;
 
         // Setup preview canvas size
         previewCanvas.width = width * zoom;
@@ -3418,8 +3458,8 @@ class BitsDraw {
             );
         }
 
-        // Use 8x zoom for better visibility
-        const zoom = 8;
+        // Use 3x zoom for compact preview
+        const zoom = 3;
 
         // Render preview with alpha support
         this.renderDitheringPreviewWithAlpha(
@@ -3441,8 +3481,9 @@ class BitsDraw {
         canvas.width = width * zoom;
         canvas.height = height * zoom;
         
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Clear canvas with white background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
@@ -3454,20 +3495,27 @@ class BitsDraw {
                 const canvasY = y * zoom;
                 
                 if (alphaValue === 0) {
-                    // Transparent - render checkerboard or solid based on current setting
-                    if (this.editor.showCheckerboard) {
-                        this.editor.renderCheckerboard(canvasX, canvasY, zoom, zoom);
-                    } else {
-                        ctx.fillStyle = this.editor.backgroundColor;
+                    // Transparent - render checkerboard pattern
+                    this.renderTransparencyPattern(ctx, canvasX, canvasY, zoom);
+                } else {
+                    // Opaque - render pixel (BitsDraw format: 0=black, 1=white)
+                    if (pixelValue === 0) {
+                        ctx.fillStyle = '#000000';
                         ctx.fillRect(canvasX, canvasY, zoom, zoom);
                     }
-                } else {
-                    // Opaque - render pixel
-                    ctx.fillStyle = pixelValue ? '#000000' : '#ffffff';
-                    ctx.fillRect(canvasX, canvasY, zoom, zoom);
+                    // If pixelValue === 1, leave white background (no need to draw)
                 }
             }
         }
+    }
+
+    renderTransparencyPattern(ctx, x, y, size) {
+        // Render a simple checkerboard pattern for transparency
+        const checkSize = Math.max(1, Math.floor(size / 4));
+        const isEven = (Math.floor(x / checkSize) + Math.floor(y / checkSize)) % 2 === 0;
+        
+        ctx.fillStyle = isEven ? '#f0f0f0' : '#e0e0e0';
+        ctx.fillRect(x, y, size, size);
     }
 
     applyDithering() {
@@ -3764,15 +3812,39 @@ class BitsDraw {
 
     addStrokePoint(x, y) {
         const timestamp = Date.now();
-        this.strokePoints.push({ 
+        const newPoint = { 
             x, 
             y, 
             timestamp,
             pressure: 1.0 // Could be extended for pressure-sensitive input
-        });
+        };
         
-        // Limit the number of points to prevent memory issues
-        if (this.strokePoints.length > 100) {
+        // Calculate velocity and distance for intelligent point filtering
+        if (this.strokePoints.length > 0) {
+            const lastPoint = this.strokePoints[this.strokePoints.length - 1];
+            const distance = Math.sqrt(
+                Math.pow(x - lastPoint.x, 2) + Math.pow(y - lastPoint.y, 2)
+            );
+            const timeDelta = timestamp - lastPoint.timestamp;
+            const velocity = timeDelta > 0 ? distance / timeDelta : 0;
+            
+            newPoint.distance = distance;
+            newPoint.velocity = velocity;
+            
+            // Skip points that are too close together for stronger smoothing
+            // But allow slow drawing (low velocity) to add more detail
+            const minDistance = velocity > 0.5 ? 1.5 : 0.5; // Adaptive threshold
+            if (distance < minDistance && this.strokePoints.length > 2) {
+                // Update the last point instead of adding a new one for very close points
+                this.strokePoints[this.strokePoints.length - 1] = newPoint;
+                return;
+            }
+        }
+        
+        this.strokePoints.push(newPoint);
+        
+        // Increase point limit for stronger smoothing with more history
+        if (this.strokePoints.length > 150) {
             this.strokePoints.shift();
         }
     }
@@ -3800,35 +3872,53 @@ class BitsDraw {
         const points = this.strokePoints;
         const len = points.length;
         
-        // Use the last 4 points for Catmull-Rom interpolation
-        const p0 = points[len - 4];
-        const p1 = points[len - 3];
-        const p2 = points[len - 2];
-        const p3 = points[len - 1];
+        // Use more points for stronger smoothing when available
+        if (len >= 6) {
+            // Use 6 points for more aggressive smoothing
+            this.drawAdvancedSmoothSegment(points, len, drawValue, alphaValue);
+        } else if (len >= 4) {
+            // Standard Catmull-Rom with enhanced parameters
+            this.drawStandardSmoothSegment(points, len, drawValue, alphaValue);
+        }
+    }
+    
+    drawAdvancedSmoothSegment(points, len, drawValue, alphaValue) {
+        // Use weighted average of multiple control points for stronger smoothing
+        const p0 = points[len - 6];
+        const p1 = points[len - 5];
+        const p2 = points[len - 4];
+        const p3 = points[len - 3];
+        const p4 = points[len - 2];
+        const p5 = points[len - 1];
         
-        // Calculate adaptive step size based on distance and brush size
+        // Create smoothed control points using weighted averaging
+        const smoothP1 = this.weightedAverage([p0, p1, p2], [0.1, 0.8, 0.1]);
+        const smoothP2 = this.weightedAverage([p1, p2, p3], [0.15, 0.7, 0.15]);
+        const smoothP3 = this.weightedAverage([p2, p3, p4], [0.15, 0.7, 0.15]);
+        const smoothP4 = this.weightedAverage([p3, p4, p5], [0.1, 0.8, 0.1]);
+        
+        // Calculate distance for adaptive stepping
         const distance = Math.sqrt(
-            Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)
+            Math.pow(smoothP3.x - smoothP2.x, 2) + Math.pow(smoothP3.y - smoothP2.y, 2)
         );
         
-        // Adaptive smoothing: more steps for larger brushes and longer distances
-        const brushFactor = Math.max(1, this.brushSize / 3);
-        const steps = Math.max(1, Math.min(30, Math.ceil(distance / brushFactor)));
+        // More aggressive smoothing: increase steps and reduce threshold
+        const brushFactor = Math.max(1, this.brushSize / 2);
+        const steps = Math.max(2, Math.min(50, Math.ceil(distance * 2 / brushFactor)));
         
-        // Skip very short segments to improve performance
-        if (distance < 0.5) {
+        // Skip very short segments
+        if (distance < 0.3) {
             return;
         }
         
-        // Draw smooth curve between p1 and p2 using p0 and p3 as control points
+        // Draw smooth curve with higher interpolation density
         for (let i = 0; i <= steps; i++) {
             const t = i / steps;
-            const point = this.catmullRomInterpolate(p0, p1, p2, p3, t);
+            const point = this.catmullRomInterpolate(smoothP1, smoothP2, smoothP3, smoothP4, t);
             
-            // Adaptive drawing threshold based on brush size
-            const threshold = Math.max(0.3, this.brushSize * 0.1);
+            // Much more aggressive threshold for smoother curves
+            const threshold = Math.max(0.1, this.brushSize * 0.05);
             
-            // Only draw if the point is significantly different from the last drawn point
             if (!this.lastDrawPoint || 
                 Math.abs(point.x - this.lastDrawPoint.x) >= threshold || 
                 Math.abs(point.y - this.lastDrawPoint.y) >= threshold) {
@@ -3837,6 +3927,84 @@ class BitsDraw {
                 this.lastDrawPoint = { x: point.x, y: point.y };
             }
         }
+    }
+    
+    drawStandardSmoothSegment(points, len, drawValue, alphaValue) {
+        // Enhanced standard Catmull-Rom with stronger smoothing parameters
+        const p0 = points[len - 4];
+        const p1 = points[len - 3];
+        const p2 = points[len - 2];
+        const p3 = points[len - 1];
+        
+        // Apply smoothing to control points
+        const smoothP0 = this.applyPointSmoothing(p0, points, len - 4);
+        const smoothP1 = this.applyPointSmoothing(p1, points, len - 3);
+        const smoothP2 = this.applyPointSmoothing(p2, points, len - 2);
+        const smoothP3 = this.applyPointSmoothing(p3, points, len - 1);
+        
+        const distance = Math.sqrt(
+            Math.pow(smoothP2.x - smoothP1.x, 2) + Math.pow(smoothP2.y - smoothP1.y, 2)
+        );
+        
+        // Enhanced smoothing parameters
+        const brushFactor = Math.max(1, this.brushSize / 2.5);
+        const steps = Math.max(2, Math.min(40, Math.ceil(distance * 1.5 / brushFactor)));
+        
+        if (distance < 0.3) {
+            return;
+        }
+        
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const point = this.catmullRomInterpolate(smoothP0, smoothP1, smoothP2, smoothP3, t);
+            
+            // Reduced threshold for smoother strokes
+            const threshold = Math.max(0.15, this.brushSize * 0.06);
+            
+            if (!this.lastDrawPoint || 
+                Math.abs(point.x - this.lastDrawPoint.x) >= threshold || 
+                Math.abs(point.y - this.lastDrawPoint.y) >= threshold) {
+                
+                this.drawWithBrush(Math.round(point.x), Math.round(point.y), drawValue, alphaValue);
+                this.lastDrawPoint = { x: point.x, y: point.y };
+            }
+        }
+    }
+    
+    weightedAverage(points, weights) {
+        let totalWeight = weights.reduce((sum, w) => sum + w, 0);
+        let x = 0, y = 0;
+        
+        for (let i = 0; i < points.length; i++) {
+            const weight = weights[i] / totalWeight;
+            x += points[i].x * weight;
+            y += points[i].y * weight;
+        }
+        
+        return { x, y };
+    }
+    
+    applyPointSmoothing(point, allPoints, index) {
+        // Apply local smoothing to individual points
+        const neighbors = [];
+        const weights = [];
+        
+        // Collect neighboring points for smoothing
+        for (let offset = -2; offset <= 2; offset++) {
+            const neighborIndex = index + offset;
+            if (neighborIndex >= 0 && neighborIndex < allPoints.length) {
+                neighbors.push(allPoints[neighborIndex]);
+                // Gaussian-like weights (higher weight for closer points)
+                const weight = Math.exp(-0.5 * offset * offset);
+                weights.push(weight);
+            }
+        }
+        
+        if (neighbors.length < 2) {
+            return point; // Not enough neighbors, return original
+        }
+        
+        return this.weightedAverage(neighbors, weights);
     }
 
     catmullRomInterpolate(p0, p1, p2, p3, t) {
@@ -3862,11 +4030,8 @@ class BitsDraw {
     }
 
     finishSmoothStroke(drawValue, alphaValue, brushSize = null) {
-        // Draw remaining points if any
-        if (this.strokePoints.length >= 2) {
-            const lastPoint = this.strokePoints[this.strokePoints.length - 1];
-            this.drawWithBrush(lastPoint.x, lastPoint.y, drawValue, alphaValue, brushSize);
-        }
+        // Just clear stroke data without drawing an extra point on mouseup
+        // The stroke should already be complete from the mousemove events
         
         // Clear stroke data
         this.strokePoints = [];
@@ -4112,7 +4277,7 @@ class BitsDraw {
         }
         
         // Update brush cursor visibility
-        if (tool === 'brush' || tool === 'pencil' || tool === 'spray') {
+        if (tool === 'brush' || tool === 'pencil' || tool === 'eraser' || tool === 'blur' || tool === 'spray') {
             this.updateBrushCursorSize();
             // Show cursor if mouse is over canvas
             const canvas = document.getElementById('bitmap-canvas');
@@ -4130,9 +4295,9 @@ class BitsDraw {
             this.editor.redraw();
         }
         
-        // Hide text config dialog if switching away from text tool
+        // Remove in-place text input if switching away from text tool
         if (tool !== 'text') {
-            this.hideTextConfigDialog();
+            this.removeInPlaceTextInput();
         }
         
         // Tool options display will be updated by updateToolOptionsBar() below
@@ -4178,6 +4343,7 @@ class BitsDraw {
         const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
         
         // Only process if coordinates are within canvas bounds
+        // Note: Document-level mouse handler clamps coordinates, so this check should pass for synthetic events
         if (coords.x < 0 || coords.x >= this.editor.width || 
             coords.y < 0 || coords.y >= this.editor.height) {
             return;
@@ -4193,18 +4359,33 @@ class BitsDraw {
                     this.startSmoothStroke(coords.x, coords.y);
                 }
                 this.drawWithBrush(coords.x, coords.y, this.currentDrawValue, 1);
+                this.lastBrushPos = { x: coords.x, y: coords.y };
             } else if (e.type === 'mousemove' && this.isDrawing) {
                 // Continue stroke with same draw value
                 if (this.smoothDrawing) {
                     this.updateSmoothStroke(coords.x, coords.y, this.currentDrawValue, 1);
                 } else {
+                    // Always connect strokes to prevent gaps and ensure continuity
+                    if (this.lastBrushPos) {
+                        const distance = Math.sqrt(
+                            Math.pow(coords.x - this.lastBrushPos.x, 2) + 
+                            Math.pow(coords.y - this.lastBrushPos.y, 2)
+                        );
+                        
+                        // Connect if there's any significant distance (>1 pixel) to ensure no gaps
+                        if (distance > 1) {
+                            this.connectBrushStrokes(this.lastBrushPos.x, this.lastBrushPos.y, coords.x, coords.y);
+                        }
+                    }
                     this.drawWithBrush(coords.x, coords.y, this.currentDrawValue, 1);
                 }
+                this.lastBrushPos = { x: coords.x, y: coords.y };
             } else if (e.type === 'mouseup' && this.isDrawing) {
                 // Finish stroke
                 if (this.smoothDrawing) {
                     this.finishSmoothStroke(this.currentDrawValue, 1);
                 }
+                this.lastBrushPos = null; // Clear brush position
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'pencil') {
@@ -4290,14 +4471,14 @@ class BitsDraw {
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'blur') {
-            this.applyBlurEffect(coords.x, coords.y);
-            if (e.type === 'mouseup') {
-                this.editor.saveState();
+            // Blur tool temporarily disabled due to performance issues
+            if (e.type === 'mousedown') {
+                this.showNotification('Blur tool is temporarily disabled for performance optimization', 'warning');
             }
         } else if (this.currentTool === 'text') {
-            // Store click position and show text config dialog
-            this.textClickPos = { x: coords.x, y: coords.y };
-            this.showTextConfigDialog();
+            // Create in-place text input at click position
+            this.createInPlaceTextInput(coords.x, coords.y, e.clientX, e.clientY);
+            e.stopPropagation(); // Prevent this click from triggering clickOutsideHandler
         }
     }
 
@@ -4808,29 +4989,28 @@ class BitsDraw {
         const zoom = this.editor.zoom;
         const canvasSize = Math.max(this.editor.width, this.editor.height);
         
-        // Check if we should use pixel-perfect preview
-        const usePixelPerfect = this.shouldUsePixelPerfectPreview(canvasSize);
-        
-        if (usePixelPerfect) {
-            // Pixel-perfect preview with optimizations for large canvases
-            this.drawPixelPerfectLinePreview(x1, y1, x2, y2, canvasSize);
-        } else {
-            // Fast stroke preview for very large canvases
-            this.drawFastLinePreview(x1, y1, x2, y2);
-        }
+        // Always use pixel-perfect preview with red overlay feedback
+        this.drawPixelPerfectLinePreview(x1, y1, x2, y2, canvasSize);
     }
     
     shouldUsePixelPerfectPreview(canvasSize) {
-        // Always use pixel-perfect for small canvases
-        if (canvasSize <= 256) return true;
+        // Check user preference first (can be toggled via UI)
+        if (this.forcePixelPerfectPreview !== undefined) {
+            return this.forcePixelPerfectPreview;
+        }
         
-        // Check user preference (can be toggled via UI)
-        if (this.forcePixelPerfectPreview) return true;
+        // Default to pixel-perfect whenever possible for better UX
         
-        // Use pixel-perfect for medium canvases when zoom is high (good performance)
-        if (canvasSize <= 512 && this.editor.zoom >= 4) return true;
+        // Always use pixel-perfect for small to medium canvases
+        if (canvasSize <= 512) return true;
         
-        // Use pixel-perfect for any canvas when zoom is very high (pixels are large)
+        // Use pixel-perfect for larger canvases when zoom makes pixels visible
+        if (this.editor.zoom >= 4) return true;
+        
+        // Use pixel-perfect for very large canvases only when highly zoomed
+        if (canvasSize <= 1024 && this.editor.zoom >= 2) return true;
+        
+        // For massive canvases, only use pixel-perfect when pixels are very large
         if (this.editor.zoom >= 8) return true;
         
         return false;
@@ -4868,29 +5048,173 @@ class BitsDraw {
             this.drawSelectionOverlay();
         }
         
-        // Get line pixels using Bresenham algorithm
+        // Draw pixel-perfect line preview with red overlay showing exact pixels
         const linePixels = this.getLinePixels(x1, y1, x2, y2);
         
-        // Batch draw pixels for better performance
+        // Draw preview pixels as red semi-transparent overlay
         ctx.save();
         ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
         
-        // Use ImageData for large pixel counts (faster than individual fillRect calls)
-        if (linePixels.length > 100 && zoom <= 4) {
-            this.drawPixelsWithImageData(linePixels, zoom);
-        } else {
-            // Individual fillRect for smaller lines or high zoom
-            for (const pixel of linePixels) {
-                if (pixel.x >= 0 && pixel.x < this.editor.width && 
-                    pixel.y >= 0 && pixel.y < this.editor.height) {
-                    ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+        for (const pixel of linePixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+            }
+        }
+        
+        ctx.restore();
+    }
+
+    /**
+     * Draw actual pixel preview showing how pixels will look when placed
+     */
+    drawActualPixelPreview(x1, y1, x2OrRadiusX, y2OrRadiusY, shapeType) {
+        // Create a temporary layer to preview the shape
+        const tempPixels = this.createEmptyBitmap();
+        const tempAlpha = this.createEmptyAlpha();
+        
+        // Determine draw value (black=0, white=1) based on primary/secondary color
+        // For preview, we'll assume left mouse button (primary color = black = 0)
+        const drawValue = 0; // black pixels for preview
+        const alphaValue = 1; // fully opaque
+        
+        // Draw the shape to temporary arrays
+        if (shapeType === 'rect') {
+            this.drawRectToTempLayer(tempPixels, tempAlpha, x1, y1, x2OrRadiusX, y2OrRadiusY, drawValue, alphaValue);
+        } else if (shapeType === 'circle') {
+            this.drawCircleToTempLayer(tempPixels, tempAlpha, x1, y1, x2OrRadiusX, y2OrRadiusY, drawValue, alphaValue);
+        } else if (shapeType === 'line') {
+            this.drawLineToTempLayer(tempPixels, tempAlpha, x1, y1, x2OrRadiusX, y2OrRadiusY, drawValue, alphaValue);
+        }
+        
+        // Render the preview pixels on top of existing canvas
+        this.renderTempLayerPreview(tempPixels, tempAlpha);
+    }
+
+    createEmptyBitmap() {
+        return new Uint8Array(this.editor.width * this.editor.height);
+    }
+
+    createEmptyAlpha() {
+        return new Uint8Array(this.editor.width * this.editor.height);
+    }
+
+    drawRectToTempLayer(pixels, alpha, x1, y1, x2, y2, drawValue, alphaValue) {
+        const rectPixels = this.getRectPixels(x1, y1, x2, y2);
+        for (const pixel of rectPixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                const index = this.editor.getPixelIndex(pixel.x, pixel.y);
+                pixels[index] = drawValue;
+                alpha[index] = alphaValue;
+            }
+        }
+    }
+
+    drawCircleToTempLayer(pixels, alpha, centerX, centerY, radiusX, radiusY, drawValue, alphaValue) {
+        const ellipsePixels = this.getEllipsePixels(centerX, centerY, radiusX, radiusY);
+        for (const pixel of ellipsePixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                const index = this.editor.getPixelIndex(pixel.x, pixel.y);
+                pixels[index] = drawValue;
+                alpha[index] = alphaValue;
+            }
+        }
+    }
+
+    drawLineToTempLayer(pixels, alpha, x1, y1, x2, y2, drawValue, alphaValue) {
+        const linePixels = this.getLinePixels(x1, y1, x2, y2);
+        for (const pixel of linePixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                const index = this.editor.getPixelIndex(pixel.x, pixel.y);
+                pixels[index] = drawValue;
+                alpha[index] = alphaValue;
+            }
+        }
+    }
+
+    renderTempLayerPreview(previewPixels, previewAlpha) {
+        const ctx = this.editor.ctx;
+        const zoom = this.editor.zoom;
+        
+        // Render preview pixels with slight transparency to show it's a preview
+        ctx.save();
+        ctx.globalAlpha = 0.7; // Make preview slightly transparent
+        
+        for (let y = 0; y < this.editor.height; y++) {
+            for (let x = 0; x < this.editor.width; x++) {
+                const index = this.editor.getPixelIndex(x, y);
+                if (previewAlpha[index] > 0) {
+                    // Draw pixel in preview color
+                    const pixelValue = previewPixels[index];
+                    if (this.editor.inverted) {
+                        ctx.fillStyle = pixelValue === 0 ? this.editor.backgroundColor : this.editor.drawColor;
+                    } else {
+                        ctx.fillStyle = pixelValue === 0 ? this.editor.drawColor : this.editor.backgroundColor;
+                    }
+                    ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
                 }
             }
         }
         
         ctx.restore();
     }
-    
+
+    /**
+     * Connect brush strokes to fill gaps during fast mouse movement
+     */
+    connectBrushStrokes(x1, y1, x2, y2) {
+        // Calculate the number of intermediate points needed for smooth connection
+        const distance = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        // Use smaller step size to ensure no gaps, especially for larger brushes
+        const stepSize = Math.max(0.5, this.brushSize * 0.3); 
+        const steps = Math.ceil(distance / stepSize);
+        
+        // Draw intermediate brush strokes to fill the gap
+        for (let i = 1; i < steps; i++) {
+            const t = i / steps;
+            const x = Math.round(x1 + (x2 - x1) * t);
+            const y = Math.round(y1 + (y2 - y1) * t);
+            this.drawWithBrush(x, y, this.currentDrawValue, 1);
+        }
+    }
+
+    // Simple dialog manager for About dialog
+    get dialogManager() {
+        return {
+            showDialog: (dialogId) => {
+                const dialog = document.getElementById(dialogId);
+                if (dialog) {
+                    dialog.style.display = 'flex';
+                }
+            }
+        };
+    }
+
+    setupAboutDialog() {
+        const dialog = document.getElementById('about-dialog');
+        const closeBtn = document.getElementById('about-close-btn');
+
+        if (!dialog || !closeBtn) {
+            return; // Elements not found
+        }
+
+        const closeDialog = () => {
+            dialog.style.display = 'none';
+        };
+
+        closeBtn.addEventListener('click', closeDialog);
+
+        // Close on backdrop click
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                closeDialog();
+            }
+        });
+    }
+
     drawFastLinePreview(x1, y1, x2, y2) {
         const ctx = this.editor.ctx;
         const zoom = this.editor.zoom;
@@ -4968,59 +5292,50 @@ class BitsDraw {
         const zoom = this.editor.zoom;
         const canvasSize = Math.max(this.editor.width, this.editor.height);
         
-        // Use pixel-perfect preview for small canvases (256x256 or less)
-        if (canvasSize <= 256) {
-            // Full redraw for pixel accuracy on small canvases
-            this.editor.redraw();
-            
-            // Draw selection overlay if exists
-            if (this.selection) {
-                this.drawSelectionOverlay();
-            }
-            
-            // Draw pixel-perfect rectangle preview
-            const rectPixels = this.getRectPixels(x1, y1, x2, y2);
-            
-            // Draw preview pixels as red semi-transparent overlay
-            ctx.save();
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
-            
-            for (const pixel of rectPixels) {
-                if (pixel.x >= 0 && pixel.x < this.editor.width && 
-                    pixel.y >= 0 && pixel.y < this.editor.height) {
-                    ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
-                }
-            }
-            
-            ctx.restore();
-        } else {
-            // Optimized preview for large canvases
+        // Always show pixel-perfect red feedback
+        // For large canvases, use optimized partial redraw instead of full redraw
+        if (canvasSize > 256) {
+            // Calculate minimal bounding box for the rectangle
             const minX = Math.min(x1, x2);
             const minY = Math.min(y1, y2);
             const maxX = Math.max(x1, x2);
             const maxY = Math.max(y1, y2);
             
-            // Quick redraw of just the affected area
-            this.editor.renderPartial({
-                x: minX - 1,
-                y: minY - 1,
-                width: maxX - minX + 3,
-                height: maxY - minY + 3
-            });
+            // Add padding for better visual feedback
+            const padding = Math.max(2, Math.ceil(zoom / 4));
             
-            // Draw simple rectangle preview
-            ctx.save();
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 2]);
-            ctx.strokeRect(
-                minX * zoom + 0.5, 
-                minY * zoom + 0.5, 
-                (maxX - minX + 1) * zoom - 1, 
-                (maxY - minY + 1) * zoom - 1
-            );
-            ctx.restore();
+            // Only redraw the rectangle area with padding
+            this.editor.renderPartial({
+                x: minX - padding,
+                y: minY - padding,
+                width: maxX - minX + padding * 2 + 1,
+                height: maxY - minY + padding * 2 + 1
+            });
+        } else {
+            // Full redraw for small canvases
+            this.editor.redraw();
         }
+        
+        // Draw selection overlay if exists
+        if (this.selection) {
+            this.drawSelectionOverlay();
+        }
+        
+        // Always draw pixel-perfect rectangle preview with red overlay
+        const rectPixels = this.getRectPixels(x1, y1, x2, y2);
+        
+        // Draw preview pixels as red semi-transparent overlay
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+        
+        for (const pixel of rectPixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+            }
+        }
+        
+        ctx.restore();
     }
 
     calculateEllipseParams(startX, startY, endX, endY, isShiftHeld, isAltHeld) {
@@ -5075,62 +5390,50 @@ class BitsDraw {
             startX, startY, endX, endY, this.shiftPressed, this.altPressed
         );
         
-        // Use pixel-perfect preview for small canvases (256x256 or less)
-        if (canvasSize <= 256) {
-            // Full redraw for pixel accuracy on small canvases
-            this.editor.redraw();
-            
-            // Draw selection overlay if exists
-            if (this.selection) {
-                this.drawSelectionOverlay();
-            }
-            
-            // Draw pixel-perfect ellipse preview
-            const ellipsePixels = this.getEllipsePixels(centerX, centerY, radiusX, radiusY);
-            
-            // Draw preview pixels as red semi-transparent overlay
-            ctx.save();
-            ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
-            
-            for (const pixel of ellipsePixels) {
-                if (pixel.x >= 0 && pixel.x < this.editor.width && 
-                    pixel.y >= 0 && pixel.y < this.editor.height) {
-                    ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
-                }
-            }
-            
-            ctx.restore();
-        } else {
-            // Optimized preview for large canvases
+        // Always show pixel-perfect red feedback
+        // For large canvases, use optimized partial redraw instead of full redraw
+        if (canvasSize > 256) {
+            // Calculate minimal bounding box for the ellipse
             const minX = Math.floor(centerX - radiusX) - 1;
             const minY = Math.floor(centerY - radiusY) - 1;
             const maxX = Math.ceil(centerX + radiusX) + 1;
             const maxY = Math.ceil(centerY + radiusY) + 1;
             
-            // Quick redraw of just the affected area
-            this.editor.renderPartial({
-                x: minX,
-                y: minY,
-                width: maxX - minX + 1,
-                height: maxY - minY + 1
-            });
+            // Add padding for better visual feedback
+            const padding = Math.max(2, Math.ceil(zoom / 4));
             
-            // Draw simple ellipse preview
-            ctx.save();
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 2]);
-            ctx.beginPath();
-            ctx.ellipse(
-                centerX * zoom + zoom/2, 
-                centerY * zoom + zoom/2, 
-                radiusX * zoom, 
-                radiusY * zoom, 
-                0, 0, 2 * Math.PI
-            );
-            ctx.stroke();
-            ctx.restore();
+            // Only redraw the ellipse area with padding
+            this.editor.renderPartial({
+                x: minX - padding,
+                y: minY - padding,
+                width: maxX - minX + padding * 2 + 1,
+                height: maxY - minY + padding * 2 + 1
+            });
+        } else {
+            // Full redraw for small canvases
+            this.editor.redraw();
         }
+        
+        // Draw selection overlay if exists
+        if (this.selection) {
+            this.drawSelectionOverlay();
+        }
+        
+        // Always draw pixel-perfect ellipse preview with red overlay
+        const ellipsePixels = this.getEllipsePixels(centerX, centerY, radiusX, radiusY);
+        
+        // Draw preview pixels as red semi-transparent overlay
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+        
+        for (const pixel of ellipsePixels) {
+            if (pixel.x >= 0 && pixel.x < this.editor.width && 
+                pixel.y >= 0 && pixel.y < this.editor.height) {
+                ctx.fillRect(pixel.x * zoom, pixel.y * zoom, zoom, zoom);
+            }
+        }
+        
+        ctx.restore();
     }
 
     clearShapePreview() {
@@ -5676,12 +5979,12 @@ class BitsDraw {
         });
     }
 
-    // Hand tool layer dragging methods
-    startLayerDrag(e) {
+    // Hand tool canvas panning methods
+    startCanvasPan(e) {
         if (this.currentTool !== 'hand') return;
         
-        this.isDraggingLayer = true;
-        this.layerDragStart = {
+        this.isPanningCanvas = true;
+        this.panStart = {
             x: e.clientX,
             y: e.clientY,
             canvasOffsetX: this.canvasOffset ? this.canvasOffset.x : 0,
@@ -5703,11 +6006,11 @@ class BitsDraw {
         e.preventDefault();
     }
 
-    updateLayerDrag(e) {
-        if (!this.isDraggingLayer || !this.layerDragStart) return;
+    updateCanvasPan(e) {
+        if (!this.isPanningCanvas || !this.panStart) return;
         
-        const deltaX = e.clientX - this.layerDragStart.x;
-        const deltaY = e.clientY - this.layerDragStart.y;
+        const deltaX = e.clientX - this.panStart.x;
+        const deltaY = e.clientY - this.panStart.y;
         
         // Initialize canvas offset if it doesn't exist
         if (!this.canvasOffset) {
@@ -5715,8 +6018,8 @@ class BitsDraw {
         }
         
         // Update canvas offset
-        this.canvasOffset.x = this.layerDragStart.canvasOffsetX + deltaX;
-        this.canvasOffset.y = this.layerDragStart.canvasOffsetY + deltaY;
+        this.canvasOffset.x = this.panStart.canvasOffsetX + deltaX;
+        this.canvasOffset.y = this.panStart.canvasOffsetY + deltaY;
         
         // Apply the transformation to the canvas
         this.canvas.style.transform = `translate(${this.canvasOffset.x}px, ${this.canvasOffset.y}px)`;
@@ -5727,11 +6030,11 @@ class BitsDraw {
         e.preventDefault();
     }
 
-    stopLayerDrag() {
-        if (!this.isDraggingLayer) return;
+    stopCanvasPan() {
+        if (!this.isPanningCanvas) return;
         
-        this.isDraggingLayer = false;
-        this.layerDragStart = null;
+        this.isPanningCanvas = false;
+        this.panStart = null;
         
         // Change cursor back to grab
         this.canvas.style.cursor = 'grab';
@@ -7632,24 +7935,39 @@ class BitsDraw {
         } else if (tool === 'text') {
             const currentFont = TextRenderer.getCurrentFont();
             const currentSize = TextRenderer.getCurrentSize();
-            const fontInfo = TextRenderer.fonts[currentFont];
             
             this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <label>Font:</label>
-                    <span class="text-tool-info">${fontInfo ? fontInfo.name : 'Unknown'} ${currentSize}×</span>
+                    <select id="text-font-select" title="Text Font">
+                        <option value="bitmap-5x7" ${currentFont === 'bitmap-5x7' ? 'selected' : ''}>5×7</option>
+                        <option value="bitmap-3x5" ${currentFont === 'bitmap-3x5' ? 'selected' : ''}>3×5</option>
+                        <option value="bitmap-7x9" ${currentFont === 'bitmap-7x9' ? 'selected' : ''}>7×9</option>
+                    </select>
                 </div>
                 <div class="option-group">
-                    <button type="button" id="text-config-btn" class="tool-option-btn">
-                        <i class="ph ph-gear"></i> Configure
-                    </button>
+                    <label>Size:</label>
+                    <select id="text-size-select" title="Text Size">
+                        <option value="1" ${currentSize === 1 ? 'selected' : ''}>1×</option>
+                        <option value="2" ${currentSize === 2 ? 'selected' : ''}>2×</option>
+                        <option value="3" ${currentSize === 3 ? 'selected' : ''}>3×</option>
+                        <option value="4" ${currentSize === 4 ? 'selected' : ''}>4×</option>
+                    </select>
                 </div>
             `;
             
-            const textConfigBtn = document.getElementById('text-config-btn');
-            if (textConfigBtn) {
-                textConfigBtn.addEventListener('click', () => {
-                    this.showTextConfigDialog();
+            const textFontSelect = document.getElementById('text-font-select');
+            const textSizeSelect = document.getElementById('text-size-select');
+            
+            if (textFontSelect) {
+                textFontSelect.addEventListener('change', (e) => {
+                    TextRenderer.setCurrentFont(e.target.value);
+                });
+            }
+            
+            if (textSizeSelect) {
+                textSizeSelect.addEventListener('change', (e) => {
+                    TextRenderer.setCurrentSize(parseInt(e.target.value));
                 });
             }
             
@@ -7719,10 +8037,20 @@ class BitsDraw {
             this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
                     <div class="number-input">
-                        <button type="button" id="blur-intensity-dec">−</button>
-                        <input type="number" id="blur-intensity-bar" min="1" max="5" value="${this.blurIntensity || 2}">
-                        <button type="button" id="blur-intensity-inc">+</button>
+                        <button type="button" id="blur-size-dec">−</button>
+                        <input type="number" id="blur-size-bar" min="1" max="10" value="${this.blurSize}">
+                        <button type="button" id="blur-size-inc">+</button>
                     </div>
+                </div>
+                <div class="option-group">
+                    <select id="blur-dither-method" title="Blur Algorithm">
+                        <option value="Bayer2x2" ${this.blurDitherMethod === 'Bayer2x2' ? 'selected' : ''}>Bayer 2×2</option>
+                        <option value="Bayer4x4" ${this.blurDitherMethod === 'Bayer4x4' ? 'selected' : ''}>Bayer 4×4</option>
+                        <option value="Bayer8x8" ${this.blurDitherMethod === 'Bayer8x8' ? 'selected' : ''}>Bayer 8×8</option>
+                        <option value="FloydSteinberg" ${this.blurDitherMethod === 'FloydSteinberg' ? 'selected' : ''}>Floyd-Steinberg</option>
+                        <option value="Atkinson" ${this.blurDitherMethod === 'Atkinson' ? 'selected' : ''}>Atkinson</option>
+                        <option value="Burkes" ${this.blurDitherMethod === 'Burkes' ? 'selected' : ''}>Burkes</option>
+                    </select>
                 </div>
                 <div class="option-group">
                     <button class="btn-toggle ${this.blurAlphaChannel ? 'active' : ''}" id="blur-alpha-channel">
@@ -7731,32 +8059,42 @@ class BitsDraw {
                 </div>
             `;
             
-            const blurIntensityBar = document.getElementById('blur-intensity-bar');
-            const blurIntensityInc = document.getElementById('blur-intensity-inc');
-            const blurIntensityDec = document.getElementById('blur-intensity-dec');
+            const blurSizeBar = document.getElementById('blur-size-bar');
+            const blurSizeInc = document.getElementById('blur-size-inc');
+            const blurSizeDec = document.getElementById('blur-size-dec');
+            const blurDitherMethod = document.getElementById('blur-dither-method');
             const blurAlphaChannelBar = document.getElementById('blur-alpha-channel');
             
-            if (blurIntensityBar) {
-                blurIntensityBar.addEventListener('input', (e) => {
-                    this.blurIntensity = parseInt(e.target.value);
+            if (blurSizeBar) {
+                blurSizeBar.addEventListener('input', (e) => {
+                    this.blurSize = parseInt(e.target.value);
+                    this.updateBrushCursorSize();
                 });
             }
             
-            if (blurIntensityInc) {
-                blurIntensityInc.addEventListener('click', () => {
-                    if (this.blurIntensity < 5) {
-                        this.blurIntensity++;
-                        blurIntensityBar.value = this.blurIntensity;
+            if (blurSizeInc) {
+                blurSizeInc.addEventListener('click', () => {
+                    if (this.blurSize < 10) {
+                        this.blurSize++;
+                        blurSizeBar.value = this.blurSize;
+                        this.updateBrushCursorSize();
                     }
                 });
             }
             
-            if (blurIntensityDec) {
-                blurIntensityDec.addEventListener('click', () => {
-                    if (this.blurIntensity > 1) {
-                        this.blurIntensity--;
-                        blurIntensityBar.value = this.blurIntensity;
+            if (blurSizeDec) {
+                blurSizeDec.addEventListener('click', () => {
+                    if (this.blurSize > 1) {
+                        this.blurSize--;
+                        blurSizeBar.value = this.blurSize;
+                        this.updateBrushCursorSize();
                     }
+                });
+            }
+            
+            if (blurDitherMethod) {
+                blurDitherMethod.addEventListener('change', (e) => {
+                    this.blurDitherMethod = e.target.value;
                 });
             }
             

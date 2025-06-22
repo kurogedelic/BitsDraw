@@ -145,16 +145,17 @@ class DitheringEffects {
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = false;
         
-        // Clear canvas
+        // Clear canvas with white background
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Draw pixels
+        // Draw pixels (BitsDraw format: 0=black, 1=white)
         ctx.fillStyle = '#000000';
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const idx = y * width + x;
-                if (pixelData[idx]) {
+                // Only draw black pixels (value 0 in BitsDraw format)
+                if (pixelData[idx] === 0) {
                     ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
                 }
             }

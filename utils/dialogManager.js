@@ -12,6 +12,15 @@ class DialogManager {
         this.setupCppExportDialog();
         this.setupCppImportDialog();
         this.setupImagePlacementDialog();
+        this.setupAboutDialog();
+    }
+
+    // Generic method to show any dialog
+    showDialog(dialogId) {
+        const dialog = document.getElementById(dialogId);
+        if (dialog) {
+            dialog.style.display = 'flex';
+        }
     }
 
     // ==== NEW CANVAS DIALOG ====
@@ -562,5 +571,24 @@ class DialogManager {
             resizeStartHeight: 0,
             resizeDirection: null
         };
+    }
+
+    // ==== ABOUT DIALOG ====
+    setupAboutDialog() {
+        const dialog = document.getElementById('about-dialog');
+        const closeBtn = document.getElementById('about-close-btn');
+
+        const closeDialog = () => {
+            dialog.style.display = 'none';
+        };
+
+        closeBtn.addEventListener('click', closeDialog);
+
+        // Close on backdrop click
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                closeDialog();
+            }
+        });
     }
 }

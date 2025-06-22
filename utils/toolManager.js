@@ -9,8 +9,8 @@ class ToolManager {
     }
 
     setupToolEvents() {
-        const tools = ['brush', 'pencil', 'bucket', 'select-rect', 'select-circle', 
-                      'line', 'text', 'rect', 'circle', 'spray'];
+        const tools = ['brush', 'pencil', 'eraser', 'bucket', 'select-rect', 'select-circle', 
+                      'move', 'line', 'text', 'rect', 'circle', 'spray', 'blur', 'guide', 'hand'];
         
         tools.forEach(tool => {
             const btn = document.getElementById(`${tool}-tool`);
@@ -69,6 +69,12 @@ class ToolManager {
     }
 
     setTool(tool) {
+        // Check if tool is disabled
+        if (tool === 'blur') {
+            this.app.showNotification('Blur tool is temporarily disabled for performance optimization', 'warning');
+            return; // Don't switch to blur tool
+        }
+
         this.app.currentTool = tool;
         
         // Update UI
@@ -84,8 +90,13 @@ class ToolManager {
         }
         
         // Update brush cursor visibility
-        if (tool === 'brush') {
+        if (tool === 'brush' || tool === 'pencil' || tool === 'eraser' || tool === 'blur' || tool === 'spray') {
             this.app.updateBrushCursorSize();
+            // Show cursor if mouse is over canvas
+            const canvas = document.getElementById('bitmap-canvas');
+            if (canvas && canvas.matches(':hover')) {
+                this.app.showBrushCursor();
+            }
         } else {
             this.app.hideBrushCursor();
         }

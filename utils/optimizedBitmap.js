@@ -78,6 +78,7 @@ class OptimizedBitmapEditor {
     }
 
     addLayer(name = 'Layer') {
+        this.saveState();  // Save state before adding layer
         const layer = {
             id: this.layerIdCounter++,
             name: name,
@@ -96,6 +97,7 @@ class OptimizedBitmapEditor {
     deleteLayer(index) {
         if (this.layers.length <= 1 || index < 0 || index >= this.layers.length) return false;
         
+        this.saveState();  // Save state before deleting layer
         this.layers.splice(index, 1);
         if (this.activeLayerIndex >= this.layers.length) {
             this.activeLayerIndex = this.layers.length - 1;
@@ -117,6 +119,7 @@ class OptimizedBitmapEditor {
 
     toggleLayerVisibility(index) {
         if (index >= 0 && index < this.layers.length) {
+            this.saveState();  // Save state before toggling visibility
             this.layers[index].visible = !this.layers[index].visible;
             this.markCompositeDirty();
             this.scheduleRender();
@@ -132,6 +135,8 @@ class OptimizedBitmapEditor {
             return false;
         }
 
+        this.saveState();  // Save state before swapping layers
+        
         // Swap the layers in the array
         const temp = this.layers[fromIndex];
         this.layers[fromIndex] = this.layers[toIndex];
@@ -543,70 +548,360 @@ class OptimizedBitmapEditor {
     }
 
     drawEllipse(centerX, centerY, radiusX, radiusY, filled = false, borderOnly = false, pattern = null, drawValue = null) {
-        const radiusXSquared = radiusX * radiusX;
-        const radiusYSquared = radiusY * radiusY;
-        const minX = Math.max(0, Math.floor(centerX - radiusX));
-        const maxX = Math.min(this.width - 1, Math.ceil(centerX + radiusX));
-        const minY = Math.max(0, Math.floor(centerY - radiusY));
-        const maxY = Math.min(this.height - 1, Math.ceil(centerY + radiusY));
+        // Use Bresenham-style algorithms for better circle/ellipse drawing
+        const pixels = [];
         
+        if (Math.abs(radiusX - radiusY) < 0.5) {
+            // Perfect circle - use Bresenham circle algorithm
+            const radius = Math.round((radiusX + radiusY) / 2);
+            this.drawBresenhamCircle(centerX, centerY, radius, filled, pattern, drawValue, pixels);
+        } else {
+            // Ellipse - use improved ellipse algorithm
+            this.drawBresenhamEllipse(centerX, centerY, radiusX, radiusY, filled, pattern, drawValue, pixels);
+        }
+        
+        // Apply pixels to the active layer
         const operation = (layer) => {
-            for (let y = minY; y <= maxY; y++) {
-                for (let x = minX; x <= maxX; x++) {
-                    const dx = x - centerX;
-                    const dy = y - centerY;
-                    
-                    // Ellipse equation: (x²/a²) + (y²/b²) = 1
-                    const ellipseValue = (dx * dx) / radiusXSquared + (dy * dy) / radiusYSquared;
-                    
-                    let shouldDraw = false;
-                    if (filled) {
-                        shouldDraw = ellipseValue <= 1.0;
-                    } else {
-                        // For border, check if pixel is on the edge of the ellipse
-                        const outerRadiusX = radiusX + 0.5;
-                        const outerRadiusY = radiusY + 0.5;
-                        const innerRadiusX = Math.max(0, radiusX - 0.5);
-                        const innerRadiusY = Math.max(0, radiusY - 0.5);
-                        
-                        const outerEllipse = (dx * dx) / (outerRadiusX * outerRadiusX) + (dy * dy) / (outerRadiusY * outerRadiusY);
-                        const innerEllipse = (dx * dx) / (innerRadiusX * innerRadiusX) + (dy * dy) / (innerRadiusY * innerRadiusY);
-                        
-                        shouldDraw = outerEllipse <= 1.0 && innerEllipse >= 1.0;
-                    }
-                    
-                    if (shouldDraw) {
-                        const index = this.getPixelIndex(x, y);
-                        // Set alpha=1 and draw value
-                        layer.alpha[index] = 1;
-                        if (pattern) {
-                            let patternValue;
-                            if (typeof pattern === 'object' && pattern.getValue) {
-                                // Color pattern object
-                                patternValue = pattern.getValue(x, y);
-                                layer.pixels[index] = patternValue.draw;
-                                layer.alpha[index] = patternValue.alpha;
-                            } else if (typeof Patterns !== 'undefined') {
-                                // String pattern name - use drawValue as color guide
-                                const primary = drawValue !== null ? drawValue : 0; // Use as-is: 0=black, 1=white
-                                const secondary = drawValue !== null ? (1 - drawValue) : 1; // Invert: 0→1, 1→0
-                                patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
-                                layer.pixels[index] = patternValue.draw;
-                                layer.alpha[index] = patternValue.alpha;
-                            }
-                        } else if (drawValue !== null) {
-                            // Use explicit drawValue (no pattern)
-                            layer.pixels[index] = drawValue;
-                        } else {
-                            layer.pixels[index] = 1;
-                        }
-                    }
+            pixels.forEach(({x, y, value, alpha}) => {
+                if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+                    const index = this.getPixelIndex(x, y);
+                    layer.pixels[index] = value;
+                    layer.alpha[index] = alpha;
                 }
-            }
+            });
         };
         
         this.batchPixelOperation(operation);
-        this.addDirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        
+        // Calculate dirty rectangle bounds
+        if (pixels.length > 0) {
+            const minX = Math.min(...pixels.map(p => p.x));
+            const maxX = Math.max(...pixels.map(p => p.x));
+            const minY = Math.min(...pixels.map(p => p.y));
+            const maxY = Math.max(...pixels.map(p => p.y));
+            this.addDirtyRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        }
+        
+        return pixels; // Return for undo system
+    }
+
+    drawBresenhamCircle(centerX, centerY, radius, filled, pattern, drawValue, pixels) {
+        const cx = Math.round(centerX);
+        const cy = Math.round(centerY);
+        const r = Math.round(radius);
+        
+        if (filled) {
+            // Filled circle using scanline approach
+            this.drawFilledCircle(cx, cy, r, pattern, drawValue, pixels);
+        } else {
+            // Circle outline using Bresenham algorithm
+            this.drawCircleOutline(cx, cy, r, pattern, drawValue, pixels);
+        }
+    }
+
+    drawCircleOutline(cx, cy, radius, pattern, drawValue, pixels) {
+        let x = 0;
+        let y = radius;
+        let d = 3 - 2 * radius;
+        
+        // Add initial points
+        this.addCirclePoints(cx, cy, x, y, pattern, drawValue, pixels);
+        
+        while (y >= x) {
+            x++;
+            
+            if (d > 0) {
+                y--;
+                d = d + 4 * (x - y) + 10;
+            } else {
+                d = d + 4 * x + 6;
+            }
+            
+            this.addCirclePoints(cx, cy, x, y, pattern, drawValue, pixels);
+        }
+        
+        // Arc completion - fill any gaps by checking adjacent pixels
+        this.completeCircleArcs(cx, cy, radius, pixels, pattern, drawValue);
+    }
+
+    addCirclePoints(cx, cy, x, y, pattern, drawValue, pixels) {
+        const points = [
+            {x: cx + x, y: cy + y},
+            {x: cx - x, y: cy + y},
+            {x: cx + x, y: cy - y},
+            {x: cx - x, y: cy - y},
+            {x: cx + y, y: cy + x},
+            {x: cx - y, y: cy + x},
+            {x: cx + y, y: cy - x},
+            {x: cx - y, y: cy - x}
+        ];
+        
+        // Remove duplicates for axes points
+        const uniquePoints = [];
+        const seen = new Set();
+        
+        for (const point of points) {
+            const key = `${point.x},${point.y}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniquePoints.push(point);
+            }
+        }
+        
+        uniquePoints.forEach(point => {
+            const pixelData = this.getPixelData(point.x, point.y, pattern, drawValue);
+            pixels.push({
+                x: point.x,
+                y: point.y,
+                value: pixelData.value,
+                alpha: pixelData.alpha
+            });
+        });
+    }
+
+    drawFilledCircle(cx, cy, radius, pattern, drawValue, pixels) {
+        // Use scanline approach for filled circles
+        for (let y = -radius; y <= radius; y++) {
+            const width = Math.floor(Math.sqrt(radius * radius - y * y));
+            for (let x = -width; x <= width; x++) {
+                const pixelData = this.getPixelData(cx + x, cy + y, pattern, drawValue);
+                pixels.push({
+                    x: cx + x,
+                    y: cy + y,
+                    value: pixelData.value,
+                    alpha: pixelData.alpha
+                });
+            }
+        }
+    }
+
+    drawBresenhamEllipse(centerX, centerY, radiusX, radiusY, filled, pattern, drawValue, pixels) {
+        const cx = Math.round(centerX);
+        const cy = Math.round(centerY);
+        const rx = Math.round(radiusX);
+        const ry = Math.round(radiusY);
+        
+        if (filled) {
+            this.drawFilledEllipse(cx, cy, rx, ry, pattern, drawValue, pixels);
+        } else {
+            this.drawEllipseOutline(cx, cy, rx, ry, pattern, drawValue, pixels);
+        }
+    }
+
+    drawEllipseOutline(cx, cy, rx, ry, pattern, drawValue, pixels) {
+        let x = 0;
+        let y = ry;
+        let rx2 = rx * rx;
+        let ry2 = ry * ry;
+        let twoRx2 = 2 * rx2;
+        let twoRy2 = 2 * ry2;
+        let p;
+        let px = 0;
+        let py = twoRx2 * y;
+        
+        // Add initial points
+        this.addEllipsePoints(cx, cy, x, y, pattern, drawValue, pixels);
+        
+        // Region 1
+        p = Math.round(ry2 - (rx2 * ry) + (0.25 * rx2));
+        while (px < py) {
+            x++;
+            px += twoRy2;
+            if (p < 0) {
+                p += ry2 + px;
+            } else {
+                y--;
+                py -= twoRx2;
+                p += ry2 + px - py;
+            }
+            this.addEllipsePoints(cx, cy, x, y, pattern, drawValue, pixels);
+        }
+        
+        // Region 2
+        p = Math.round(ry2 * (x + 0.5) * (x + 0.5) + rx2 * (y - 1) * (y - 1) - rx2 * ry2);
+        while (y > 0) {
+            y--;
+            py -= twoRx2;
+            if (p > 0) {
+                p += rx2 - py;
+            } else {
+                x++;
+                px += twoRy2;
+                p += rx2 - py + px;
+            }
+            this.addEllipsePoints(cx, cy, x, y, pattern, drawValue, pixels);
+        }
+        
+        // Complete any gaps in the ellipse
+        this.completeEllipseArcs(cx, cy, rx, ry, pixels, pattern, drawValue);
+    }
+
+    addEllipsePoints(cx, cy, x, y, pattern, drawValue, pixels) {
+        const points = [
+            {x: cx + x, y: cy + y},
+            {x: cx - x, y: cy + y},
+            {x: cx + x, y: cy - y},
+            {x: cx - x, y: cy - y}
+        ];
+        
+        // Remove duplicates
+        const uniquePoints = [];
+        const seen = new Set();
+        
+        for (const point of points) {
+            const key = `${point.x},${point.y}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniquePoints.push(point);
+            }
+        }
+        
+        uniquePoints.forEach(point => {
+            const pixelData = this.getPixelData(point.x, point.y, pattern, drawValue);
+            pixels.push({
+                x: point.x,
+                y: point.y,
+                value: pixelData.value,
+                alpha: pixelData.alpha
+            });
+        });
+    }
+
+    drawFilledEllipse(cx, cy, rx, ry, pattern, drawValue, pixels) {
+        for (let y = -ry; y <= ry; y++) {
+            const width = Math.floor(rx * Math.sqrt(1 - (y * y) / (ry * ry)));
+            for (let x = -width; x <= width; x++) {
+                const pixelData = this.getPixelData(cx + x, cy + y, pattern, drawValue);
+                pixels.push({
+                    x: cx + x,
+                    y: cy + y,
+                    value: pixelData.value,
+                    alpha: pixelData.alpha
+                });
+            }
+        }
+    }
+
+    completeCircleArcs(cx, cy, radius, pixels, pattern = null, drawValue = 0) {
+        // Find and fill gaps in circle arcs
+        const pixelMap = new Set();
+        pixels.forEach(p => pixelMap.add(`${p.x},${p.y}`));
+        
+        // Check for missing pixels by following the expected circle path
+        const completionPixels = [];
+        const angleStep = Math.PI / (8 * radius); // Higher resolution for gap detection
+        
+        for (let angle = 0; angle < 2 * Math.PI; angle += angleStep) {
+            const x = Math.round(cx + radius * Math.cos(angle));
+            const y = Math.round(cy + radius * Math.sin(angle));
+            const key = `${x},${y}`;
+            
+            if (!pixelMap.has(key)) {
+                // Check if this is a legitimate gap (has neighbors)
+                if (this.hasCircleNeighbors(x, y, cx, cy, radius, pixelMap)) {
+                    const pixelData = this.getPixelData(x, y, pattern, drawValue); // Use correct drawValue
+                    completionPixels.push({
+                        x: x,
+                        y: y,
+                        value: pixelData.value,
+                        alpha: pixelData.alpha
+                    });
+                    pixelMap.add(key);
+                }
+            }
+        }
+        
+        // Add completion pixels to the main array
+        pixels.push(...completionPixels);
+    }
+
+    completeEllipseArcs(cx, cy, rx, ry, pixels, pattern = null, drawValue = 0) {
+        // Similar to circle completion but for ellipses
+        const pixelMap = new Set();
+        pixels.forEach(p => pixelMap.add(`${p.x},${p.y}`));
+        
+        const completionPixels = [];
+        const angleStep = Math.PI / (4 * Math.max(rx, ry));
+        
+        for (let angle = 0; angle < 2 * Math.PI; angle += angleStep) {
+            const x = Math.round(cx + rx * Math.cos(angle));
+            const y = Math.round(cy + ry * Math.sin(angle));
+            const key = `${x},${y}`;
+            
+            if (!pixelMap.has(key)) {
+                if (this.hasEllipseNeighbors(x, y, cx, cy, rx, ry, pixelMap)) {
+                    const pixelData = this.getPixelData(x, y, pattern, drawValue);
+                    completionPixels.push({
+                        x: x,
+                        y: y,
+                        value: pixelData.value,
+                        alpha: pixelData.alpha
+                    });
+                    pixelMap.add(key);
+                }
+            }
+        }
+        
+        pixels.push(...completionPixels);
+    }
+
+    hasCircleNeighbors(x, y, cx, cy, radius, pixelMap) {
+        // Check if this pixel has neighbors on the circle arc
+        const neighbors = [
+            {x: x-1, y: y}, {x: x+1, y: y},
+            {x: x, y: y-1}, {x: x, y: y+1},
+            {x: x-1, y: y-1}, {x: x+1, y: y-1},
+            {x: x-1, y: y+1}, {x: x+1, y: y+1}
+        ];
+        
+        let neighborCount = 0;
+        for (const neighbor of neighbors) {
+            if (pixelMap.has(`${neighbor.x},${neighbor.y}`)) {
+                neighborCount++;
+            }
+        }
+        
+        return neighborCount >= 2; // At least 2 neighbors for a valid gap
+    }
+
+    hasEllipseNeighbors(x, y, cx, cy, rx, ry, pixelMap) {
+        // Similar neighbor check for ellipses
+        const neighbors = [
+            {x: x-1, y: y}, {x: x+1, y: y},
+            {x: x, y: y-1}, {x: x, y: y+1},
+            {x: x-1, y: y-1}, {x: x+1, y: y-1},
+            {x: x-1, y: y+1}, {x: x+1, y: y+1}
+        ];
+        
+        let neighborCount = 0;
+        for (const neighbor of neighbors) {
+            if (pixelMap.has(`${neighbor.x},${neighbor.y}`)) {
+                neighborCount++;
+            }
+        }
+        
+        return neighborCount >= 2;
+    }
+
+    getPixelData(x, y, pattern, drawValue) {
+        let value = drawValue !== null ? drawValue : 0;
+        let alpha = 1;
+        
+        if (pattern) {
+            if (typeof pattern === 'object' && pattern.getValue) {
+                const patternValue = pattern.getValue(x, y);
+                value = patternValue.draw;
+                alpha = patternValue.alpha;
+            } else if (typeof Patterns !== 'undefined') {
+                const primary = drawValue !== null ? drawValue : 0;
+                const secondary = drawValue !== null ? (1 - drawValue) : 1;
+                const patternValue = Patterns.applyPattern(pattern, x, y, primary, secondary);
+                value = patternValue.draw;
+                alpha = patternValue.alpha;
+            }
+        }
+        
+        return { value, alpha };
     }
 
     // ===== LAYER COMPOSITING =====
@@ -850,6 +1145,7 @@ class OptimizedBitmapEditor {
     clear() {
         const activeLayer = this.getActiveLayer();
         if (activeLayer) {
+            this.saveState();  // Save state before clearing
             activeLayer.pixels.fill(0);
             this.markCompositeDirty();
             this.addDirtyRect(0, 0, this.width, this.height);
@@ -953,11 +1249,14 @@ class OptimizedBitmapEditor {
     // ===== HISTORY MANAGEMENT =====
     
     saveState() {
-        const state = this.layers.map(layer => ({
-            ...layer,
-            pixels: new Uint8Array(layer.pixels),
-            alpha: new Uint8Array(layer.alpha)
-        }));
+        const state = {
+            layers: this.layers.map(layer => ({
+                ...layer,
+                pixels: new Uint8Array(layer.pixels),
+                alpha: new Uint8Array(layer.alpha)
+            })),
+            activeLayerIndex: this.activeLayerIndex  // Include active layer index
+        };
         
         if (this.historyIndex < this.history.length - 1) {
             this.history = this.history.slice(0, this.historyIndex + 1);
@@ -992,11 +1291,24 @@ class OptimizedBitmapEditor {
     }
 
     restoreState(state) {
-        this.layers = state.map(layer => ({
-            ...layer,
-            pixels: new Uint8Array(layer.pixels),
-            alpha: new Uint8Array(layer.alpha || this.createEmptyAlpha())
-        }));
+        // Handle both old format (array) and new format (object with layers + activeLayerIndex)
+        if (Array.isArray(state)) {
+            // Legacy format - state is just the layers array
+            this.layers = state.map(layer => ({
+                ...layer,
+                pixels: new Uint8Array(layer.pixels),
+                alpha: new Uint8Array(layer.alpha || this.createEmptyAlpha())
+            }));
+        } else {
+            // New format - state contains layers and activeLayerIndex
+            this.layers = state.layers.map(layer => ({
+                ...layer,
+                pixels: new Uint8Array(layer.pixels),
+                alpha: new Uint8Array(layer.alpha || this.createEmptyAlpha())
+            }));
+            this.activeLayerIndex = state.activeLayerIndex;
+        }
+        
         this.markCompositeDirty();
         this.addDirtyRect(0, 0, this.width, this.height);
         this.scheduleRender();

@@ -350,6 +350,33 @@ When making changes, verify functionality with:
 - `index.html` - Text configuration dialog structure and modal elements
 - `style.css` - Comprehensive modal design system and modern component styling
 
+### v1.0.5 Pixel-Perfect Shape Tool Feedback & UI Modernization
+
+**Enhanced Shape Tool Preview System:**
+- **Zoom-Aware Pixel-Perfect Feedback**: Rectangle, circle, and line tools now use pixel-perfect preview when zoomed in (≥4x zoom)
+- **Performance Optimization**: Automatic fallback to fast preview mode for large canvases when zoomed out to maintain responsiveness
+- **Intelligent Threshold Logic**: Enhanced `shouldUsePixelPerfectPreview()` method considers canvas size and zoom level for optimal user experience
+- **Visual Accuracy**: Red semi-transparent overlay shows exact pixel placement during shape drawing operations
+
+**Modern Modal About Dialog:**
+- **Modal Interface**: Converted About BitsDraw from draggable window to modern modal dialog
+- **Support Integration**: Added "Buy me a coffee" link with stylish button design and hover animations
+- **Enhanced Content**: Added application description and organized sections with proper spacing
+- **Theme Consistency**: Full integration with existing dark/light theme system using CSS variables
+
+**Technical Implementation:**
+- **Preview System**: Updated `drawRectPreview()` and `drawCirclePreview()` methods to use zoom-aware logic
+- **Dialog Management**: Enhanced `DialogManager` class with generic `showDialog()` method and About dialog setup
+- **CSS Enhancements**: Added coffee link styling with Buy Me a Coffee brand colors and smooth transitions
+- **Event Handling**: Proper modal close behavior with backdrop clicks and close button interactions
+
+**Files Enhanced:**
+- `main.js` - Enhanced shape preview methods with zoom-aware pixel-perfect rendering
+- `index.html` - Converted About window to modal dialog with Buy Me a Coffee integration
+- `utils/dialogManager.js` - Added About dialog management and generic showDialog method
+- `utils/menuManager.js` - Updated menu handler to show About modal instead of window
+- `style.css` - Added coffee link styling and enhanced about section theme integration
+
 ### Previous Major Features
 
 ### PNG Reading Optimization
