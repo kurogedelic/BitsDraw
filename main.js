@@ -5608,65 +5608,14 @@ class BitsDraw {
 
 
     exportPNG() {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const bitmapData = this.editor.getBitmapData();
+        // Use the new unified export system with enhanced options
+        const options = {
+            scale: 4, // 4x scale for better visibility
+            fillColor: this.displayModes[this.currentDisplayMode].draw_color,
+            backgroundColor: this.displayModes[this.currentDisplayMode].background_color
+        };
         
-        canvas.width = this.editor.width;
-        canvas.height = this.editor.height;
-        
-        // Create ImageData for pixel-perfect alpha support
-        const imageData = ctx.createImageData(this.editor.width, this.editor.height);
-        const data = imageData.data;
-        
-        // Get current display mode colors
-        const colors = this.displayModes[this.currentDisplayMode];
-        const drawColor = this.hexToRgb(colors.draw_color);
-        const backgroundColor = this.hexToRgb(colors.background_color);
-        
-        // Set pixels with proper alpha channel support
-        for (let y = 0; y < this.editor.height; y++) {
-            for (let x = 0; x < this.editor.width; x++) {
-                const pixelValue = bitmapData.pixels[y][x];
-                const alphaValue = bitmapData.alpha[y][x];
-                const index = (y * this.editor.width + x) * 4;
-                
-                if (alphaValue === 0) {
-                    // Transparent pixel - set alpha to 0 for PNG transparency
-                    data[index] = 0;       // R
-                    data[index + 1] = 0;   // G
-                    data[index + 2] = 0;   // B
-                    data[index + 3] = 0;   // A (transparent)
-                } else {
-                    // Opaque pixel - apply display mode colors
-                    const displayValue = this.editor.inverted ? (1 - pixelValue) : pixelValue;
-                    const color = displayValue ? drawColor : backgroundColor;
-                    
-                    data[index] = color.r;     // R
-                    data[index + 1] = color.g; // G
-                    data[index + 2] = color.b; // B
-                    data[index + 3] = 255;     // A (opaque)
-                }
-            }
-        }
-        
-        // Put the image data on the canvas
-        ctx.putImageData(imageData, 0, 0);
-        
-        // Download the PNG
-        canvas.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const projectNameElement = document.getElementById('project-name');
-            const projectName = projectNameElement ? projectNameElement.value || 'my_bitmap' : 'my_bitmap';
-            a.href = url;
-            a.download = `${projectName}.png`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            this.showNotification('PNG exported successfully!', 'success');
-        }, 'image/png');
+        return this.exportToFormat('png', options);
     }
 
     /**
