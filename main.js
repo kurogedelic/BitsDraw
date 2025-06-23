@@ -8570,11 +8570,21 @@ class BitsDraw {
      */
     async exportToFormat(format = 'png', options = {}) {
         try {
-            const projectName = this.projectManager?.getCurrentProject()?.meta?.name || 'bitmap';
+            // Get project name from multiple sources
+            let projectName = 'bitmap';
+            if (this.projectManager?.getCurrentProject()?.meta?.name) {
+                projectName = this.projectManager.getCurrentProject().meta.name;
+            } else {
+                const projectNameElement = document.getElementById('project-name');
+                if (projectNameElement && projectNameElement.value) {
+                    projectName = projectNameElement.value;
+                }
+            }
+            const editorBitmapData = this.editor.getBitmapData();
             const bitmapData = {
                 width: this.editor.width,
                 height: this.editor.height,
-                pixels: this.editor.getBitmapData()
+                pixels: editorBitmapData.pixels || editorBitmapData // Handle both formats
             };
 
             this.showNotification(`Exporting to ${format.toUpperCase()}...`, 'info');
