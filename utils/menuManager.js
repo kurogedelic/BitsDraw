@@ -181,6 +181,27 @@ class MenuManager {
             case 'export-sprite-sheet':
                 this.app.exportSpriteSheet();
                 break;
+            case 'export-svg':
+                this.app.exportSVG();
+                break;
+            case 'export-webp':
+                this.app.exportWebP();
+                break;
+            case 'export-json':
+                this.app.exportJSON();
+                break;
+            case 'export-ascii':
+                this.app.exportASCII();
+                break;
+            case 'export-css':
+                this.app.exportCSS();
+                break;
+            case 'export-raw':
+                this.app.exportRawBinary();
+                break;
+            case 'export-formats':
+                this.app.showExportDialog();
+                break;
             case 'import-image':
                 document.getElementById('file-input').click();
                 break;

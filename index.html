@@ -163,7 +163,6 @@
 		<!-- Menus -->
 
 		<div class="menu-dropdown" id="menu-file">
-			<!-- Project management temporarily disabled
 			<div class="menu-dropdown-item" data-action="new">
 				<i class="ph ph-file-plus"></i>
 				<span>New Project...</span>
@@ -174,15 +173,11 @@
 				<span>Open Project...</span>
 				<span class="menu-shortcut">⌃O</span>
 			</div>
-			-->
-			<!-- Recent Projects temporarily disabled
 			<div class="menu-dropdown-item" data-action="recent-projects">
 				<i class="ph ph-clock-clockwise"></i>
 				<span>Recent Projects...</span>
 			</div>
-			-->
 			<div class="menu-divider"></div>
-			<!-- Project save/export temporarily disabled
 			<div class="menu-dropdown-item" data-action="save">
 				<i class="ph ph-floppy-disk"></i>
 				<span>Save Project</span>
@@ -196,7 +191,6 @@
 				<i class="ph ph-export"></i>
 				<span>Export Project (.bdp)</span>
 			</div>
-			-->
 			<div class="menu-divider"></div>
 			<div class="menu-dropdown-item has-submenu" data-action="import">
 				<i class="ph ph-download"></i>
@@ -219,16 +213,56 @@
 				<span class="menu-arrow">▶</span>
 			</div>
 			<div class="menu-submenu" id="submenu-export">
+				<!-- Hardware Formats -->
 				<div class="menu-dropdown-item" data-action="export-cpp">
 					<i class="ph ph-file-code"></i>
 					<span>CPP header file (u8g2)</span>
 					<span class="menu-shortcut">⌃E</span>
 				</div>
+				<div class="menu-divider"></div>
+				
+				<!-- Image Formats -->
 				<div class="menu-dropdown-item" data-action="export-png">
 					<i class="ph ph-image"></i>
-					<span>PNG</span>
+					<span>PNG Image</span>
+				</div>
+				<div class="menu-dropdown-item" data-action="export-webp">
+					<i class="ph ph-image"></i>
+					<span>WebP Image</span>
+				</div>
+				<div class="menu-dropdown-item" data-action="export-svg">
+					<i class="ph ph-vector-three"></i>
+					<span>SVG Vector</span>
 				</div>
 				<div class="menu-divider"></div>
+				
+				<!-- Data Formats -->
+				<div class="menu-dropdown-item" data-action="export-json">
+					<i class="ph ph-brackets-curly"></i>
+					<span>JSON Data</span>
+				</div>
+				<div class="menu-dropdown-item" data-action="export-raw">
+					<i class="ph ph-file-binary"></i>
+					<span>Raw Binary</span>
+				</div>
+				<div class="menu-divider"></div>
+				
+				<!-- Text Formats -->
+				<div class="menu-dropdown-item" data-action="export-ascii">
+					<i class="ph ph-text-aa"></i>
+					<span>ASCII Art</span>
+				</div>
+				<div class="menu-dropdown-item" data-action="export-css">
+					<i class="ph ph-file-css"></i>
+					<span>CSS File</span>
+				</div>
+				<div class="menu-divider"></div>
+				
+				<!-- All Formats -->
+				<div class="menu-dropdown-item" data-action="export-formats">
+					<i class="ph ph-list"></i>
+					<span>All Formats...</span>
+				</div>
 			</div>
 		</div>
 
@@ -1001,7 +1035,7 @@
 		<input
 			type="file"
 			id="file-input"
-			accept="image/*"
+			accept=".png,.jpg,.jpeg,.gif,.webp,.avif,.bmp,.ico,.tiff,.tif,.svg,image/*"
 			style="
 				position: absolute;
 				left: -9999px;

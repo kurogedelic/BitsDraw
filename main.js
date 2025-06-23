@@ -268,6 +268,9 @@ class BitsDraw {
         // Initialize canvas view
         this.setupCanvasControls();
         this.setupSheetsPanel();
+        
+        // Initialize project management system
+        this.setupProjectManagement();
     }
 
     initializeEventListeners() {
@@ -4175,17 +4178,21 @@ class BitsDraw {
         
         if (!ImageImporter.isValidImageFile(file)) {
             console.log('Invalid file type:', file.type);
-            this.showNotification('Please select a valid image file (PNG, JPG, GIF)', 'error');
+            const formatInfo = ImageImporter.getFileFormatInfo(file);
+            const supportedFormats = Object.values(ImageImporter.getSupportedFormats()).map(f => f.name).join(', ');
+            this.showNotification(`Unsupported format: ${formatInfo?.name || 'Unknown'}\nSupported formats: ${supportedFormats}`, 'error');
             return;
         }
 
         try {
             console.log('Loading image for placement...');
-            this.showNotification('Loading image...', 'info');
+            const formatInfo = ImageImporter.getFileFormatInfo(file);
+            this.showNotification(`Loading ${formatInfo.name} image (${formatInfo.fileSizeFormatted})...`, 'info');
             
             // Load the image and preserve original dimensions
             const imageData = await ImageImporter.loadImage(file);
             console.log('Image loaded:', imageData.width, 'x', imageData.height);
+            this.showNotification(`Loaded ${formatInfo.name}: ${imageData.width}×${imageData.height} pixels`, 'success');
             
             // Check if imagePlacementDialog exists
             if (!this.imagePlacementDialog) {
@@ -8488,6 +8495,301 @@ class BitsDraw {
         const ditheredAlpha = dithering.ditherLayer(alphaLayer, 1.0, method);
         
         return ditheredAlpha;
+    }
+
+    // ========================================
+    // Project Management System
+    // ========================================
+
+    /**
+     * Initialize project management system
+     */
+    setupProjectManagement() {
+        try {
+            // Initialize ProjectManager with unitManager and legacyAdapter
+            this.projectManager = new ProjectManager(this.unitManager, this.legacyAdapter);
+            
+            // Initialize ProjectDialog
+            this.projectDialog = new ProjectDialog(this.projectManager);
+            
+            DEBUG.log('Project management system initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize project management system:', error);
+            this.projectManager = null;
+            this.projectDialog = null;
+        }
+    }
+
+    /**
+     * Show new project dialog
+     */
+    showNewProjectDialog() {
+        if (this.projectDialog) {
+            this.projectDialog.show('new');
+        } else {
+            console.warn('Project dialog not available');
+        }
+    }
+
+    /**
+     * Show open project dialog
+     */
+    showOpenProjectDialog() {
+        if (this.projectDialog) {
+            this.projectDialog.show('import');
+        } else {
+            console.warn('Project dialog not available');
+        }
+    }
+
+    /**
+     * Show recent projects dialog
+     */
+    showRecentProjectsDialog() {
+        if (this.projectDialog) {
+            this.projectDialog.show('recent');
+        } else {
+            console.warn('Project dialog not available');
+        }
+    }
+
+    /**
+     * Save current project (.bdp format)
+     */
+    async saveProject() {
+        if (!this.projectManager) {
+            console.warn('Project manager not available');
+            return false;
+        }
+
+        try {
+            const success = await this.projectManager.exportProject();
+            if (success) {
+                this.showNotification('Project saved successfully', 'success');
+            } else {
+                this.showNotification('Failed to save project', 'error');
+            }
+            return success;
+        } catch (error) {
+            console.error('Error saving project:', error);
+            this.showNotification('Error saving project', 'error');
+            return false;
+        }
+    }
+
+    /**
+     * Save project with custom filename
+     */
+    async saveProjectAs() {
+        if (!this.projectManager) {
+            console.warn('Project manager not available');
+            return false;
+        }
+
+        try {
+            const projectName = prompt('Enter project name:', this.projectManager.getCurrentProject()?.meta?.name || 'My Project');
+            if (!projectName) return false;
+
+            const filename = `${projectName.replace(/[^a-z0-9]/gi, '_')}.bdp`;
+            const success = await this.projectManager.exportProject(filename);
+            
+            if (success) {
+                this.showNotification(`Project saved as ${filename}`, 'success');
+            } else {
+                this.showNotification('Failed to save project', 'error');
+            }
+            return success;
+        } catch (error) {
+            console.error('Error saving project as:', error);
+            this.showNotification('Error saving project', 'error');
+            return false;
+        }
+    }
+
+    /**
+     * Export project (.bdp format)
+     */
+    async exportProject() {
+        return await this.saveProject();
+    }
+
+    /**
+     * Enhanced export functionality with multiple formats
+     */
+    async exportToFormat(format = 'png', options = {}) {
+        try {
+            const projectName = this.projectManager?.getCurrentProject()?.meta?.name || 'bitmap';
+            const bitmapData = {
+                width: this.editor.width,
+                height: this.editor.height,
+                pixels: this.editor.getBitmapData()
+            };
+
+            this.showNotification(`Exporting to ${format.toUpperCase()}...`, 'info');
+
+            const exportData = await BitmapExporter.exportBitmap(bitmapData, format, projectName, options);
+            const filename = projectName.replace(/[^a-z0-9]/gi, '_');
+            
+            BitmapExporter.downloadExport(exportData, filename, format);
+            
+            this.showNotification(`${format.toUpperCase()} export completed successfully!`, 'success');
+            return true;
+
+        } catch (error) {
+            console.error('Export failed:', error);
+            this.showNotification(`Export failed: ${error.message}`, 'error');
+            return false;
+        }
+    }
+
+    /**
+     * Export to SVG with options dialog
+     */
+    async exportSVG(options = {}) {
+        const defaultOptions = {
+            pixelSize: 4,
+            fillColor: '#000000',
+            backgroundColor: '#FFFFFF',
+            optimize: true
+        };
+        return await this.exportToFormat('svg', { ...defaultOptions, ...options });
+    }
+
+    /**
+     * Export to WebP format
+     */
+    async exportWebP(options = {}) {
+        const defaultOptions = {
+            scale: 4,
+            fillColor: '#000000',
+            backgroundColor: '#FFFFFF'
+        };
+        return await this.exportToFormat('webp', { ...defaultOptions, ...options });
+    }
+
+    /**
+     * Export to JSON format
+     */
+    async exportJSON(options = {}) {
+        const defaultOptions = {
+            format: 'array',
+            includeMetadata: true
+        };
+        return await this.exportToFormat('json', { ...defaultOptions, ...options });
+    }
+
+    /**
+     * Export to ASCII Art
+     */
+    async exportASCII(options = {}) {
+        const defaultOptions = {
+            charSet: '██',
+            emptyChar: '  ',
+            lineNumbers: false,
+            border: true
+        };
+        return await this.exportToFormat('ascii', { ...defaultOptions, ...options });
+    }
+
+    /**
+     * Export to CSS format
+     */
+    async exportCSS(options = {}) {
+        const defaultOptions = {
+            format: 'dataurl',
+            pixelSize: '1px',
+            scale: 2
+        };
+        return await this.exportToFormat('css', { ...defaultOptions, ...options });
+    }
+
+    /**
+     * Export to Raw Binary format
+     */
+    async exportRawBinary(options = {}) {
+        const defaultOptions = {
+            format: 'bits',
+            packed: true
+        };
+        return await this.exportToFormat('raw', { ...defaultOptions, ...options });
+    }
+
+    /**
+     * Show export format selection dialog
+     */
+    showExportDialog() {
+        // Create a simple export format selection dialog
+        const formats = BitmapExporter.getExportFormats();
+        const formatList = Object.entries(formats)
+            .map(([key, info]) => `${key}: ${info.name} - ${info.description}`)
+            .join('\n');
+
+        const selectedFormat = prompt(
+            `Select export format:\n\n${formatList}\n\nEnter format code:`,
+            'svg'
+        );
+
+        if (selectedFormat && formats[selectedFormat]) {
+            this.exportToFormat(selectedFormat);
+        } else if (selectedFormat) {
+            this.showNotification('Invalid format selected', 'error');
+        }
+    }
+
+    /**
+     * Show notification to user
+     */
+    showNotification(message, type = 'info') {
+        // Create or update notification element
+        let notification = document.getElementById('app-notification');
+        if (!notification) {
+            notification = document.createElement('div');
+            notification.id = 'app-notification';
+            notification.style.cssText = `
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 6px;
+                color: white;
+                font-size: 14px;
+                font-weight: 500;
+                z-index: 10000;
+                max-width: 400px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                transition: all 0.3s ease;
+                transform: translateX(100%);
+                opacity: 0;
+            `;
+            document.body.appendChild(notification);
+        }
+
+        // Set notification style based on type
+        const colors = {
+            success: '#22c55e',
+            error: '#ef4444',
+            warning: '#f59e0b',
+            info: '#3b82f6'
+        };
+        notification.style.backgroundColor = colors[type] || colors.info;
+        notification.textContent = message;
+
+        // Animate in
+        setTimeout(() => {
+            notification.style.transform = 'translateX(0)';
+            notification.style.opacity = '1';
+        }, 50);
+
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            notification.style.transform = 'translateX(100%)';
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
     }
 
 }
