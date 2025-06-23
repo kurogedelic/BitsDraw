@@ -535,6 +535,15 @@ class ProjectManager {
             thumbnail: null // For future thumbnail generation
         };
 
+        // Store project data in localStorage for recent projects access
+        const projectKey = `bitsdraw_project_${project.meta.name.replace(/[^a-z0-9]/gi, '_')}`;
+        try {
+            localStorage.setItem(projectKey, JSON.stringify(project));
+            console.log(`Project "${project.meta.name}" saved to localStorage`);
+        } catch (error) {
+            console.warn('Failed to save project to localStorage:', error);
+        }
+
         // Remove existing entry with same name
         this.projectHistory = this.projectHistory.filter(item => item.name !== historyItem.name);
         
@@ -543,11 +552,37 @@ class ProjectManager {
         
         // Limit history size
         if (this.projectHistory.length > this.maxHistory) {
+            // Remove old projects from localStorage when they exceed max history
+            const removedProjects = this.projectHistory.slice(this.maxHistory);
+            removedProjects.forEach(oldProject => {
+                const oldProjectKey = `bitsdraw_project_${oldProject.name.replace(/[^a-z0-9]/gi, '_')}`;
+                try {
+                    localStorage.removeItem(oldProjectKey);
+                    console.log(`Removed old project "${oldProject.name}" from localStorage`);
+                } catch (error) {
+                    console.warn('Failed to remove old project from localStorage:', error);
+                }
+            });
+            
             this.projectHistory = this.projectHistory.slice(0, this.maxHistory);
         }
 
         // Save to localStorage
         this.saveRecentProjects();
+    }
+
+    /**
+     * Remove project from localStorage when removed from recent projects
+     * @param {string} projectName Name of project to remove
+     */
+    removeProjectFromStorage(projectName) {
+        const projectKey = `bitsdraw_project_${projectName.replace(/[^a-z0-9]/gi, '_')}`;
+        try {
+            localStorage.removeItem(projectKey);
+            console.log(`Removed project "${projectName}" from localStorage`);
+        } catch (error) {
+            console.warn('Failed to remove project from localStorage:', error);
+        }
     }
 
     /**

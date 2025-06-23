@@ -271,6 +271,9 @@ class BitsDraw {
         
         // Initialize project management system
         this.setupProjectManagement();
+        
+        // Initialize auto-save system
+        this.setupAutoSave();
     }
 
     initializeEventListeners() {
@@ -8734,6 +8737,232 @@ class BitsDraw {
         } else if (selectedFormat) {
             this.showNotification('Invalid format selected', 'error');
         }
+    }
+
+    // ========================================
+    // Auto-Save and Recovery System
+    // ========================================
+
+    /**
+     * Initialize auto-save system
+     */
+    setupAutoSave() {
+        // Auto-save configuration
+        this.autoSaveEnabled = true;
+        this.autoSaveInterval = 30000; // 30 seconds
+        this.lastAutoSave = Date.now();
+        this.autoSaveTimer = null;
+        this.changesSinceLastSave = false;
+
+        // Start auto-save timer
+        this.startAutoSave();
+
+        // Listen for changes to trigger auto-save
+        this.setupAutoSaveListeners();
+
+        // Check for existing auto-save on startup
+        this.checkAutoSaveOnStartup();
+
+        DEBUG.log('Auto-save system initialized');
+    }
+
+    /**
+     * Start auto-save timer
+     */
+    startAutoSave() {
+        if (this.autoSaveTimer) {
+            clearInterval(this.autoSaveTimer);
+        }
+
+        this.autoSaveTimer = setInterval(() => {
+            if (this.autoSaveEnabled && this.changesSinceLastSave && this.projectManager) {
+                this.performAutoSave();
+            }
+        }, this.autoSaveInterval);
+
+        DEBUG.log(`Auto-save timer started (${this.autoSaveInterval / 1000}s interval)`);
+    }
+
+    /**
+     * Setup listeners for changes that trigger auto-save
+     */
+    setupAutoSaveListeners() {
+        // Listen for editor changes
+        if (this.editor) {
+            // Override the editor's commit method to track changes
+            const originalCommit = this.editor.commit;
+            this.editor.commit = () => {
+                originalCommit.call(this.editor);
+                this.markAutoSaveNeeded();
+            };
+        }
+
+        // Listen for tool changes, canvas resizes, etc.
+        document.addEventListener('tool-changed', () => this.markAutoSaveNeeded());
+        document.addEventListener('canvas-modified', () => this.markAutoSaveNeeded());
+        
+        // Listen for pattern changes
+        document.addEventListener('pattern-changed', () => this.markAutoSaveNeeded());
+    }
+
+    /**
+     * Mark that auto-save is needed
+     */
+    markAutoSaveNeeded() {
+        this.changesSinceLastSave = true;
+        this.lastChange = Date.now();
+    }
+
+    /**
+     * Perform auto-save
+     */
+    performAutoSave() {
+        if (!this.projectManager) return;
+
+        try {
+            this.projectManager.autoSave();
+            this.changesSinceLastSave = false;
+            this.lastAutoSave = Date.now();
+            
+            // Show subtle auto-save indicator
+            this.showAutoSaveIndicator();
+            
+            DEBUG.log('Auto-save completed');
+        } catch (error) {
+            console.warn('Auto-save failed:', error);
+        }
+    }
+
+    /**
+     * Show auto-save indicator
+     */
+    showAutoSaveIndicator() {
+        // Create or update auto-save indicator
+        let indicator = document.getElementById('auto-save-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'auto-save-indicator';
+            indicator.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                background: rgba(34, 197, 94, 0.9);
+                color: white;
+                padding: 8px 12px;
+                border-radius: 4px;
+                font-size: 12px;
+                z-index: 9999;
+                transition: opacity 0.3s ease;
+                opacity: 0;
+                pointer-events: none;
+            `;
+            document.body.appendChild(indicator);
+        }
+
+        indicator.textContent = '💾 Auto-saved';
+        indicator.style.opacity = '1';
+
+        // Fade out after 2 seconds
+        setTimeout(() => {
+            if (indicator) {
+                indicator.style.opacity = '0';
+            }
+        }, 2000);
+    }
+
+    /**
+     * Check for auto-save on startup
+     */
+    checkAutoSaveOnStartup() {
+        if (!this.projectManager) return;
+
+        if (this.projectManager.hasAutoSave()) {
+            // Show recovery prompt after a short delay to let the app initialize
+            setTimeout(() => {
+                this.showAutoSaveRecoveryDialog();
+            }, 1000);
+        }
+    }
+
+    /**
+     * Show auto-save recovery dialog
+     */
+    showAutoSaveRecoveryDialog() {
+        const shouldRecover = confirm(
+            '💾 Auto-saved project found!\n\nWould you like to recover your previous work?'
+        );
+
+        if (shouldRecover) {
+            this.recoverAutoSave();
+        } else {
+            // Clear the auto-save if user doesn't want to recover
+            this.clearAutoSave();
+        }
+    }
+
+    /**
+     * Recover auto-saved project
+     */
+    recoverAutoSave() {
+        if (!this.projectManager) return;
+
+        try {
+            const success = this.projectManager.loadAutoSave();
+            if (success) {
+                this.showNotification('Auto-saved project recovered successfully!', 'success');
+                this.changesSinceLastSave = false;
+            } else {
+                this.showNotification('Failed to recover auto-saved project', 'error');
+            }
+        } catch (error) {
+            console.error('Auto-save recovery failed:', error);
+            this.showNotification('Auto-save recovery failed', 'error');
+        }
+    }
+
+    /**
+     * Clear auto-save
+     */
+    clearAutoSave() {
+        try {
+            localStorage.removeItem('bitsdraw_autosave');
+            DEBUG.log('Auto-save cleared');
+        } catch (error) {
+            console.warn('Failed to clear auto-save:', error);
+        }
+    }
+
+    /**
+     * Enable/disable auto-save
+     */
+    setAutoSaveEnabled(enabled) {
+        this.autoSaveEnabled = enabled;
+        
+        if (enabled) {
+            this.startAutoSave();
+            this.showNotification('Auto-save enabled', 'info');
+        } else {
+            if (this.autoSaveTimer) {
+                clearInterval(this.autoSaveTimer);
+                this.autoSaveTimer = null;
+            }
+            this.showNotification('Auto-save disabled', 'info');
+        }
+
+        DEBUG.log(`Auto-save ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    /**
+     * Get auto-save status
+     */
+    getAutoSaveStatus() {
+        return {
+            enabled: this.autoSaveEnabled,
+            interval: this.autoSaveInterval,
+            lastSave: this.lastAutoSave,
+            hasChanges: this.changesSinceLastSave,
+            hasAutoSave: this.projectManager?.hasAutoSave() || false
+        };
     }
 
     /**

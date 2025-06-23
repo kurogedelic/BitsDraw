@@ -418,19 +418,37 @@ class ProjectDialog {
      */
     removeRecentProject(index) {
         const recentProjects = this.projectManager.getRecentProjects();
-        recentProjects.splice(index, 1);
-        this.projectManager.projectHistory = recentProjects;
-        this.projectManager.saveRecentProjects();
-        this.populateRecentProjects();
+        const projectToRemove = recentProjects[index];
+        
+        if (projectToRemove) {
+            // Remove from localStorage as well
+            this.projectManager.removeProjectFromStorage(projectToRemove.name);
+            
+            // Remove from history
+            recentProjects.splice(index, 1);
+            this.projectManager.projectHistory = recentProjects;
+            this.projectManager.saveRecentProjects();
+            this.populateRecentProjects();
+            
+            this.showNotification(`Removed "${projectToRemove.name}" from recent projects`, 'info');
+        }
     }
 
     /**
      * Clear all recent projects
      */
     clearRecentProjects() {
-        if (confirm('Clear all recent projects?')) {
+        if (confirm('Clear all recent projects and their stored data?')) {
+            const recentProjects = this.projectManager.getRecentProjects();
+            
+            // Remove all stored projects from localStorage
+            recentProjects.forEach(project => {
+                this.projectManager.removeProjectFromStorage(project.name);
+            });
+            
             this.projectManager.clearRecentProjects();
             this.populateRecentProjects();
+            this.showNotification('All recent projects cleared', 'info');
         }
     }
 
@@ -589,17 +607,59 @@ class ProjectDialog {
 
         try {
             const recentProjects = this.projectManager.getRecentProjects();
-            const project = recentProjects[this.selectedRecentIndex];
+            const recentProject = recentProjects[this.selectedRecentIndex];
             
-            // For now, just show a message since we don't have stored project data
-            // In a full implementation, this would load the actual project file
-            alert(`Would open recent project: ${project.name}\n(Full file loading not implemented in this demo)`);
-            
-            this.hide();
+            // Check if we have the project file path stored
+            if (recentProject.path) {
+                // Try to load from stored path (future file system integration)
+                console.log(`Would load project from: ${recentProject.path}`);
+                alert(`Project file loading from disk not yet implemented.\nProject: ${recentProject.name}\nPath: ${recentProject.path}`);
+            } else {
+                // Check if project is stored in localStorage
+                const storedProjectKey = `bitsdraw_project_${recentProject.name.replace(/[^a-z0-9]/gi, '_')}`;
+                const storedProject = localStorage.getItem(storedProjectKey);
+                
+                if (storedProject) {
+                    try {
+                        const projectData = JSON.parse(storedProject);
+                        const success = this.projectManager.loadProject(projectData);
+                        
+                        if (success) {
+                            this.hide();
+                            this.showNotification(`Opened recent project: ${recentProject.name}`, 'success');
+                        } else {
+                            alert('Failed to load recent project data.');
+                        }
+                    } catch (parseError) {
+                        console.error('Failed to parse stored project:', parseError);
+                        alert('Stored project data is corrupted.');
+                    }
+                } else {
+                    // Project data not found
+                    const shouldRemove = confirm(
+                        `Project "${recentProject.name}" is no longer available.\n\nWould you like to remove it from recent projects?`
+                    );
+                    
+                    if (shouldRemove) {
+                        this.removeRecentProject(this.selectedRecentIndex);
+                    }
+                }
+            }
 
         } catch (error) {
             console.error('Failed to open recent project:', error);
             alert('Failed to open recent project.');
+        }
+    }
+
+    /**
+     * Show notification (delegate to app)
+     */
+    showNotification(message, type = 'info') {
+        if (this.projectManager.legacyAdapter && this.projectManager.legacyAdapter.app) {
+            this.projectManager.legacyAdapter.app.showNotification(message, type);
+        } else {
+            console.log(`Notification [${type}]: ${message}`);
         }
     }
 
