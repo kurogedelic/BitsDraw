@@ -54,10 +54,14 @@
 			<div class="menu-item" data-menu="file">File</div>
 			<div class="menu-item" data-menu="edit">Edit</div>
 			<div class="menu-item" data-menu="image">Image</div>
+			<div class="menu-item" data-menu="layer">Layer</div>
 			<div class="menu-item" data-menu="effects">Effects</div>
 			<div class="menu-item" data-menu="view">View</div>
 			<div class="menu-item" data-menu="window">Window</div>
 			<div class="menu-item" data-menu="help">Help</div>
+			
+			<!-- Cursor coordinates display -->
+			<div class="menu-coordinates" id="cursor-coordinates">X:0 Y:0</div>
 		</div>
 		<!-- Sub Top Bar -->
 		<div class="sub-top-bar" id="sub-top-bar">
@@ -206,6 +210,10 @@
 					<i class="ph ph-file-code"></i>
 					<span>CPP Header File...</span>
 				</div>
+				<div class="menu-dropdown-item" data-action="import-text-objects">
+					<i class="ph ph-text-aa"></i>
+					<span>Text Objects...</span>
+				</div>
 			</div>
 			<div class="menu-dropdown-item has-submenu" data-action="export">
 				<i class="ph ph-upload"></i>
@@ -218,11 +226,11 @@
 					<i class="ph ph-image"></i>
 					<span>PNG Image</span>
 				</div>
-				<div class="menu-dropdown-item" data-action="export-webp">
-					<i class="ph ph-image"></i>
-					<span>WebP Image (Modern)</span>
+				<div class="menu-dropdown-item" data-action="export-gif" id="export-gif-menu">
+					<i class="ph ph-play-circle"></i>
+					<span>Animation</span>
 				</div>
-				<div class="menu-divider"></div>
+				<!-- WebP export removed -->
 				
 				<!-- Hardware/Development -->
 				<div class="menu-dropdown-item" data-action="export-cpp">
@@ -230,30 +238,14 @@
 					<span>CPP header file (u8g2)</span>
 					<span class="menu-shortcut">⌃E</span>
 				</div>
-				<div class="menu-dropdown-item" data-action="export-json">
-					<i class="ph ph-brackets-curly"></i>
-					<span>JSON Data</span>
-				</div>
-				<div class="menu-dropdown-item" data-action="export-raw">
-					<i class="ph ph-file-binary"></i>
-					<span>Raw Binary</span>
-				</div>
+				<!-- Raw Binary and ASCII Art export removed -->
 				<div class="menu-divider"></div>
 				
-				<!-- Creative/Fun Formats -->
-				<div class="menu-dropdown-item" data-action="export-ascii">
+				<!-- Text Objects -->
+				<div class="menu-dropdown-item" data-action="export-text-objects">
 					<i class="ph ph-text-aa"></i>
-					<span>ASCII Art</span>
+					<span>Text Objects...</span>
 				</div>
-				<div class="menu-dropdown-item" data-action="export-svg">
-					<i class="ph ph-vector-three"></i>
-					<span>SVG Vector</span>
-				</div>
-				<div class="menu-dropdown-item" data-action="export-css">
-					<i class="ph ph-file-css"></i>
-					<span>CSS File</span>
-				</div>
-				<div class="menu-divider"></div>
 				
 				<!-- All Formats -->
 				<div class="menu-dropdown-item" data-action="export-formats">
@@ -304,12 +296,12 @@
 		</div>
 
 		<div class="menu-dropdown" id="menu-image">
-			<!-- Rescale temporarily disabled
-			<div class="menu-dropdown-item" data-action="rescale">
+			<div class="menu-dropdown-item" data-action="canvas-resize">
 				<i class="ph ph-resize"></i>
-				<span>Rescale Canvas...</span>
+				<span>Canvas Size...</span>
+				<span class="menu-shortcut">⌃⇧C</span>
 			</div>
-			-->
+			<div class="menu-divider"></div>
 			<div class="menu-dropdown-item has-submenu" data-action="transform">
 				<i class="ph ph-arrows-out"></i>
 				<span>Transform</span>
@@ -353,6 +345,30 @@
 			<div class="menu-dropdown-item" data-action="draw-edge">
 				<i class="ph ph-path"></i>
 				<span>Draw Edge...</span>
+			</div>
+		</div>
+
+		<div class="menu-dropdown" id="menu-layer">
+			<div class="menu-dropdown-item" data-action="layer-flip-horizontal">
+				<i class="ph ph-flip-horizontal"></i>
+				<span>Flip Horizontal</span>
+			</div>
+			<div class="menu-dropdown-item" data-action="layer-flip-vertical">
+				<i class="ph ph-flip-vertical"></i>
+				<span>Flip Vertical</span>
+			</div>
+			<div class="menu-divider"></div>
+			<div class="menu-dropdown-item" data-action="layer-rotate-90">
+				<i class="ph ph-arrow-clockwise"></i>
+				<span>Rotate 90° CW</span>
+			</div>
+			<div class="menu-dropdown-item" data-action="layer-rotate-180">
+				<i class="ph ph-arrow-clockwise"></i>
+				<span>Rotate 180°</span>
+			</div>
+			<div class="menu-dropdown-item" data-action="layer-rotate-270">
+				<i class="ph ph-arrow-counter-clockwise"></i>
+				<span>Rotate 270° CW</span>
 			</div>
 		</div>
 
@@ -487,41 +503,94 @@
 					z-index: 20;
 				"
 			>
-				<div class="panel-header">
-					<div class="panel-title">Sheets</div>
-					<div class="panel-header-buttons">
-						<button
-							class="panel-header-btn"
-							id="add-sheet-btn"
-							title="Add New Sheet"
-						>
-							<i class="ph ph-plus"></i>
-						</button>
-						<button
-							class="panel-header-btn"
-							id="duplicate-sheet-btn"
-							title="Duplicate Current Sheet"
-						>
-							<i class="ph ph-copy"></i>
-						</button>
-						<button
-							class="panel-header-btn"
-							id="delete-sheet-btn"
-							title="Delete Current Sheet"
-						>
-							<i class="ph ph-trash"></i>
-						</button>
-					</div>
-				</div>
-				<div class="panel-content">
+				<!-- Sheets Container -->
+				<div class="sheets-container">
+					<!-- Sheets List -->
 					<div class="sheets-list" id="sheets-list">
-						<div class="sheet-item active" data-sheet-id="1">
-							<div class="sheet-preview">
-								<canvas class="sheet-thumbnail" width="32" height="16"></canvas>
+						<!-- Sheets will be dynamically generated by JavaScript -->
+					</div>
+					
+					<!-- Animation Controls Footer -->
+					<div class="animation-footer">
+						<!-- Left Controls -->
+						<div class="animation-controls-left">
+							<!-- Playback Controls -->
+							<div class="playback-buttons">
+								<button class="control-btn" id="play-btn" title="Play Animation">
+									<i class="ph ph-play"></i>
+								</button>
+								<button class="control-btn" id="pause-btn" title="Pause Animation" style="display: none;">
+									<i class="ph ph-pause"></i>
+								</button>
+								<button class="control-btn" id="stop-btn" title="Stop Animation">
+									<i class="ph ph-stop"></i>
+								</button>
 							</div>
-							<div class="sheet-info">
-								<div class="sheet-name" contenteditable="true">Sheet 1</div>
-								<div class="sheet-size">128x64</div>
+							
+							<!-- Frame Controls -->
+							<div class="frame-buttons">
+								<button class="control-btn" id="first-frame-btn" title="First Frame">
+									<i class="ph ph-skip-back"></i>
+								</button>
+								<button class="control-btn" id="prev-frame-btn" title="Previous Frame">
+									<i class="ph ph-caret-left"></i>
+								</button>
+								<button class="control-btn" id="next-frame-btn" title="Next Frame">
+									<i class="ph ph-caret-right"></i>
+								</button>
+								<button class="control-btn" id="last-frame-btn" title="Last Frame">
+									<i class="ph ph-skip-forward"></i>
+								</button>
+							</div>
+							
+							<!-- Speed Control -->
+							<div class="number-input">
+								<button type="button" id="speed-decrease" title="Decrease Speed">-</button>
+								<input type="number" id="animation-speed" min="1" max="30" value="12" title="Animation Speed (FPS)" />
+								<button type="button" id="speed-increase" title="Increase Speed">+</button>
+							</div>
+							
+							<!-- Loop Toggle -->
+							<button class="btn-toggle active" id="loop-animation" title="Toggle Loop Animation">
+								<i class="ph ph-repeat"></i>
+							</button>
+						</div>
+						
+						<!-- Right Controls -->
+						<div class="animation-controls-right">
+							<!-- Sheet Options -->
+							<div class="sheet-options">
+								<button
+									class="panel-option-btn compact"
+									id="add-sheet-btn"
+									title="Add New Sheet"
+								>
+									<i class="ph ph-plus"></i>
+								</button>
+								<button
+									class="panel-option-btn compact"
+									id="duplicate-sheet-btn"
+									title="Duplicate Current Sheet"
+								>
+									<i class="ph ph-copy"></i>
+								</button>
+								<button
+									class="panel-option-btn compact"
+									id="delete-sheet-btn"
+									title="Delete Current Sheet"
+								>
+									<i class="ph ph-trash"></i>
+								</button>
+							</div>
+							
+							<!-- Onion Skinning -->
+							<button class="btn-toggle" id="onion-skinning-btn" title="Toggle Onion Skinning">
+								<i class="ph ph-stack"></i>
+							</button>
+							
+							<!-- Frame Info -->
+							<div class="frame-info">
+								<span id="frame-counter">1 / 1</span>
 							</div>
 						</div>
 					</div>
@@ -541,20 +610,9 @@
 					<div class="panel-content">
 						<div class="tool-palette">
 							<div class="tool-row">
-								<button id="brush-tool" class="tool-icon active" title="Brush">
-									<i class="ph ph-paint-brush"></i>
+								<button id="hand-tool" class="tool-icon" title="Hand">
+									<i class="ph ph-hand"></i>
 								</button>
-								<button id="pencil-tool" class="tool-icon" title="Pencil">
-									<i class="ph ph-pencil"></i>
-								</button>
-								<button id="bucket-tool" class="tool-icon" title="Bucket Fill">
-									<i class="ph ph-paint-bucket"></i>
-								</button>
-								<button id="eraser-tool" class="tool-icon" title="Eraser">
-									<i class="ph ph-eraser"></i>
-								</button>
-							</div>
-							<div class="tool-row">
 								<button
 									id="select-rect-tool"
 									class="tool-icon"
@@ -569,37 +627,53 @@
 								>
 									<i class="ph ph-circle-dashed"></i>
 								</button>
-								<button id="move-tool" class="tool-icon" title="Move">
-									<i class="ph ph-arrows-out-cardinal"></i>
+								<div class="tool-spacer"></div>
+							</div>
+							<div class="tool-row">
+								<button id="brush-tool" class="tool-icon active" title="Brush">
+									<i class="ph ph-paint-brush"></i>
+								</button>
+								<button id="pencil-tool" class="tool-icon" title="Pencil">
+									<i class="ph ph-pencil"></i>
+								</button>
+								<button id="eraser-tool" class="tool-icon" title="Eraser">
+									<i class="ph ph-eraser"></i>
+								</button>
+								<div class="tool-spacer"></div>
+							</div>
+							<div class="tool-row">
+								<button id="shapes-tool" class="tool-icon" title="Shapes">
+									<i class="ph ph-shapes"></i>
 								</button>
 								<button id="line-tool" class="tool-icon" title="Line">
 									<i class="ph ph-line-segment"></i>
 								</button>
-							</div>
-							<div class="tool-row">
 								<button id="text-tool" class="tool-icon" title="Text">
 									<i class="ph ph-text-aa"></i>
 								</button>
-								<button id="rect-tool" class="tool-icon" title="Rectangle">
-									<i class="ph ph-rectangle"></i>
-								</button>
-								<button id="circle-tool" class="tool-icon" title="Circle">
-									<i class="ph ph-circle"></i>
+								<div class="tool-spacer"></div>
+							</div>
+							<div class="tool-row">
+								<button id="bucket-tool" class="tool-icon" title="Bucket Fill">
+									<i class="ph ph-paint-bucket"></i>
 								</button>
 								<button id="spray-tool" class="tool-icon" title="Spray">
 									<i class="ph ph-spray-bottle"></i>
 								</button>
+								<div class="tool-spacer"></div>
+								<div class="tool-spacer"></div>
 							</div>
 							<div class="tool-row">
+								<button id="move-tool" class="tool-icon" title="Move">
+									<i class="ph ph-arrows-out-cardinal"></i>
+								</button>
 								<button id="blur-tool" class="tool-icon" title="Blur">
 									<i class="ph ph-drop-simple"></i>
 								</button>
 								<button id="guide-tool" class="tool-icon" title="Guide">
 									<i class="ph ph-bounding-box"></i>
 								</button>
-								<button id="hand-tool" class="tool-icon" title="Hand">
-									<i class="ph ph-hand"></i>
-								</button>
+								<div class="tool-spacer"></div>
 							</div>
 						</div>
 					</div>
@@ -657,6 +731,10 @@
 						</div>
 					</div>
 				</div>
+			</div>
+
+			<!-- Right Panel Column -->
+			<div class="panel-column right-column" id="right-column">
 			</div>
 
 			<!-- About BitsDraw Modal -->
@@ -803,6 +881,10 @@
 								<span class="shortcut-desc">Spray Tool</span>
 							</div>
 							<div class="shortcut-item">
+								<span class="shortcut-key">U</span>
+								<span class="shortcut-desc">Blur Tool</span>
+							</div>
+							<div class="shortcut-item">
 								<span class="shortcut-key">M</span>
 								<span class="shortcut-desc">Select Tool</span>
 							</div>
@@ -815,7 +897,7 @@
 								<span class="shortcut-desc">Hand Tool</span>
 							</div>
 							<div class="shortcut-item">
-								<span class="shortcut-key">U</span>
+								<span class="shortcut-key">G</span>
 								<span class="shortcut-desc">Guide Tool</span>
 							</div>
 						</div>
@@ -916,8 +998,14 @@
 							<button id="add-guide-btn" title="Add Guide">
 								<i class="ph ph-plus"></i>
 							</button>
+							<button id="import-guides-btn" title="Import Guides">
+								<i class="ph ph-upload"></i>
+							</button>
 							<button id="export-guides-btn" title="Export Guides">
 								<i class="ph ph-download"></i>
+							</button>
+							<button id="sort-guides-btn" title="Toggle Sort by Name">
+								<i class="ph ph-sort-ascending"></i>
 							</button>
 							<button id="clear-guides-btn" title="Clear All">
 								<i class="ph ph-trash"></i>
@@ -974,6 +1062,17 @@
 						</div>
 					</div>
 					<div class="custom-section">
+						<h4>Background</h4>
+						<div class="background-inputs">
+							<label for="background-color">Background Layer:</label>
+							<select id="background-color">
+								<option value="white" selected>White (Opaque)</option>
+								<option value="black">Black (Opaque)</option>
+								<option value="transparent">Transparent</option>
+							</select>
+						</div>
+					</div>
+					<div class="custom-section">
 						<h4>Size</h4>
 						<div class="size-inputs">
 							<label>
@@ -1023,7 +1122,126 @@
 			</div>
 		</div>
 
+		<!-- Canvas Resize Dialog -->
+		<div class="dialog-overlay" id="canvas-resize-dialog" style="display: none">
+			<div class="dialog">
+				<div class="dialog-header">
+					<h3>Resize Canvas</h3>
+					<button class="dialog-close" id="canvas-resize-close-btn">
+						<i class="ph ph-x"></i>
+					</button>
+				</div>
+				<div class="dialog-content">
+					<div class="current-size-section">
+						<h4>Current Size</h4>
+						<div class="size-display">
+							<span id="current-canvas-width">480</span> × <span id="current-canvas-height">320</span> pixels
+						</div>
+					</div>
 
+					<div class="resize-section">
+						<h4>New Size</h4>
+						<div class="size-inputs">
+							<div class="input-group">
+								<label for="resize-width">Width</label>
+								<input
+									type="number"
+									id="resize-width"
+									min="1"
+									max="4096"
+									value="480"
+								/>
+								<span class="unit">px</span>
+							</div>
+							<div class="input-group">
+								<label for="resize-height">Height</label>
+								<input
+									type="number"
+									id="resize-height"
+									min="1"
+									max="4096"
+									value="320"
+								/>
+								<span class="unit">px</span>
+							</div>
+						</div>
+						
+						<div class="constraint-controls">
+							<label class="checkbox-label">
+								<input type="checkbox" id="maintain-aspect-ratio" checked>
+								<span class="checkmark"></span>
+								Maintain aspect ratio
+							</label>
+						</div>
+					</div>
+
+					<div class="preset-section">
+						<h4>Common Sizes</h4>
+						<div class="preset-buttons">
+							<button class="preset-btn" data-size="128,64">OLED 128×64</button>
+							<button class="preset-btn" data-size="128,32">OLED 128×32</button>
+							<button class="preset-btn" data-size="400,240">Playdate 400×240</button>
+							<button class="preset-btn" data-size="160,144">Game Boy 160×144</button>
+							<button class="preset-btn" data-size="256,192">Standard 256×192</button>
+							<button class="preset-btn" data-size="480,320">Standard 480×320</button>
+							<button class="preset-btn" data-size="720,576">Mac Paint 720×576</button>
+							<button class="preset-btn" data-size="1024,768">Large 1024×768</button>
+						</div>
+					</div>
+
+					<div class="resize-options-section">
+						<h4>Resize Options</h4>
+						<div class="resize-options">
+							<label class="radio-label">
+								<input type="radio" name="resize-anchor" value="top-left" checked>
+								<span class="radio-mark"></span>
+								<span class="label-text">Top-Left (preserve top-left corner)</span>
+							</label>
+							<label class="radio-label">
+								<input type="radio" name="resize-anchor" value="center">
+								<span class="radio-mark"></span>
+								<span class="label-text">Center (center content)</span>
+							</label>
+							<label class="radio-label">
+								<input type="radio" name="resize-anchor" value="bottom-right">
+								<span class="radio-mark"></span>
+								<span class="label-text">Bottom-Right (preserve bottom-right corner)</span>
+							</label>
+						</div>
+						
+						<div class="fill-options">
+							<label for="fill-color">Fill new areas with:</label>
+							<select id="fill-color">
+								<option value="transparent">Transparent</option>
+								<option value="white" selected>White</option>
+								<option value="black">Black</option>
+							</select>
+						</div>
+					</div>
+
+					<div class="warning-section" id="resize-warning" style="display: none;">
+						<div class="warning-content">
+							<i class="ph ph-warning"></i>
+							<span id="resize-warning-text">Warning message will appear here</span>
+						</div>
+					</div>
+				</div>
+				<div class="dialog-footer">
+					<button
+						class="dialog-btn dialog-btn-cancel"
+						id="canvas-resize-cancel-btn"
+					>
+						Cancel
+					</button>
+					<button
+						class="dialog-btn dialog-btn-primary"
+						id="canvas-resize-apply-btn"
+					>
+						Apply Resize
+					</button>
+				</div>
+			</div>
+		</div>
 
 		<!-- Brush Cursor Overlay -->
 		<div class="brush-cursor-overlay" id="brush-cursor-overlay"></div>
@@ -1059,7 +1277,7 @@
 						<select id="export-format-select">
 							<option value="u8g2">U8G2 (XBM, LSB first)</option>
 							<option value="adafruit">Adafruit GFX (MSB first)</option>
-							<option value="playdate">Playdate PDI</option>
+							<!-- Playdate PDI removed -->
 							<option value="gameboy">Game Boy 2BPP</option>
 						</select>
 					</div>
@@ -1442,10 +1660,14 @@
 		<script src="utils/imageImport.js"></script>
 		<script src="utils/patterns.js"></script>
 		<script src="utils/textRenderer.js"></script>
+		<script src="utils/multilineTextRenderer.js"></script>
+		<script src="utils/textObjectManager.js"></script>
+		<script src="utils/customFontManager.js"></script>
 		<script src="utils/pngIconLoader.js"></script>
 		<script src="utils/ditheringEffects.js"></script>
 
 		<!-- Refactored managers -->
+		<!-- Progress Manager removed -->
 		<script src="utils/dialogManager.js"></script>
 		<script src="utils/menuManager.js"></script>
 		<script src="utils/windowManager.js"></script>
@@ -1466,6 +1688,11 @@
 		<!-- Advanced Tools (Phase 4) -->
 
 		<!-- Animation Export (Phase 5) -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@pencil.js/canvas-gif-encoder@2.1.0/dist/canvas-gif-encoder.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+		<script src="utils/gifEncoder.js"></script>
+		<script src="utils/animationExporter.js"></script>
 		<script src="src/export/AnimationExporter.js"></script>
 		<script src="src/ui/AnimationExportDialog.js"></script>
 
@@ -1476,6 +1703,9 @@
 		<script src="src/core/Application.js"></script>
 		<script src="src/RefactorBridge.js"></script>
 		<script src="src/RefactorMonitor.js"></script>
+
+		<!-- Enhanced Error Handler -->
+		<script src="utils/errorHandler.js"></script>
 
 		<!-- Main application -->
 		<script src="main.js"></script>

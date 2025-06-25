@@ -43,6 +43,20 @@ class BitsDraw {
         this.editor = new OptimizedBitmapEditor(this.canvas, 480, 320);
         this.previewCanvas = document.getElementById('preview-canvas');
         
+        // Memory management - Track all event listeners for cleanup
+        this.globalEventListeners = new Map();
+        this.timers = new Set();
+        
+        // Progress Manager removed - no longer needed
+        
+        // Initialize Advanced Text Tool System
+        this.textObjectManager = new TextObjectManager(this);
+        
+        // Initialize Custom Font Manager (Phase 3)
+        this.customFontManager = TextRenderer.initializeCustomFontManager(this);
+        
+        // Setup real-time thumbnail updates
+        this.setupRealtimeThumbnails();
         
         // Initialize CanvasUnit system (Phase 1)
         try {
@@ -79,20 +93,44 @@ class BitsDraw {
         this.previewOverlay = null;
         this.textClickPos = null;
         this.brushSize = 2;
+        this.pencilSize = 1;
         this.brushShape = 'circle'; // 'circle' or 'square'
         this.eraserSize = 2;
         this.currentDrawValue = 0; // Track current draw value for stroke
         this.eraserSmooth = true;
-        this.sprayRadius = 8;
-        this.sprayDensity = 0.6;
+        this.sprayRadius = 10;
+        this.sprayDensity = 10;
         this.blurSize = 3;
         this.lineWidth = 1;
         this.circleDrawBorder = true;
         this.circleDrawFill = false;
+        
+        // Unified Shapes Tool state management
+        this.currentShapeMode = 'rectangle'; // 'rectangle' or 'circle'
+        this.unifiedShapeBorder = true;      // Unified border setting
+        this.unifiedShapeFill = false;       // Unified fill setting
+        this.shapeSpecificSettings = {
+            rectangle: {
+                // Rectangle-specific settings
+                proportionalResize: false
+            },
+            circle: {
+                // Circle-specific settings  
+                perfectCircle: false,
+                centerMode: false
+            }
+        };
+        
         this.blurDitherMethod = 'Bayer4x4';
         this.blurAlphaChannel = true;
         this.currentDisplayMode = 'black';
         this.moveLoop = true;
+        
+        // Project background settings
+        this.projectBackgroundType = 'white'; // 'transparent', 'white', or 'black'
+        
+        // Debounced onion skinning update for performance
+        this.onionSkinningUpdateTimeout = null;
         
         // Preview settings
         this.forcePixelPerfectPreview = false; // Can be toggled via UI
@@ -100,9 +138,10 @@ class BitsDraw {
         // Guides system
         this.guides = [];
         this.activeGuideId = null;
-        this.guideColors = ['#ff0000', '#0088ff', '#00ff00', '#ff8800', '#ff00ff', '#00ffff', '#ffff00', '#8800ff'];
+        this.guideColors = ['#ff0000', '#0088ff', '#00ff00', '#ff8800', '#ff00ff', '#00ffff', '#ffff00', '#8800ff', '#ffa500', '#800080'];
         this.guideColorIndex = 0;
         this.guideSnap = true;
+        this.guideSortEnabled = false;
         this.isDraggingGuide = false;
         this.isResizingGuide = false;
         this.draggedGuideId = null;
@@ -132,6 +171,8 @@ class BitsDraw {
         // Modifier key tracking
         this.shiftPressed = false;
         this.altPressed = false;
+        this.spacePressed = false;
+        this.previousTool = null;
         
         // Display mode color sets
         this.displayModes = {
@@ -190,11 +231,7 @@ class BitsDraw {
                 draw_color: '#333333',
                 background_color: '#DDDDDD'
             },
-            'playdate': {
-                name: 'Playdate',
-                draw_color: '#2e2d23',
-                background_color: '#a3a298'
-            }
+            // Playdate display mode removed
         };
         
         this.initializeEventListeners();
@@ -269,11 +306,22 @@ class BitsDraw {
         this.setupCanvasControls();
         this.setupSheetsPanel();
         
+        // Initialize animation system (after sheets are set up)
+        this.setupAnimationSystem();
+        
         // Initialize project management system
         this.setupProjectManagement();
         
         // Initialize auto-save system
         this.setupAutoSave();
+        
+        // Initialize managers for cleanup tracking
+        this.initializeManagers();
+        
+        // Update initial menu states
+        if (this.menuManager) {
+            this.menuManager.updateExportGifMenuState();
+        }
     }
 
     initializeEventListeners() {
@@ -298,13 +346,13 @@ class BitsDraw {
     }
 
     setupSheetsPanel() {
-        // Initialize sheets system
+        // Initialize sheets system with current editor state
         this.sheets = [
             {
                 id: 1,
                 name: 'Sheet 1',
-                width: 128,
-                height: 64,
+                width: this.editor.width,  // Use actual editor dimensions
+                height: this.editor.height,
                 layers: this.editor.layers.map(layer => ({
                     ...layer,
                     pixels: new Uint8Array(layer.pixels),
@@ -317,8 +365,198 @@ class BitsDraw {
         // Setup event listeners
         this.setupSheetsEventListeners();
         
+        // Render sheets list immediately
+        this.renderSheetsList();
+        
+        // Detect project background type from the first sheet
+        this.detectProjectBackgroundType();
+        
+        // Initial save of current editor state to sheet
+        this.saveCurrentSheetState();
+        
         // Update thumbnail for current sheet
         this.updateSheetThumbnail(1);
+    }
+
+    // Detect project background type from current editor state
+    detectProjectBackgroundType() {
+        if (!this.editor || !this.editor.layers || this.editor.layers.length === 0) {
+            console.log('No editor layers to detect background type, using default white');
+            this.projectBackgroundType = 'white';
+            return;
+        }
+        
+        const backgroundLayer = this.editor.layers[0]; // Assume first layer is background
+        if (!backgroundLayer || !backgroundLayer.pixels || !backgroundLayer.alpha) {
+            console.log('Invalid background layer, using default white');
+            this.projectBackgroundType = 'white';
+            return;
+        }
+        
+        const totalPixels = backgroundLayer.pixels.length;
+        const blackPixels = backgroundLayer.pixels.reduce((count, pixel) => count + (pixel === 1 ? 1 : 0), 0);
+        const alphaPixels = backgroundLayer.alpha.reduce((count, alpha) => count + (alpha > 0 ? 1 : 0), 0);
+        
+        // Detect background type
+        if (alphaPixels === 0) {
+            // All alpha is 0 = transparent background
+            this.projectBackgroundType = 'transparent';
+            console.log('Detected transparent background');
+        } else if (blackPixels === totalPixels && alphaPixels === totalPixels) {
+            // All pixels are black with full alpha = black background
+            this.projectBackgroundType = 'black';
+            console.log('Detected black background');
+        } else {
+            // Default to white background
+            this.projectBackgroundType = 'white';
+            console.log('Detected white background');
+        }
+        
+        console.log(`Project background type set to: ${this.projectBackgroundType}`);
+    }
+
+    // Real-time thumbnail update for current sheet
+    updateCurrentSheetThumbnailRealtime() {
+        if (!this.currentSheetId) return;
+        
+        // Save current sheet state first
+        this.saveCurrentSheetState();
+        
+        // Update thumbnail
+        this.updateSheetThumbnail(this.currentSheetId);
+    }
+
+    setupRealtimeThumbnails() {
+        // Setup real-time thumbnail updates when canvas changes
+        this.editor.setRenderCompleteCallback(() => {
+            // Throttle thumbnail updates to avoid performance issues
+            if (!this.thumbnailUpdateThrottle) {
+                this.thumbnailUpdateThrottle = true;
+                setTimeout(() => {
+                    this.updateCurrentSheetThumbnailRealtime();
+                    this.thumbnailUpdateThrottle = false;
+                }, 100); // Update thumbnail every 100ms max
+            }
+        });
+    }
+
+    setupAnimationSystem() {
+        // Initialize animation state
+        this.animationState = {
+            isPlaying: false,
+            isPaused: false,
+            currentFrame: 1,
+            totalFrames: 1,
+            speed: 12, // FPS
+            loop: true,
+            animationTimer: null,
+            onionSkinning: false
+        };
+
+        // Get animation control elements
+        const playBtn = document.getElementById('play-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const firstFrameBtn = document.getElementById('first-frame-btn');
+        const prevFrameBtn = document.getElementById('prev-frame-btn');
+        const nextFrameBtn = document.getElementById('next-frame-btn');
+        const lastFrameBtn = document.getElementById('last-frame-btn');
+        const speedInput = document.getElementById('animation-speed');
+        const speedDecreaseBtn = document.getElementById('speed-decrease');
+        const speedIncreaseBtn = document.getElementById('speed-increase');
+        const loopButton = document.getElementById('loop-animation');
+        const onionSkinningBtn = document.getElementById('onion-skinning-btn');
+        const frameCounter = document.getElementById('frame-counter');
+        const timelineTrack = document.getElementById('timeline-track');
+
+        // Playback controls
+        if (playBtn) {
+            playBtn.addEventListener('click', () => this.playAnimation());
+        }
+        if (pauseBtn) {
+            pauseBtn.addEventListener('click', () => this.pauseAnimation());
+        }
+        if (stopBtn) {
+            stopBtn.addEventListener('click', () => this.stopAnimation());
+        }
+
+        // Frame navigation
+        if (firstFrameBtn) {
+            firstFrameBtn.addEventListener('click', () => this.goToFirstFrame());
+        }
+        if (prevFrameBtn) {
+            prevFrameBtn.addEventListener('click', () => this.goToPreviousFrame());
+        }
+        if (nextFrameBtn) {
+            nextFrameBtn.addEventListener('click', () => this.goToNextFrame());
+        }
+        if (lastFrameBtn) {
+            lastFrameBtn.addEventListener('click', () => this.goToLastFrame());
+        }
+
+        // Animation speed controls
+        const updateSpeed = (newSpeed) => {
+            this.animationState.speed = Math.max(1, Math.min(30, newSpeed));
+            if (speedInput) {
+                speedInput.value = this.animationState.speed;
+            }
+            // Restart animation with new speed if playing
+            if (this.animationState.isPlaying) {
+                this.stopAnimation();
+                this.playAnimation();
+            }
+        };
+
+        if (speedInput) {
+            speedInput.addEventListener('input', (e) => {
+                updateSpeed(parseInt(e.target.value) || 12);
+            });
+        }
+
+        if (speedDecreaseBtn) {
+            speedDecreaseBtn.addEventListener('click', () => {
+                updateSpeed(this.animationState.speed - 1);
+            });
+        }
+
+        if (speedIncreaseBtn) {
+            speedIncreaseBtn.addEventListener('click', () => {
+                updateSpeed(this.animationState.speed + 1);
+            });
+        }
+
+        if (loopButton) {
+            loopButton.addEventListener('click', (e) => {
+                // Toggle the active state
+                const isActive = loopButton.classList.contains('active');
+                if (isActive) {
+                    loopButton.classList.remove('active');
+                    this.animationState.loop = false;
+                } else {
+                    loopButton.classList.add('active');
+                    this.animationState.loop = true;
+                }
+            });
+        }
+
+        if (onionSkinningBtn) {
+            onionSkinningBtn.addEventListener('click', (e) => {
+                // Toggle onion skinning
+                const isActive = onionSkinningBtn.classList.contains('active');
+                if (isActive) {
+                    onionSkinningBtn.classList.remove('active');
+                    this.animationState.onionSkinning = false;
+                } else {
+                    onionSkinningBtn.classList.add('active');
+                    this.animationState.onionSkinning = true;
+                }
+                this.updateOnionSkinning();
+            });
+        }
+
+        // Initialize UI
+        this.updateAnimationUI();
+        this.updateTimeline();
     }
 
     setupSheetsEventListeners() {
@@ -366,6 +604,24 @@ class BitsDraw {
 
     addNewSheet() {
         const newId = Math.max(...this.sheets.map(s => s.id)) + 1;
+        
+        // Create background layer based on project background type
+        let backgroundPixels, backgroundAlpha;
+        
+        if (this.projectBackgroundType === 'transparent') {
+            // Transparent background
+            backgroundPixels = new Uint8Array(this.editor.width * this.editor.height); // All 0 (white)
+            backgroundAlpha = new Uint8Array(this.editor.width * this.editor.height); // All 0 (transparent)
+        } else if (this.projectBackgroundType === 'black') {
+            // Black background
+            backgroundPixels = new Uint8Array(this.editor.width * this.editor.height).fill(1); // All 1 (black)
+            backgroundAlpha = new Uint8Array(this.editor.width * this.editor.height).fill(1); // All 1 (opaque)
+        } else {
+            // White background (default)
+            backgroundPixels = new Uint8Array(this.editor.width * this.editor.height); // All 0 (white)
+            backgroundAlpha = new Uint8Array(this.editor.width * this.editor.height).fill(1); // All 1 (opaque)
+        }
+        
         const newSheet = {
             id: newId,
             name: `Sheet ${newId}`,
@@ -377,8 +633,8 @@ class BitsDraw {
                     name: 'Background',
                     visible: true,
                     blendMode: 'normal',
-                    pixels: new Uint8Array(this.editor.width * this.editor.height).fill(1),
-                    alpha: new Uint8Array(this.editor.width * this.editor.height).fill(1)
+                    pixels: backgroundPixels,
+                    alpha: backgroundAlpha
                 },
                 {
                     id: 2,
@@ -394,6 +650,16 @@ class BitsDraw {
         this.sheets.push(newSheet);
         this.renderSheetsList();
         this.switchToSheet(newId);
+        
+        // Update animation system
+        if (this.animationState) {
+            this.updateAnimationUI();
+        }
+        
+        // Update Export GIF menu state
+        if (this.menuManager) {
+            this.menuManager.updateExportGifMenuState();
+        }
     }
 
     duplicateCurrentSheet() {
@@ -417,6 +683,16 @@ class BitsDraw {
         this.sheets.push(duplicatedSheet);
         this.renderSheetsList();
         this.switchToSheet(newId);
+        
+        // Update animation system
+        if (this.animationState) {
+            this.updateAnimationUI();
+        }
+        
+        // Update Export GIF menu state
+        if (this.menuManager) {
+            this.menuManager.updateExportGifMenuState();
+        }
     }
 
     deleteCurrentSheet() {
@@ -437,6 +713,26 @@ class BitsDraw {
             
             this.renderSheetsList();
             this.loadSheet(this.currentSheetId);
+            
+            // Update animation system
+            if (this.animationState) {
+                // Stop animation if playing
+                if (this.animationState.isPlaying) {
+                    this.stopAnimation();
+                }
+                
+                // Adjust current frame if needed
+                if (this.animationState.currentFrame > this.sheets.length) {
+                    this.animationState.currentFrame = this.sheets.length;
+                }
+                
+                this.updateAnimationUI();
+            }
+            
+            // Update Export GIF menu state
+            if (this.menuManager) {
+                this.menuManager.updateExportGifMenuState();
+            }
         }
     }
 
@@ -452,17 +748,36 @@ class BitsDraw {
         
         // Update UI
         this.renderSheetsList();
+        
+        // Update animation current frame when manually switching sheets
+        if (this.animationState) {
+            const sheetIndex = this.sheets.findIndex(s => s.id === sheetId);
+            if (sheetIndex !== -1) {
+                this.animationState.currentFrame = sheetIndex + 1;
+                this.updateAnimationUI();
+                // Update onion skinning when switching frames
+                this.updateOnionSkinning();
+            }
+        }
     }
 
     saveCurrentSheetState() {
         const currentSheet = this.sheets.find(s => s.id === this.currentSheetId);
         if (!currentSheet) return;
         
+        // Save current editor dimensions
+        currentSheet.width = this.editor.width;
+        currentSheet.height = this.editor.height;
+        
+        // Save all layers with deep copy
         currentSheet.layers = this.editor.layers.map(layer => ({
             ...layer,
             pixels: new Uint8Array(layer.pixels),
             alpha: new Uint8Array(layer.alpha)
         }));
+        
+        // Update thumbnail after saving state
+        this.updateSheetThumbnail(this.currentSheetId);
     }
 
     loadSheet(sheetId) {
@@ -571,6 +886,9 @@ class BitsDraw {
     }
 
     setupCanvasEvents() {
+        // Global mouse event tracking for continuous drawing outside canvas
+        this.globalMouseTracking = false;
+        
         this.canvas.addEventListener('mousedown', (e) => {
             // Handle middle mouse button for panning
             if (e.button === 1) { // Middle mouse button
@@ -598,15 +916,20 @@ class BitsDraw {
             if (this.currentTool === 'bucket') {
                 this.handleCanvasClick(e);
             } else if (this.currentTool === 'hand') {
+                this.globalMouseTracking = true; // Enable global tracking for panning
                 this.startCanvasPan(e);
             } else if (this.currentTool === 'move') {
+                this.globalMouseTracking = true; // Enable global tracking for layer move
                 this.startLayerMove(e);
             } else if (this.currentTool === 'guide') {
+                this.globalMouseTracking = true; // Enable global tracking for guide creation
                 this.startGuideCreation(e);
-            } else if (['rect', 'circle', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
+            } else if (['shapes', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
                 this.isDrawing = true;
+                this.globalMouseTracking = true; // Enable global tracking for shapes
             } else {
                 this.isDrawing = true;
+                this.globalMouseTracking = true; // Enable global tracking
                 if (this.currentTool === 'brush' || this.currentTool === 'eraser' || this.currentTool === 'blur' || this.currentTool === 'spray') {
                     this.hideBrushCursor();
                 }
@@ -615,6 +938,9 @@ class BitsDraw {
         });
 
         this.canvas.addEventListener('mousemove', (e) => {
+            // Update cursor coordinates in menu bar
+            this.updateCursorCoordinates(e.clientX, e.clientY);
+            
             if (this.isPanning) {
                 this.updatePanning(e);
             } else if (this.isPanningCanvas) {
@@ -639,21 +965,18 @@ class BitsDraw {
                         this.previewThrottleTime = Date.now();
                         this.drawLinePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
                     }
-                } else if (this.currentTool === 'rect' && this.startPos) {
+                } else if (this.currentTool === 'shapes' && this.startPos) {
                     const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
                     // Throttle preview updates for performance
                     if (!this.previewThrottleTime || Date.now() - this.previewThrottleTime >= 16) {
                         this.previewThrottleTime = Date.now();
-                        this.drawRectPreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                        if (this.currentShapeMode === 'rectangle') {
+                            this.drawRectPreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                        } else if (this.currentShapeMode === 'circle') {
+                            this.drawCirclePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                        }
                     }
-                } else if (this.currentTool === 'circle' && this.startPos) {
-                    const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
-                    // Throttle preview updates for performance
-                    if (!this.previewThrottleTime || Date.now() - this.previewThrottleTime >= 16) {
-                        this.previewThrottleTime = Date.now();
-                        this.drawCirclePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
-                    }
-                } else if (!['rect', 'circle', 'select-rect', 'select-circle', 'line'].includes(this.currentTool)) {
+                } else if (!['shapes', 'select-rect', 'select-circle', 'line'].includes(this.currentTool)) {
                     this.handleCanvasClick(e);
                 }
             }
@@ -678,36 +1001,42 @@ class BitsDraw {
                 this.isDraggingSelectionGraphics = false;
                 this.selectionDragStart = null;
                 this.editor.saveState();
-            } else if (this.isDrawing && ['rect', 'circle', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
+            } else if (this.isDrawing && ['shapes', 'line', 'select-rect', 'select-circle'].includes(this.currentTool)) {
                 const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
                 
-                if (this.currentTool === 'rect') {
+                if (this.currentTool === 'shapes') {
                     this.clearShapePreview();
                     // Left click = primary color (black), Right click = secondary color (white)
                     const drawValue = e.button === 0 ? 0 : 1;
-                    // Use selected pattern instead of color override
-                    this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, this.drawFill, false, this.currentPattern, drawValue);
-                    this.editor.saveState();
-                    // Defer updateOutput to avoid blocking
-                    requestAnimationFrame(() => this.updateOutput());
-                } else if (this.currentTool === 'circle') {
-                    this.clearShapePreview();
-                    // Left click = primary color (black), Right click = secondary color (white)
-                    const drawValue = e.button === 0 ? 0 : 1;
-                    // Use selected pattern instead of color override
-                    const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
-                        this.startPos.x, this.startPos.y, coords.x, coords.y, 
-                        this.shiftPressed, this.altPressed
-                    );
-                    if (this.circleDrawBorder && !this.circleDrawFill) {
-                        // Border only
-                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, false, true, this.currentPattern, drawValue);
-                    } else if (this.circleDrawFill && !this.circleDrawBorder) {
-                        // Fill only
-                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
-                    } else if (this.circleDrawBorder && this.circleDrawFill) {
-                        // Both border and fill
-                        this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
+                    
+                    if (this.currentShapeMode === 'rectangle') {
+                        // Rectangle mode - use unified border/fill settings
+                        if (this.unifiedShapeBorder && !this.unifiedShapeFill) {
+                            // Border only
+                            this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, false, true, this.currentPattern, drawValue);
+                        } else if (this.unifiedShapeFill && !this.unifiedShapeBorder) {
+                            // Fill only
+                            this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, true, false, this.currentPattern, drawValue);
+                        } else if (this.unifiedShapeBorder && this.unifiedShapeFill) {
+                            // Both border and fill
+                            this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, true, true, this.currentPattern, drawValue);
+                        }
+                    } else if (this.currentShapeMode === 'circle') {
+                        // Circle mode - use unified border/fill settings and modifier keys
+                        const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
+                            this.startPos.x, this.startPos.y, coords.x, coords.y, 
+                            this.shiftPressed, this.altPressed
+                        );
+                        if (this.unifiedShapeBorder && !this.unifiedShapeFill) {
+                            // Border only
+                            this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, false, true, this.currentPattern, drawValue);
+                        } else if (this.unifiedShapeFill && !this.unifiedShapeBorder) {
+                            // Fill only
+                            this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
+                        } else if (this.unifiedShapeBorder && this.unifiedShapeFill) {
+                            // Both border and fill
+                            this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
+                        }
                     }
                     this.editor.saveState();
                     // Defer updateOutput to avoid blocking
@@ -752,6 +1081,131 @@ class BitsDraw {
             if (this.currentTool === 'pencil') {
                 this.hideBrushCursor();
             }
+            
+            // Reset coordinate display when mouse leaves canvas
+            const coordsDisplay = document.getElementById('cursor-coordinates');
+            if (coordsDisplay) {
+                coordsDisplay.textContent = 'X:- Y:-';
+            }
+        });
+
+        // Global mouse events for continuous drawing outside canvas
+        document.addEventListener('mousemove', (e) => {
+            if (!this.globalMouseTracking) return;
+            
+            // Continue drawing operations even outside canvas
+            if (this.isDrawing && ['pencil', 'brush', 'eraser', 'spray', 'blur'].includes(this.currentTool)) {
+                // Check if coordinates are within reasonable bounds relative to canvas
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                
+                // Allow drawing slightly outside canvas bounds for smooth stroke continuation
+                const buffer = 50; // pixels outside canvas to allow
+                if (coords.x >= -buffer && coords.x < this.editor.width + buffer && 
+                    coords.y >= -buffer && coords.y < this.editor.height + buffer) {
+                    this.handleCanvasClick(e);
+                }
+            } else if (this.isMovingLayer) {
+                this.updateLayerMove(e);
+            } else if (this.isPanningCanvas) {
+                this.updateCanvasPan(e);
+            } else if (this.isDraggingGuide) {
+                this.updateGuideDrag(e);
+            } else if (this.isDraggingSelection) {
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                this.updateSelectionPosition(coords);
+            } else if (this.isDraggingSelectionGraphics) {
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                this.moveSelectionGraphics(coords);
+            } else if (this.isDrawing && this.currentTool === 'line' && this.startPos) {
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                if (!this.previewThrottleTime || Date.now() - this.previewThrottleTime >= 16) {
+                    this.previewThrottleTime = Date.now();
+                    this.drawLinePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                }
+            } else if (this.isDrawing && this.currentTool === 'shapes' && this.startPos) {
+                const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                if (!this.previewThrottleTime || Date.now() - this.previewThrottleTime >= 16) {
+                    this.previewThrottleTime = Date.now();
+                    if (this.currentShapeMode === 'rectangle') {
+                        this.drawRectPreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    } else if (this.currentShapeMode === 'circle') {
+                        this.drawCirclePreview(this.startPos.x, this.startPos.y, coords.x, coords.y);
+                    }
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!this.globalMouseTracking) return;
+            
+            this.globalMouseTracking = false; // Disable global tracking
+            
+            // Handle mouse up for ongoing operations
+            if (this.isDrawing) {
+                this.isDrawing = false;
+                
+                // Handle shape/line completion
+                if (['shapes', 'line', 'select-rect', 'select-circle'].includes(this.currentTool) && this.startPos) {
+                    const coords = this.editor.getCanvasCoordinates(e.clientX, e.clientY);
+                    
+                    if (this.currentTool === 'shapes') {
+                        this.clearShapePreview();
+                        const drawValue = e.button === 0 ? 0 : 1;
+                        
+                        if (this.currentShapeMode === 'rectangle') {
+                            if (this.unifiedShapeBorder && !this.unifiedShapeFill) {
+                                this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, false, true, this.currentPattern, drawValue);
+                            } else if (this.unifiedShapeFill && !this.unifiedShapeBorder) {
+                                this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, true, false, this.currentPattern, drawValue);
+                            } else if (this.unifiedShapeBorder && this.unifiedShapeFill) {
+                                this.editor.drawRect(this.startPos.x, this.startPos.y, coords.x, coords.y, true, true, this.currentPattern, drawValue);
+                            }
+                        } else if (this.currentShapeMode === 'circle') {
+                            const { centerX, centerY, radiusX, radiusY } = this.calculateEllipseParams(
+                                this.startPos.x, this.startPos.y, coords.x, coords.y, 
+                                this.shiftPressed, this.altPressed
+                            );
+                            if (this.unifiedShapeBorder && !this.unifiedShapeFill) {
+                                this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, false, true, this.currentPattern, drawValue);
+                            } else if (this.unifiedShapeFill && !this.unifiedShapeBorder) {
+                                this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
+                            } else if (this.unifiedShapeBorder && this.unifiedShapeFill) {
+                                this.editor.drawEllipse(centerX, centerY, radiusX, radiusY, true, false, this.currentPattern, drawValue);
+                            }
+                        }
+                        this.editor.saveState();
+                        requestAnimationFrame(() => this.updateOutput());
+                    } else if (this.currentTool === 'line') {
+                        this.clearLinePreview();
+                        const drawValue = e.button === 0 ? 0 : 1;
+                        this.editor.drawLine(this.startPos.x, this.startPos.y, coords.x, coords.y, this.currentPattern, drawValue);
+                        this.editor.saveState();
+                        requestAnimationFrame(() => this.updateOutput());
+                    }
+                }
+                
+                // Show brush cursor again if needed
+                if (this.currentTool === 'brush' || this.currentTool === 'eraser' || this.currentTool === 'blur' || this.currentTool === 'spray') {
+                    this.showBrushCursor();
+                }
+            }
+            
+            // Handle other global operations
+            if (this.isMovingLayer) {
+                this.stopLayerMove();
+            } else if (this.isPanningCanvas) {
+                this.stopCanvasPan();
+            } else if (this.isDraggingGuide) {
+                this.stopGuideDrag(e);
+            } else if (this.isDraggingSelection) {
+                this.isDraggingSelection = false;
+                this.selectionDragStart = null;
+                this.editor.saveState();
+            } else if (this.isDraggingSelectionGraphics) {
+                this.isDraggingSelectionGraphics = false;
+                this.selectionDragStart = null;
+                this.editor.saveState();
+            }
         });
 
         // Add mousemove handler for cursor changes over guides
@@ -785,7 +1239,8 @@ class BitsDraw {
         });
 
         // Global mouse events for continuous stroke outside canvas and panning
-        document.addEventListener('mousemove', (e) => {
+        // Store handler references for cleanup
+        this.globalMouseMoveHandler = (e) => {
             if (this.isPanning) {
                 this.updatePanning(e);
             } else if (this.isDrawing) {
@@ -820,29 +1275,35 @@ class BitsDraw {
                     };
                     
                     // Update shape preview with clamped coordinates
-                    if (this.currentTool === 'rect') {
-                        this.drawRectPreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
-                    } else if (this.currentTool === 'circle') {
-                        this.drawCirclePreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
+                    if (this.currentTool === 'shapes') {
+                        if (this.currentShapeMode === 'rectangle') {
+                            this.drawRectPreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
+                        } else if (this.currentShapeMode === 'circle') {
+                            this.drawCirclePreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
+                        }
                     } else if (this.currentTool === 'line') {
                         this.drawLinePreview(this.startPos.x, this.startPos.y, clampedCoords.x, clampedCoords.y);
                     }
                 }
             }
-        });
-
-        document.addEventListener('mouseup', () => {
+        };
+        
+        this.globalMouseUpHandler = () => {
             if (this.isPanning) {
                 this.stopPanning();
             }
             this.isDrawing = false;
-        });
+        };
+        
+        // Add global event listeners and track them for cleanup
+        this.addGlobalEventListener(document, 'mousemove', this.globalMouseMoveHandler);
+        this.addGlobalEventListener(document, 'mouseup', this.globalMouseUpHandler);
     }
 
     setupToolbarEvents() {
         // Tool palette events
         const tools = ['brush', 'pencil', 'eraser', 'bucket', 'select-rect', 'select-circle', 
-                      'move', 'line', 'text', 'rect', 'circle', 'spray', 'blur', 'guide', 'hand'];
+                      'move', 'line', 'text', 'shapes', 'spray', 'blur', 'guide', 'hand'];
         
         tools.forEach(tool => {
             const btn = document.getElementById(`${tool}-tool`);
@@ -987,6 +1448,9 @@ class BitsDraw {
         
         // Update viewport frame for new zoom level
         this.updateViewportFrame();
+        
+        // Update onion skinning overlay for new zoom
+        this.updateOnionSkinning();
     }
 
     showZoomDropdown() {
@@ -1253,11 +1717,35 @@ class BitsDraw {
         }
     }
 
+    updateCursorCoordinates(clientX, clientY) {
+        const coords = this.editor.getCanvasCoordinates(clientX, clientY);
+        const coordsDisplay = document.getElementById('cursor-coordinates');
+        
+        if (coordsDisplay && coords) {
+            // Ensure coordinates are within canvas bounds and are integers
+            const x = Math.max(0, Math.min(Math.floor(coords.x), this.editor.width - 1));
+            const y = Math.max(0, Math.min(Math.floor(coords.y), this.editor.height - 1));
+            coordsDisplay.textContent = `X:${x} Y:${y}`;
+        }
+    }
+
     setupKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
             // Track modifier keys globally
             this.shiftPressed = e.shiftKey;
             this.altPressed = e.altKey;
+            
+            // Track space key for temporary hand tool
+            if (e.code === 'Space' && !this.spacePressed) {
+                this.spacePressed = true;
+                this.previousTool = this.currentTool;
+                if (this.currentTool !== 'text' && 
+                    e.target.tagName !== 'INPUT' && 
+                    e.target.tagName !== 'TEXTAREA') {
+                    this.setTool('hand');
+                    e.preventDefault();
+                }
+            }
             
             // Skip if user is typing in input fields
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
@@ -1279,6 +1767,9 @@ class BitsDraw {
             } else if (isCtrl && e.key === 'e') {
                 e.preventDefault();
                 this.exportCode();
+            } else if (isCtrl && e.shiftKey && e.key === 'C') {
+                e.preventDefault();
+                this.dialogs.showCanvasResizeDialog();
             }
             // Edit operations
             else if (isCtrl && e.key === 'z') {
@@ -1309,6 +1800,33 @@ class BitsDraw {
             } else if (isCtrl && e.key === 'x') {
                 e.preventDefault();
                 this.cutSelection();
+            } else if (isCtrl && e.key === 'd') {
+                e.preventDefault();
+                this.clearSelection();
+            }
+            // Brush size shortcuts
+            else if (e.key === '[' && !isCtrl) {
+                e.preventDefault();
+                this.decreaseBrushSize();
+            } else if (e.key === ']' && !isCtrl) {
+                e.preventDefault();
+                this.increaseBrushSize();
+            }
+            // Color shortcuts
+            else if (e.key.toLowerCase() === 'x' && !isCtrl) {
+                e.preventDefault();
+                this.swapPrimarySecondaryColors();
+            } else if (e.key.toLowerCase() === 'd' && !isCtrl) {
+                e.preventDefault();
+                this.resetToDefaultColors();
+            } else if (e.key.toLowerCase() === 'i' && !isCtrl) {
+                e.preventDefault();
+                this.invertDisplayMode();
+            }
+            // Selection tool shortcuts
+            else if (e.key.toLowerCase() === 'm' && e.shiftKey && !isCtrl) {
+                e.preventDefault();
+                this.setTool('select-circle');
             }
             // Tool shortcuts
             else if (e.key.toLowerCase() === 'b' && !isCtrl) {
@@ -1329,13 +1847,15 @@ class BitsDraw {
                 this.setTool('circle');
             } else if (e.key.toLowerCase() === 's' && !isCtrl) {
                 this.setTool('spray');
-            } else if (e.key.toLowerCase() === 'm' && !isCtrl) {
+            } else if (e.key.toLowerCase() === 'm' && !e.shiftKey && !isCtrl) {
                 this.setTool('select-rect');
             } else if (e.key.toLowerCase() === 'v' && !isCtrl) {
                 this.setTool('move');
             } else if (e.key.toLowerCase() === 'h' && !isCtrl) {
                 this.setTool('hand');
             } else if (e.key.toLowerCase() === 'u' && !isCtrl) {
+                this.setTool('blur');
+            } else if (e.key.toLowerCase() === 'g' && !isCtrl) {
                 this.setTool('guide');
             }
             // View mode shortcuts
@@ -1360,12 +1880,41 @@ class BitsDraw {
                 e.preventDefault();
                 this.resetCanvasPan();
             }
+            // Layer shortcuts
+            else if (isCtrl && e.shiftKey && e.key === 'N') {
+                e.preventDefault();
+                this.addNewLayer();
+            } else if (isCtrl && e.shiftKey && e.key === 'D') {
+                e.preventDefault();
+                this.duplicateActiveLayer();
+            } else if (isCtrl && e.key === ']') {
+                e.preventDefault();
+                this.moveToNextLayer();
+            } else if (isCtrl && e.key === '[') {
+                e.preventDefault();
+                this.moveToPreviousLayer();
+            } else if (isCtrl && e.shiftKey && e.key === ']') {
+                e.preventDefault();
+                this.moveLayerUp();
+            } else if (isCtrl && e.shiftKey && e.key === '[') {
+                e.preventDefault();
+                this.moveLayerDown();
+            }
         });
         
         document.addEventListener('keyup', (e) => {
             // Track modifier keys globally
             this.shiftPressed = e.shiftKey;
             this.altPressed = e.altKey;
+            
+            // Handle space key release for temporary hand tool
+            if (e.code === 'Space' && this.spacePressed) {
+                this.spacePressed = false;
+                if (this.previousTool && this.currentTool === 'hand') {
+                    this.setTool(this.previousTool);
+                    this.previousTool = null;
+                }
+            }
         });
     }
 
@@ -1520,8 +2069,7 @@ class BitsDraw {
                             try {
                                 await this.handleImageFile(file);
                             } catch (error) {
-                                console.error('Error handling image file:', error);
-                                this.showNotification('Failed to import image: ' + error.message, 'error');
+                                this.errorHandler.handleFileImportError(error, file);
                             }
                         }
                         // Remove the temporary input
@@ -1620,8 +2168,7 @@ class BitsDraw {
                                 try {
                                     await this.handleImageFile(file);
                                 } catch (error) {
-                                    console.error('Error handling image file:', error);
-                                    this.showNotification('Failed to import image: ' + error.message, 'error');
+                                    this.errorHandler.handleFileImportError(error, file);
                                 }
                             }
                             // Remove the temporary input
@@ -1852,6 +2399,28 @@ class BitsDraw {
                     this.updateOutput();
                     this.updateWindowTitle(this.editor.width, this.editor.height);
                 }
+                break;
+
+            // New Layer menu actions for active layer only
+            case 'layer-flip-horizontal':
+                this.editor.flipActiveLayerHorizontal();
+                this.updateOutput();
+                break;
+            case 'layer-flip-vertical':
+                this.editor.flipActiveLayerVertical();
+                this.updateOutput();
+                break;
+            case 'layer-rotate-90':
+                this.editor.rotateActiveLayer90();
+                this.updateOutput();
+                break;
+            case 'layer-rotate-180':
+                this.editor.rotateActiveLayer180();
+                this.updateOutput();
+                break;
+            case 'layer-rotate-270':
+                this.editor.rotateActiveLayer270();
+                this.updateOutput();
                 break;
                 
             case 'theme-auto':
@@ -2114,22 +2683,31 @@ class BitsDraw {
         const canvasRect = this.canvas.getBoundingClientRect();
         const zoom = this.editor.zoom;
         
-        // Get current brush size
-        const toolSize = this.currentTool === 'eraser' ? this.eraserSize : 
-                        this.currentTool === 'blur' ? this.blurSize :
-                        this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
+        let screenX, screenY;
         
-        // Position cursor at top-left corner of the center pixel where drawing occurs
-        // The drawWithBrush method draws around pixelCoords as center point
-        const radius = Math.floor(toolSize / 2);
-        
-        // Calculate where the top-left corner of the brush area should be positioned
-        const brushTopLeftX = pixelCoords.x - radius;
-        const brushTopLeftY = pixelCoords.y - radius;
-        
-        // Convert to screen coordinates
-        const screenX = canvasRect.left + (brushTopLeftX * zoom);
-        const screenY = canvasRect.top + (brushTopLeftY * zoom);
+        if (this.currentTool === 'pencil') {
+            // Pencil tool - position cursor exactly on the pixel that will be drawn
+            // Note: getCanvasCoordinates already accounts for pan transforms, so no need to add canvasOffset
+            screenX = canvasRect.left + (pixelCoords.x * zoom);
+            screenY = canvasRect.top + (pixelCoords.y * zoom);
+        } else {
+            // Other tools - position cursor at brush area
+            const toolSize = this.currentTool === 'eraser' ? this.eraserSize : 
+                            this.currentTool === 'blur' ? this.blurSize :
+                            this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
+            
+            // Position cursor at top-left corner of the center pixel where drawing occurs
+            // The drawWithBrush method draws around pixelCoords as center point
+            const radius = Math.floor(toolSize / 2);
+            
+            // Calculate where the top-left corner of the brush area should be positioned
+            const brushTopLeftX = pixelCoords.x - radius;
+            const brushTopLeftY = pixelCoords.y - radius;
+            
+            // Convert to screen coordinates without adding canvasOffset (already handled by getCanvasCoordinates)
+            screenX = canvasRect.left + (brushTopLeftX * zoom);
+            screenY = canvasRect.top + (brushTopLeftY * zoom);
+        }
         
         this.brushCursorOverlay.style.left = screenX + 'px';
         this.brushCursorOverlay.style.top = screenY + 'px';
@@ -2138,6 +2716,7 @@ class BitsDraw {
     updateBrushCursorSize() {
         if (!this.brushCursorOverlay) return;
         const toolSize = this.currentTool === 'eraser' ? this.eraserSize : 
+                        this.currentTool === 'pencil' ? 1 :
                         this.currentTool === 'blur' ? this.blurSize :
                         this.currentTool === 'spray' ? this.sprayRadius : this.brushSize;
         
@@ -2908,17 +3487,548 @@ class BitsDraw {
         
         if (textStr && this.textClickPos && TextRenderer) {
             try {
-                const upperText = textStr.toUpperCase();
-                TextRenderer.renderText(upperText, this.textClickPos.x, this.textClickPos.y, this.editor, this.currentPattern);
+                // Create text object instead of direct rendering
+                const textObject = this.textObjectManager.createTextObject(
+                    textStr,  // Keep original case, no need to uppercase
+                    this.textClickPos.x,
+                    this.textClickPos.y,
+                    {
+                        font: TextRenderer.getCurrentFont(),
+                        size: TextRenderer.getCurrentSize(),
+                        pattern: this.currentPattern,
+                        layer: this.editor.getActiveLayerIndex()
+                    }
+                );
+                
                 this.editor.saveState();
                 this.updateOutput();
-                this.showNotification(`Text "${upperText}" added`, 'success');
+                this.showNotification(`Text object "${textStr}" created`, 'success');
             } catch (error) {
-                console.error('Text render error:', error);
-                this.showNotification('Failed to add text', 'error');
+                this.errorHandler.handleToolError(error, 'text');
             }
         }
         this.removeInPlaceTextInput();
+    }
+
+    /**
+     * Apply multi-line text with advanced formatting options
+     */
+    applyInPlaceTextAdvanced(text, multilineOptions = {}) {
+        // Ensure text is a string
+        const textStr = String(text || '').trim();
+        
+        if (textStr && this.textClickPos && TextRenderer) {
+            try {
+                // Use advanced text rendering if MultilineTextRenderer is available
+                if (typeof MultilineTextRenderer !== 'undefined') {
+                    const renderResult = TextRenderer.renderTextAdvanced(
+                        textStr,
+                        this.textClickPos.x,
+                        this.textClickPos.y,
+                        this.editor,
+                        this.currentPattern,
+                        TextRenderer.getCurrentFont(),
+                        TextRenderer.getCurrentSize(),
+                        multilineOptions
+                    );
+                    
+                    this.editor.saveState();
+                    this.updateOutput();
+                    
+                    const lineInfo = renderResult.lineCount > 1 ? ` (${renderResult.lineCount} lines)` : '';
+                    this.showNotification(`Multi-line text created${lineInfo}`, 'success');
+                } else {
+                    // Fall back to simple text rendering
+                    this.applyInPlaceText(textStr);
+                }
+            } catch (error) {
+                this.errorHandler.handleToolError(error, 'text-advanced');
+            }
+        }
+    }
+
+    /**
+     * Show text creation dialog with font and size selection
+     */
+    showTextCreationDialog() {
+        // Create dialog if it doesn't exist
+        if (!document.getElementById('text-creation-dialog')) {
+            this.createTextCreationDialog();
+        }
+        
+        const dialog = document.getElementById('text-creation-dialog');
+        const textInput = document.getElementById('text-creation-input');
+        const fontSelect = document.getElementById('text-creation-font');
+        const sizeSelect = document.getElementById('text-creation-size');
+        const alignmentSelect = document.getElementById('text-creation-alignment');
+        const lineSpacingInput = document.getElementById('text-creation-line-spacing');
+        const maxWidthInput = document.getElementById('text-creation-max-width');
+        const wrapModeSelect = document.getElementById('text-creation-wrap-mode');
+        
+        // Set current values
+        textInput.value = '';
+        fontSelect.value = TextRenderer.getCurrentFont();
+        sizeSelect.value = TextRenderer.getCurrentSize();
+        
+        // Set default multi-line values
+        if (alignmentSelect) alignmentSelect.value = 'left';
+        if (lineSpacingInput) lineSpacingInput.value = '0';
+        if (maxWidthInput) maxWidthInput.value = '0';
+        if (wrapModeSelect) wrapModeSelect.value = 'manual';
+        
+        // Position dialog near click position but ensure it stays in viewport
+        this.positionDialogNearClick(dialog);
+        
+        // Show dialog
+        dialog.style.display = 'flex';
+        
+        // Focus text input after a short delay to ensure dialog is visible
+        setTimeout(() => {
+            textInput.focus();
+            textInput.select();
+        }, 100);
+        
+        // Update preview
+        this.updateTextCreationPreview();
+    }
+
+    /**
+     * Position dialog near the click position while keeping it in viewport
+     */
+    positionDialogNearClick(dialog) {
+        if (!this.textClickPos) return;
+        
+        // Get canvas position and zoom info
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const zoom = this.editor.zoom;
+        
+        // Calculate screen position of click
+        const screenX = canvasRect.left + (this.textClickPos.x * zoom);
+        const screenY = canvasRect.top + (this.textClickPos.y * zoom);
+        
+        // Get dialog content size (estimate)
+        const dialogWidth = 380;
+        const dialogHeight = 350;
+        
+        // Calculate preferred position (offset from click)
+        let preferredX = screenX + 20;
+        let preferredY = screenY - 50;
+        
+        // Ensure dialog stays within viewport
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const margin = 20;
+        
+        // Adjust X position
+        if (preferredX + dialogWidth + margin > viewportWidth) {
+            preferredX = screenX - dialogWidth - 20;
+        }
+        if (preferredX < margin) {
+            preferredX = margin;
+        }
+        
+        // Adjust Y position
+        if (preferredY + dialogHeight + margin > viewportHeight) {
+            preferredY = screenY - dialogHeight + 50;
+        }
+        if (preferredY < margin) {
+            preferredY = margin;
+        }
+        
+        // Apply custom positioning
+        dialog.style.alignItems = 'flex-start';
+        dialog.style.justifyContent = 'flex-start';
+        dialog.style.paddingTop = `${preferredY}px`;
+        dialog.style.paddingLeft = `${preferredX}px`;
+    }
+    
+    /**
+     * Create text creation dialog
+     */
+    createTextCreationDialog() {
+        const dialog = document.createElement('div');
+        dialog.id = 'text-creation-dialog';
+        dialog.className = 'modal-dialog';
+        dialog.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Create Text</h3>
+                    <button class="modal-close" id="text-creation-close">
+                        <i class="ph ph-x"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="input-section">
+                        <label for="text-creation-input">Text:</label>
+                        <textarea id="text-creation-input" placeholder="Enter text..." maxlength="500" rows="3"></textarea>
+                        <div class="input-help">
+                            <i class="ph ph-info"></i>
+                            <span>Use Shift+Enter for line breaks</span>
+                        </div>
+                    </div>
+                    <div class="input-row">
+                        <div class="input-section">
+                            <label for="text-creation-font">Font:</label>
+                            <select id="text-creation-font">
+                                <option value="bitmap-5x7">Bitmap 5×7</option>
+                                <option value="bitmap-3x5">Bitmap 3×5</option>
+                                <option value="bitmap-7x9">Bitmap 7×9</option>
+                            </select>
+                        </div>
+                        <div class="input-section">
+                            <label for="text-creation-size">Size:</label>
+                            <select id="text-creation-size">
+                                <option value="1">1×</option>
+                                <option value="2">2×</option>
+                                <option value="3">3×</option>
+                                <option value="4">4×</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="input-row">
+                        <div class="input-section">
+                            <label for="text-creation-alignment">Alignment:</label>
+                            <select id="text-creation-alignment">
+                                <option value="left">Left</option>
+                                <option value="center">Center</option>
+                                <option value="right">Right</option>
+                            </select>
+                        </div>
+                        <div class="input-section">
+                            <label for="text-creation-line-spacing">Line Spacing:</label>
+                            <div class="number-input">
+                                <button type="button" id="line-spacing-dec">−</button>
+                                <input type="number" id="text-creation-line-spacing" min="0" max="20" value="0">
+                                <button type="button" id="line-spacing-inc">+</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="input-section">
+                        <label for="text-creation-max-width">Max Width (0 = no limit):</label>
+                        <div class="number-input">
+                            <button type="button" id="max-width-dec">−</button>
+                            <input type="number" id="text-creation-max-width" min="0" max="500" value="0">
+                            <button type="button" id="max-width-inc">+</button>
+                        </div>
+                    </div>
+                    <div class="input-section">
+                        <label for="text-creation-wrap-mode">Text Wrapping:</label>
+                        <select id="text-creation-wrap-mode">
+                            <option value="manual">Manual (line breaks only)</option>
+                            <option value="wrap">Word wrap</option>
+                            <option value="char">Character wrap</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="text-creation-cancel" class="btn-secondary">Cancel</button>
+                    <button id="text-creation-create" class="btn-primary">Create Text</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dialog);
+        
+        // Setup event handlers
+        document.getElementById('text-creation-close').addEventListener('click', () => {
+            this.closeTextCreationDialog();
+        });
+        
+        document.getElementById('text-creation-cancel').addEventListener('click', () => {
+            this.closeTextCreationDialog();
+        });
+        
+        document.getElementById('text-creation-create').addEventListener('click', () => {
+            const text = document.getElementById('text-creation-input').value;
+            if (text.trim()) {
+                // Get all text settings
+                const fontType = document.getElementById('text-creation-font').value;
+                const size = parseInt(document.getElementById('text-creation-size').value);
+                const alignment = document.getElementById('text-creation-alignment').value;
+                const lineSpacing = parseInt(document.getElementById('text-creation-line-spacing').value);
+                const maxWidth = parseInt(document.getElementById('text-creation-max-width').value);
+                const wrapMode = document.getElementById('text-creation-wrap-mode').value;
+                
+                // Update renderer settings
+                TextRenderer.setCurrentFont(fontType);
+                TextRenderer.setCurrentSize(size);
+                
+                // Create multi-line text options
+                const multilineOptions = {
+                    alignment: alignment,
+                    lineSpacing: lineSpacing,
+                    maxWidth: maxWidth,
+                    lineBreakMode: wrapMode
+                };
+                
+                // Check if we're in edit mode (via TextObjectManager)
+                if (this.textObjectManager && this.textObjectManager.isEditMode) {
+                    // Save existing text object changes with multi-line support
+                    this.textObjectManager.saveTextObjectChanges(text, multilineOptions);
+                } else {
+                    // Create new text with multi-line support
+                    this.applyInPlaceTextAdvanced(text, multilineOptions);
+                }
+                
+                // Update tool options bar to show new settings
+                this.updateToolOptionsBar();
+            }
+            this.closeTextCreationDialog();
+        });
+        
+        // Real-time preview updates
+        const updatePreview = () => this.updateTextCreationPreview();
+        
+        document.getElementById('text-creation-input').addEventListener('input', updatePreview);
+        document.getElementById('text-creation-font').addEventListener('change', updatePreview);
+        document.getElementById('text-creation-size').addEventListener('change', updatePreview);
+        document.getElementById('text-creation-alignment').addEventListener('change', updatePreview);
+        document.getElementById('text-creation-line-spacing').addEventListener('input', updatePreview);
+        document.getElementById('text-creation-max-width').addEventListener('input', updatePreview);
+        document.getElementById('text-creation-wrap-mode').addEventListener('change', updatePreview);
+        
+        // Number input controls
+        const lineSpacingInput = document.getElementById('text-creation-line-spacing');
+        const lineSpacingInc = document.getElementById('line-spacing-inc');
+        const lineSpacingDec = document.getElementById('line-spacing-dec');
+        const maxWidthInput = document.getElementById('text-creation-max-width');
+        const maxWidthInc = document.getElementById('max-width-inc');
+        const maxWidthDec = document.getElementById('max-width-dec');
+        
+        if (lineSpacingInc) {
+            lineSpacingInc.addEventListener('click', () => {
+                const currentValue = parseInt(lineSpacingInput.value);
+                if (currentValue < 20) {
+                    lineSpacingInput.value = currentValue + 1;
+                    updatePreview();
+                }
+            });
+        }
+        
+        if (lineSpacingDec) {
+            lineSpacingDec.addEventListener('click', () => {
+                const currentValue = parseInt(lineSpacingInput.value);
+                if (currentValue > 0) {
+                    lineSpacingInput.value = currentValue - 1;
+                    updatePreview();
+                }
+            });
+        }
+        
+        if (maxWidthInc) {
+            maxWidthInc.addEventListener('click', () => {
+                const currentValue = parseInt(maxWidthInput.value);
+                if (currentValue < 500) {
+                    maxWidthInput.value = currentValue + 10;
+                    updatePreview();
+                }
+            });
+        }
+        
+        if (maxWidthDec) {
+            maxWidthDec.addEventListener('click', () => {
+                const currentValue = parseInt(maxWidthInput.value);
+                if (currentValue > 0) {
+                    maxWidthInput.value = Math.max(0, currentValue - 10);
+                    updatePreview();
+                }
+            });
+        }
+        
+        // Handle Ctrl+Enter to create, regular Enter to add line breaks
+        document.getElementById('text-creation-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                document.getElementById('text-creation-create').click();
+            }
+        });
+        
+        // Close on backdrop click
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                this.closeTextCreationDialog();
+            }
+        });
+    }
+    
+    /**
+     * Update text creation preview
+     */
+    updateTextCreationPreview() {
+        if (!this.textClickPos) return;
+        
+        const text = document.getElementById('text-creation-input').value;
+        if (!text) {
+            // Clear live preview if no text
+            this.clearLivePreview();
+            return;
+        }
+        
+        const font = document.getElementById('text-creation-font').value;
+        const size = parseInt(document.getElementById('text-creation-size').value);
+        const alignment = document.getElementById('text-creation-alignment').value;
+        const lineSpacing = parseInt(document.getElementById('text-creation-line-spacing').value);
+        const maxWidth = parseInt(document.getElementById('text-creation-max-width').value);
+        const wrapMode = document.getElementById('text-creation-wrap-mode').value;
+        
+        // Create multiline options
+        const multilineOptions = {
+            alignment: alignment,
+            lineSpacing: lineSpacing,
+            maxWidth: maxWidth,
+            lineBreakMode: wrapMode
+        };
+        
+        // Render live preview on canvas
+        this.renderLiveTextPreview(text, font, size, multilineOptions);
+    }
+
+    /**
+     * Render live text preview directly on the canvas
+     */
+    renderLiveTextPreview(text, font, size, multilineOptions) {
+        // Clear previous preview
+        this.clearLivePreview();
+        
+        // Save current canvas state for restoration
+        if (!this.previewCanvasData) {
+            this.previewCanvasData = this.editor.getCanvasImageData();
+        }
+        
+        // Create a temporary overlay effect using a different rendering approach
+        const canvas = this.canvas;
+        const ctx = canvas.getContext('2d');
+        
+        // Get the zoom and position info
+        const zoom = this.editor.zoom;
+        const x = this.textClickPos.x * zoom;
+        const y = this.textClickPos.y * zoom;
+        
+        // Render preview text with semi-transparent overlay
+        this.renderPreviewTextOverlay(ctx, text, x, y, font, size, multilineOptions, zoom);
+    }
+
+    /**
+     * Render preview text as overlay on canvas
+     */
+    renderPreviewTextOverlay(ctx, text, x, y, font, size, multilineOptions, zoom) {
+        ctx.save();
+        
+        // Create semi-transparent preview effect
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#007acc'; // Blue preview color
+        
+        // Use MultilineTextRenderer if available, otherwise fallback
+        if (typeof MultilineTextRenderer !== 'undefined' && (text.includes('\n') || multilineOptions.maxWidth > 0)) {
+            this.renderMultilinePreviewOverlay(ctx, text, x, y, font, size, multilineOptions, zoom);
+        } else {
+            this.renderSingleLinePreviewOverlay(ctx, text, x, y, font, size, zoom);
+        }
+        
+        ctx.restore();
+    }
+
+    /**
+     * Render single line preview overlay
+     */
+    renderSingleLinePreviewOverlay(ctx, text, x, y, font, size, zoom) {
+        const fontData = TextRenderer.fonts[font];
+        if (!fontData) return;
+        
+        const charWidth = fontData.width * size * zoom;
+        const charHeight = fontData.height * size * zoom;
+        const spacing = fontData.spacing * size * zoom;
+        
+        let currentX = x;
+        
+        for (const char of text) {
+            const charBitmap = fontData.data[char] || fontData.data[char.toUpperCase()];
+            if (charBitmap) {
+                // Render character as filled rectangle (simplified preview)
+                for (let row = 0; row < charBitmap.length; row++) {
+                    for (let col = 0; col < charBitmap[row].length; col++) {
+                        if (charBitmap[row][col] === 1) {
+                            ctx.fillRect(
+                                currentX + col * size * zoom,
+                                y + row * size * zoom,
+                                size * zoom,
+                                size * zoom
+                            );
+                        }
+                    }
+                }
+                currentX += charWidth + spacing;
+            } else {
+                currentX += charWidth + spacing;
+            }
+        }
+    }
+
+    /**
+     * Render multi-line preview overlay (simplified)
+     */
+    renderMultilinePreviewOverlay(ctx, text, x, y, font, size, multilineOptions, zoom) {
+        const fontData = TextRenderer.fonts[font];
+        if (!fontData) return;
+        
+        const charWidth = fontData.width * size * zoom;
+        const charHeight = fontData.height * size * zoom;
+        const spacing = fontData.spacing * size * zoom;
+        const lineHeight = (charHeight + multilineOptions.lineSpacing * zoom);
+        
+        // Process text into lines (simplified)
+        const lines = text.split('\n');
+        
+        let currentY = y;
+        for (const line of lines) {
+            if (line.trim()) {
+                this.renderSingleLinePreviewOverlay(ctx, line, x, currentY, font, size, zoom);
+            }
+            currentY += lineHeight;
+        }
+    }
+
+    /**
+     * Clear live preview and restore canvas
+     */
+    clearLivePreview() {
+        if (this.previewCanvasData) {
+            this.editor.restoreCanvasImageData(this.previewCanvasData);
+            this.previewCanvasData = null;
+        }
+        this.editor.redraw();
+    }
+    
+    /**
+     * Close text creation dialog
+     */
+    closeTextCreationDialog() {
+        const dialog = document.getElementById('text-creation-dialog');
+        if (dialog) {
+            dialog.style.display = 'none';
+            
+            // Reset dialog positioning
+            dialog.style.alignItems = 'center';
+            dialog.style.justifyContent = 'center';
+            dialog.style.paddingTop = '';
+            dialog.style.paddingLeft = '';
+            
+            // Reset dialog for creation mode
+            const titleElement = dialog.querySelector('.modal-header h3');
+            const createBtn = document.getElementById('text-creation-create');
+            titleElement.textContent = 'Create Text';
+            createBtn.textContent = 'Create Text';
+        }
+        
+        // Clear any live preview
+        this.clearLivePreview();
+        
+        // Reset both creation and edit modes
+        this.textClickPos = null;
+        if (this.textObjectManager) {
+            this.textObjectManager.editingObject = null;
+            this.textObjectManager.isEditMode = false;
+        }
     }
 
     removeInPlaceTextInput() {
@@ -3111,11 +4221,13 @@ class BitsDraw {
             const width = parseInt(widthInput.value);
             const height = parseInt(heightInput.value);
             
-            if (width > 0 && height > 0 && width <= 2048 && height <= 2048) {
+            const validation = this.errorHandler.validateCanvasSize(width, height);
+            if (validation.valid) {
                 this.createNewCanvas(width, height);
                 closeDialog();
             } else {
-                this.showNotification('Invalid canvas size (1-2048 pixels)', 'error');
+                // Show detailed validation errors
+                this.errorHandler.handleCanvasError(new Error(validation.errors.join(', ')), 'create-new');
             }
         });
 
@@ -3221,7 +4333,7 @@ class BitsDraw {
             }
 
             try {
-                const bitmapData = U8G2Exporter.parseHFile(code);
+                const bitmapData = BitmapExporter.parseHFile(code);
                 this.editor.loadBitmapData(bitmapData);
                 this.updateOutput();
                 this.showNotification('CPP header imported successfully!', 'success');
@@ -3423,63 +4535,82 @@ class BitsDraw {
         previewCanvas.height = height * zoom;
     }
 
-    updateDitheringPreview() {
+    async updateDitheringPreview() {
         if (!this.ditheringData.originalPixels) return;
 
         const previewCanvas = document.getElementById('dithering-preview-canvas');
         
-        // Dither pixel data
-        const pixelLayer = {
-            pixels: this.ditheringData.originalPixels,
-            width: this.editor.width,
-            height: this.editor.height
-        };
+        // Show loading for larger canvases
+        const totalPixels = this.editor.width * this.editor.height;
+        // Large image processing notification removed
 
-        // Apply JavaScript dithering to pixels
-        const ditheredPixels = this.ditheringEffects.ditherLayer(
-            pixelLayer,
-            this.ditheringData.alpha,
-            this.ditheringData.method
-        );
-
-        // Dither alpha channel if enabled
-        let ditheredAlpha = this.ditheringData.originalAlpha;
-        if (this.ditheringData.ditherAlphaChannel && this.ditheringData.originalAlpha) {
-            // Convert 1-bit alpha to normalized for dithering
-            const normalizedAlpha = new Float32Array(this.ditheringData.originalAlpha.length);
-            for (let i = 0; i < this.ditheringData.originalAlpha.length; i++) {
-                normalizedAlpha[i] = this.ditheringData.originalAlpha[i];
-            }
-            
-            const alphaLayer = {
-                pixels: normalizedAlpha,
+        try {
+            // Dither pixel data
+            const pixelLayer = {
+                pixels: this.ditheringData.originalPixels,
                 width: this.editor.width,
                 height: this.editor.height
             };
 
-            ditheredAlpha = this.ditheringEffects.ditherLayer(
-                alphaLayer,
-                this.ditheringData.alpha,
-                this.ditheringData.method
+            // Apply JavaScript dithering to pixels
+            const ditheredPixels = await new Promise((resolve) => {
+                setTimeout(() => {
+                    const result = this.ditheringEffects.ditherLayer(
+                        pixelLayer,
+                        this.ditheringData.alpha,
+                        this.ditheringData.method
+                    );
+                    resolve(result);
+                }, 1);
+            });
+
+            // Dither alpha channel if enabled
+            let ditheredAlpha = this.ditheringData.originalAlpha;
+            if (this.ditheringData.ditherAlphaChannel && this.ditheringData.originalAlpha) {
+                // Convert 1-bit alpha to normalized for dithering
+                const normalizedAlpha = new Float32Array(this.ditheringData.originalAlpha.length);
+                for (let i = 0; i < this.ditheringData.originalAlpha.length; i++) {
+                    normalizedAlpha[i] = this.ditheringData.originalAlpha[i];
+                }
+                
+                const alphaLayer = {
+                    pixels: normalizedAlpha,
+                    width: this.editor.width,
+                    height: this.editor.height
+                };
+
+                ditheredAlpha = await new Promise((resolve) => {
+                    setTimeout(() => {
+                        const result = this.ditheringEffects.ditherLayer(
+                            alphaLayer,
+                            this.ditheringData.alpha,
+                            this.ditheringData.method
+                        );
+                        resolve(result);
+                    }, 1);
+                });
+            }
+
+            // Use 3x zoom for compact preview
+            const zoom = 3;
+
+            // Render preview with alpha support
+            this.renderDitheringPreviewWithAlpha(
+                previewCanvas,
+                ditheredPixels,
+                ditheredAlpha,
+                this.editor.width,
+                this.editor.height,
+                zoom
             );
+
+            // Store preview data for potential application
+            this.ditheringData.previewPixels = ditheredPixels;
+            this.ditheringData.previewAlpha = ditheredAlpha;
+            
+        } finally {
+            // Loading indicator removed
         }
-
-        // Use 3x zoom for compact preview
-        const zoom = 3;
-
-        // Render preview with alpha support
-        this.renderDitheringPreviewWithAlpha(
-            previewCanvas,
-            ditheredPixels,
-            ditheredAlpha,
-            this.editor.width,
-            this.editor.height,
-            zoom
-        );
-
-        // Store preview data for potential application
-        this.ditheringData.previewPixels = ditheredPixels;
-        this.ditheringData.previewAlpha = ditheredAlpha;
     }
 
     renderDitheringPreviewWithAlpha(canvas, pixelData, alphaData, width, height, zoom) {
@@ -3524,7 +4655,7 @@ class BitsDraw {
         ctx.fillRect(x, y, size, size);
     }
 
-    applyDithering() {
+    async applyDithering() {
         if (!this.ditheringData.previewPixels) {
             this.showNotification('No dithering preview to apply', 'error');
             return;
@@ -3536,27 +4667,48 @@ class BitsDraw {
             return;
         }
 
-        // Apply the dithered pixels to the active layer
-        activeLayer.pixels.set(this.ditheringData.previewPixels);
-        
-        // Apply dithered alpha if available
-        if (this.ditheringData.previewAlpha) {
-            activeLayer.alpha.set(this.ditheringData.previewAlpha);
+        // Apply dithering without progress display
+        const totalPixels = this.ditheringData.previewPixels.length;
+
+        try {
+            // Apply the dithered pixels to the active layer in batches
+            const batchSize = 1000;
+            for (let i = 0; i < totalPixels; i += batchSize) {
+                const end = Math.min(i + batchSize, totalPixels);
+                
+                // Copy batch of pixels
+                for (let j = i; j < end; j++) {
+                    activeLayer.pixels[j] = this.ditheringData.previewPixels[j];
+                }
+                
+                // Allow UI updates for large operations
+                if (totalPixels > 10000) {
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                }
+            }
+            
+            // Apply dithered alpha if available
+            if (this.ditheringData.previewAlpha) {
+                activeLayer.alpha.set(this.ditheringData.previewAlpha);
+            }
+
+            // Mark layer as dirty and update
+            this.editor.markCompositeDirty();
+            this.editor.addDirtyRect(0, 0, this.editor.width, this.editor.height);
+            this.editor.scheduleRender();
+
+            // Save state for undo
+            this.editor.saveState();
+
+            // Update output and preview
+            this.updateOutput();
+            this.editor.redraw();
+
+            this.showNotification(`Dithering applied (${this.ditheringData.method}, α=${this.ditheringData.alpha.toFixed(2)})`, 'success');
+            
+        } catch (error) {
+            this.showNotification(`Error applying dithering: ${error.message}`, 'error');
         }
-
-        // Mark layer as dirty and update
-        this.editor.markCompositeDirty();
-        this.editor.addDirtyRect(0, 0, this.editor.width, this.editor.height);
-        this.editor.scheduleRender();
-
-        // Save state for undo
-        this.editor.saveState();
-
-        // Update output and preview
-        this.updateOutput();
-        this.editor.redraw();
-
-        this.showNotification(`Dithering applied (${this.ditheringData.method}, α=${this.ditheringData.alpha.toFixed(2)})`, 'success');
     }
 
     detectAndApplyPlatform() {
@@ -3601,18 +4753,28 @@ class BitsDraw {
         widthInput.focus();
     }
 
-    createNewCanvas(width, height) {
+    createNewCanvas(width, height, backgroundColor = 'white') {
         // Save current state if needed
         if (confirm('Create new canvas? Current work will be lost.')) {
-            this.editor.resize(width, height);
-            this.editor.clear();
-            // Ensure Background layer is filled with white pixels
-            this.editor.fillBackgroundWithWhite();
+            // Save project background setting
+            this.projectBackgroundType = backgroundColor;
+            
+            // Use createNew for complete initialization instead of resize
+            this.editor.createNew(width, height, backgroundColor);
+            
+            // Clear guides and reset UI state
             this.clearAllGuides();
+            this.selection = null; // Clear any active selection
+            
+            // Update UI components
             this.setupPreview(); // Recreate preview canvas with new dimensions
             this.updateWindowTitle(width, height);
+            this.updateLayersList(); // Refresh layers panel
             this.updateOutput();
-            this.showNotification(`New canvas created: ${width}×${height}`, 'success');
+            
+            const bgText = backgroundColor === 'transparent' ? 'transparent' : 
+                          backgroundColor === 'black' ? 'black' : 'white';
+            this.showNotification(`New canvas created: ${width}×${height} (${bgText} background)`, 'success');
         }
     }
 
@@ -4335,8 +5497,7 @@ class BitsDraw {
             'move': { icon: 'ph-arrows-out-cardinal', name: 'Move' },
             'line': { icon: 'ph-line-segment', name: 'Line' },
             'text': { icon: 'ph-text-aa', name: 'Text' },
-            'rect': { icon: 'ph-rectangle', name: 'Rectangle' },
-            'circle': { icon: 'ph-circle', name: 'Circle' },
+            'shapes': { icon: 'ph-shapes', name: 'Shapes' },
             'spray': { icon: 'ph-spray-bottle', name: 'Spray' },
             'blur': { icon: 'ph-drop-simple', name: 'Blur' },
             'guide': { icon: 'ph-bounding-box', name: 'Guide' },
@@ -4403,31 +5564,19 @@ class BitsDraw {
                 // Left click = primary color (black), Right click = secondary color (white)
                 this.currentDrawValue = e.button === 0 ? 0 : 1; // 0=black, 1=white
                 
-                // Start stroke
-                if (this.smoothDrawing) {
-                    this.startSmoothStroke(coords.x, coords.y);
-                }
-                // Draw single pixel
+                // Pencil always draws single pixels
                 this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1, this.currentPattern);
                 this.lastDrawPos = { x: coords.x, y: coords.y };
             } else if (e.type === 'mousemove' && this.isDrawing) {
-                // Draw connected line from last position to current position
-                if (this.smoothDrawing) {
-                    this.updateSmoothStroke(coords.x, coords.y, this.currentDrawValue, 1);
+                // Draw connected line from last position to current position for pixel-perfect connection
+                if (this.lastDrawPos) {
+                    this.editor.drawLine(this.lastDrawPos.x, this.lastDrawPos.y, coords.x, coords.y, this.currentPattern, this.currentDrawValue, 1);
                 } else {
-                    // Draw line from last position to current position for pixel-perfect connection
-                    if (this.lastDrawPos) {
-                        this.editor.drawLine(this.lastDrawPos.x, this.lastDrawPos.y, coords.x, coords.y, this.currentPattern, this.currentDrawValue, 1);
-                    } else {
-                        this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1, this.currentPattern);
-                    }
-                    this.lastDrawPos = { x: coords.x, y: coords.y };
+                    this.editor.setPixelWithAlpha(coords.x, coords.y, this.currentDrawValue, 1, this.currentPattern);
                 }
+                this.lastDrawPos = { x: coords.x, y: coords.y };
             } else if (e.type === 'mouseup' && this.isDrawing) {
                 // Finish stroke
-                if (this.smoothDrawing) {
-                    this.finishSmoothStroke(this.currentDrawValue, 1);
-                }
                 this.editor.saveState();
                 this.lastDrawPos = null;
             }
@@ -4481,13 +5630,14 @@ class BitsDraw {
                 this.editor.saveState();
             }
         } else if (this.currentTool === 'blur') {
-            // Blur tool temporarily disabled due to performance issues
-            if (e.type === 'mousedown') {
-                this.showNotification('Blur tool is temporarily disabled for performance optimization', 'warning');
+            // Apply blur effect at click position
+            if (e.type === 'mousedown' || (e.type === 'mousemove' && this.isDrawing)) {
+                this.applyBlurEffect(coords.x, coords.y);
             }
         } else if (this.currentTool === 'text') {
-            // Create in-place text input at click position
-            this.createInPlaceTextInput(coords.x, coords.y, e.clientX, e.clientY);
+            // Store click position and show text configuration dialog
+            this.textClickPos = { x: coords.x, y: coords.y };
+            this.showTextCreationDialog();
             e.stopPropagation(); // Prevent this click from triggering clickOutsideHandler
         }
     }
@@ -4539,6 +5689,9 @@ class BitsDraw {
         
         this.applyCanvasOffset();
         this.renderGuides();
+        
+        // Update onion skinning overlay for new pan position (debounced)
+        this.debouncedUpdateOnionSkinning();
     }
     
     stopPanning() {
@@ -4558,6 +5711,9 @@ class BitsDraw {
         
         // Update guide positions
         this.renderGuides();
+        
+        // Update onion skinning overlay for new offset
+        this.updateOnionSkinning();
     }
     
     resetCanvasPan() {
@@ -4583,13 +5739,34 @@ class BitsDraw {
         const availableWidth = previewAreaRect.width - padding;
         const availableHeight = previewAreaRect.height - padding;
         
-        // Calculate scale to fit width while maintaining aspect ratio
-        const bitmapAspectRatio = this.editor.height / this.editor.width;
-        const scaledHeight = availableWidth * bitmapAspectRatio;
+        // Ensure minimum size
+        if (availableWidth <= 0 || availableHeight <= 0) return;
         
-        // Set preview canvas size to match main canvas dimensions
-        this.previewCanvas.width = 720;
-        this.previewCanvas.height = 576;
+        // Calculate exact aspect ratio
+        const bitmapAspectRatio = this.editor.height / this.editor.width;
+        
+        // Calculate both possible dimensions
+        const fitByWidthHeight = availableWidth * bitmapAspectRatio;
+        const fitByHeightWidth = availableHeight / bitmapAspectRatio;
+        
+        // Choose the dimension that fits within available space
+        let previewWidth, previewHeight;
+        
+        if (fitByWidthHeight <= availableHeight) {
+            // Fit by width - height scales proportionally
+            previewWidth = availableWidth;
+            previewHeight = fitByWidthHeight;
+        } else {
+            // Fit by height - width scales proportionally  
+            previewWidth = fitByHeightWidth;
+            previewHeight = availableHeight;
+        }
+        
+        // Use precise rounding to maintain aspect ratio
+        // Round to nearest integer while preserving ratio accuracy
+        const scale = Math.min(previewWidth / this.editor.width, previewHeight / this.editor.height);
+        this.previewCanvas.width = Math.round(this.editor.width * scale);
+        this.previewCanvas.height = Math.round(this.editor.height * scale);
         
         this.updatePreview();
         this.setupViewportNavigation();
@@ -5621,12 +6798,259 @@ class BitsDraw {
     /**
      * Export animation as GIF (Phase 5)
      */
-    exportAnimationGIF() {
-        if (this.legacyAdapter) {
-            this.legacyAdapter.exportAnimationGIF();
-        } else {
-            alert('Animation export requires the advanced CanvasUnit system.');
+    async exportAnimationGIF() {
+        // Check if we have multiple sheets for animation
+        if (!this.sheets || this.sheets.length <= 1) {
+            alert('Animation export requires multiple sheets. Please create additional sheets to use this feature.');
+            return;
         }
+
+        // Use current animation settings from sheet panel
+        const frameRate = this.animationState ? this.animationState.speed : 12;
+        const loop = this.animationState ? this.animationState.loop : true;
+        
+        try {
+            await this.showAnimationExportDialog(frameRate, loop);
+        } catch (error) {
+            console.error('Animation export error:', error);
+            alert('Failed to export animation. Please try again.');
+        }
+    }
+
+    /**
+     * Show animation export dialog with format options
+     */
+    async showAnimationExportDialog(frameRate, loop) {
+        // Create modal dialog
+        const modal = document.createElement('div');
+        modal.className = 'dialog-overlay';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div class="dialog" style="width: 500px;">
+                <div class="dialog-header">
+                    <h3>Export Animation</h3>
+                    <button class="dialog-close" id="animation-export-close">
+                        <i class="ph ph-x"></i>
+                    </button>
+                </div>
+                <div class="dialog-content">
+                    <div style="margin-bottom: 20px;">
+                        <h4>Export Format</h4>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="export-format" value="gif" checked>
+                                <span>Animated GIF</span>
+                                <small>Universal format - works everywhere</small>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="export-format" value="png-sequence">
+                                <span>PNG Sequence (ZIP)</span>
+                                <small>Most reliable - includes instructions for GIF creation</small>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="export-format" value="webm">
+                                <span>WebM Video</span>
+                                <small>Modern format - high quality, smaller file size</small>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <h4>Animation Settings</h4>
+                        <div class="form-group">
+                            <label>Frame Rate: <span id="fps-display">${frameRate}</span> FPS</label>
+                            <input type="range" id="fps-slider" min="1" max="30" value="${frameRate}">
+                        </div>
+                        <div class="form-group">
+                            <label>Project Name:</label>
+                            <input type="text" id="project-name" value="BitsDraw Animation" placeholder="Animation name">
+                        </div>
+                    </div>
+                    
+                    <div id="gif-quality-section" style="margin-bottom: 20px; display: block;">
+                        <h4>GIF Quality</h4>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="gif-quality" value="fast">
+                                <span>Fast</span>
+                                <small>Quick export, larger file size</small>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="gif-quality" value="balanced" checked>
+                                <span>Balanced</span>
+                                <small>Good quality and reasonable speed</small>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="gif-quality" value="best">
+                                <span>Best Quality</span>
+                                <small>Highest quality, slower export</small>
+                            </label>
+                        </div>
+                        <div class="info-panel" style="margin-top: 10px;">
+                            <p><i class="ph ph-info"></i> <strong>Export Method:</strong> Uses multiple encoding strategies for reliability</p>
+                            <p><small>1st: @pencil.js/canvas-gif-encoder → 2nd: gif.js → 3rd: PNG sequence fallback</small></p>
+                        </div>
+                    </div>
+                    
+                    <div class="info-panel">
+                        <p><strong>Frames:</strong> ${this.sheets.length}</p>
+                        <p><strong>Dimensions:</strong> ${this.editor.width} × ${this.editor.height}</p>
+                        <p><strong>Duration:</strong> ${(this.sheets.length / frameRate).toFixed(1)}s</p>
+                    </div>
+                </div>
+                <div class="dialog-footer">
+                    <button class="btn" id="animation-export-cancel">Cancel</button>
+                    <button class="btn btn-primary" id="animation-export-ok">Export</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Add event listeners
+        const fpsSlider = modal.querySelector('#fps-slider');
+        const fpsDisplay = modal.querySelector('#fps-display');
+        const formatRadios = modal.querySelectorAll('input[name="export-format"]');
+        const gifQualitySection = modal.querySelector('#gif-quality-section');
+        
+        fpsSlider.addEventListener('input', () => {
+            fpsDisplay.textContent = fpsSlider.value;
+        });
+
+        // Show/hide GIF quality section based on format selection
+        formatRadios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                if (radio.value === 'gif' && radio.checked) {
+                    gifQualitySection.style.display = 'block';
+                } else {
+                    gifQualitySection.style.display = 'none';
+                }
+            });
+        });
+
+        return new Promise((resolve, reject) => {
+            const cleanup = () => {
+                document.body.removeChild(modal);
+            };
+
+            modal.querySelector('#animation-export-close').addEventListener('click', () => {
+                cleanup();
+                resolve(null);
+            });
+
+            modal.querySelector('#animation-export-cancel').addEventListener('click', () => {
+                cleanup();
+                resolve(null);
+            });
+
+            modal.querySelector('#animation-export-ok').addEventListener('click', async () => {
+                const format = modal.querySelector('input[name="export-format"]:checked').value;
+                const finalFrameRate = parseInt(fpsSlider.value);
+                const projectName = modal.querySelector('#project-name').value || 'BitsDraw Animation';
+                
+                // Get GIF quality if GIF format is selected
+                let quality = 'balanced';
+                if (format === 'gif') {
+                    const qualityRadio = modal.querySelector('input[name="gif-quality"]:checked');
+                    if (qualityRadio) {
+                        quality = qualityRadio.value;
+                    }
+                }
+
+                cleanup();
+
+                try {
+                    await this.performAnimationExport(format, finalFrameRate, projectName, quality);
+                    resolve(true);
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        });
+    }
+
+    /**
+     * Perform the actual animation export
+     */
+    async performAnimationExport(format, frameRate, projectName, quality = 'balanced') {
+        if (!window.AnimationExporter) {
+            throw new Error('Animation Exporter not available');
+        }
+
+        const exporter = new AnimationExporter();
+        
+        // Override getSheetPixelData method to use our data
+        exporter.getSheetPixelData = (sheet, width, height) => {
+            return this.getSheetCompositePixels(sheet);
+        };
+
+        const settings = {
+            width: this.editor.width,
+            height: this.editor.height,
+            frameRate: frameRate,
+            projectName: projectName,
+            quality: quality
+        };
+
+        let result;
+        
+        try {
+            if (format === 'gif') {
+                result = await exporter.exportGIF(this.sheets, settings);
+            } else if (format === 'png-sequence') {
+                result = await exporter.exportPngSequence(this.sheets, settings);
+            } else if (format === 'webm') {
+                result = await exporter.exportWebM(this.sheets, settings);
+            } else {
+                throw new Error(`Unsupported format: ${format}`);
+            }
+
+            console.log(`Animation exported:`, result);
+            
+            // Show detailed success message
+            let successMessage = `Animation exported successfully!\nFormat: ${result.format}\nFrames: ${result.frameCount}\nFile size: ${(result.fileSize / 1024 / 1024).toFixed(2)} MB`;
+            
+            if (result.method) {
+                successMessage += `\nMethod: ${result.method}`;
+            }
+            
+            if (result.quality) {
+                successMessage += `\nQuality: ${result.quality}`;
+            }
+            
+            alert(successMessage);
+            
+        } catch (error) {
+            console.error('Export failed:', error);
+            
+            // More detailed error message
+            const errorMessage = error.message || 'Unknown export error';
+            alert(`Export failed: ${errorMessage}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Get composite pixel data for a sheet
+     */
+    getSheetCompositePixels(sheet) {
+        // Temporarily switch to the sheet
+        const currentSheet = this.currentSheet;
+        this.switchToSheet(sheet.id);
+        
+        // Get composite data
+        const composite = this.editor.compositeAllLayers();
+        const pixels = new Uint8Array(composite.pixels.length);
+        
+        // Copy pixel data
+        for (let i = 0; i < composite.pixels.length; i++) {
+            pixels[i] = composite.pixels[i];
+        }
+        
+        // Switch back to original sheet
+        this.switchToSheet(currentSheet);
+        
+        return pixels;
     }
 
     /**
@@ -5649,6 +7073,432 @@ class BitsDraw {
         } else {
             alert('Animation export requires the advanced CanvasUnit system.');
         }
+    }
+
+    // Helper method for animation system to select sheets by number
+    selectSheet(sheetNumber) {
+        if (sheetNumber >= 1 && sheetNumber <= this.sheets.length) {
+            const sheet = this.sheets[sheetNumber - 1]; // Convert to 0-based index
+            this.switchToSheet(sheet.id);
+            this.animationState.currentFrame = sheetNumber;
+        }
+    }
+
+    // ===== ANIMATION CONTROL METHODS =====
+
+    playAnimation() {
+        
+        if (this.sheets.length <= 1) {
+            this.showNotification('Need at least 2 sheets to play animation', 'warning');
+            return;
+        }
+
+        this.animationState.isPlaying = true;
+        this.animationState.isPaused = false;
+        this.animationState.totalFrames = this.sheets.length;
+
+        // Start animation timer
+        const frameInterval = 1000 / this.animationState.speed; // Convert FPS to milliseconds
+        this.animationState.animationTimer = setInterval(() => {
+            // Check if we've reached the end BEFORE moving to next frame
+            if (this.animationState.currentFrame >= this.animationState.totalFrames) {
+                if (this.animationState.loop) {
+                    this.animationState.currentFrame = 1;
+                    this.selectSheet(1);
+                } else {
+                    this.stopAnimation();
+                    return;
+                }
+            } else {
+                // Move to next frame only if we haven't reached the end
+                this.goToNextFrame();
+            }
+        }, frameInterval);
+
+        this.updateAnimationUI();
+        this.showNotification(`Playing animation at ${this.animationState.speed} FPS`, 'info');
+    }
+
+    pauseAnimation() {
+        if (this.animationState.animationTimer) {
+            clearInterval(this.animationState.animationTimer);
+            this.animationState.animationTimer = null;
+        }
+        this.animationState.isPlaying = false;
+        this.animationState.isPaused = true;
+        this.updateAnimationUI();
+        this.showNotification('Animation paused', 'info');
+    }
+
+    stopAnimation() {
+        if (this.animationState.animationTimer) {
+            clearInterval(this.animationState.animationTimer);
+            this.animationState.animationTimer = null;
+        }
+        this.animationState.isPlaying = false;
+        this.animationState.isPaused = false;
+        this.animationState.currentFrame = 1;
+        this.selectSheet(1);
+        this.updateAnimationUI();
+        this.showNotification('Animation stopped', 'info');
+    }
+
+    goToFirstFrame() {
+        this.animationState.currentFrame = 1;
+        this.selectSheet(1);
+        this.updateAnimationUI();
+    }
+
+    goToPreviousFrame() {
+        if (this.animationState.currentFrame > 1) {
+            this.animationState.currentFrame--;
+            this.selectSheet(this.animationState.currentFrame);
+        } else if (this.animationState.loop && this.sheets.length > 1) {
+            this.animationState.currentFrame = this.sheets.length;
+            this.selectSheet(this.animationState.currentFrame);
+        }
+        this.updateAnimationUI();
+    }
+
+    goToNextFrame() {
+        // Simply increment frame - don't handle looping here (that's handled in playAnimation)
+        this.animationState.currentFrame++;
+        
+        // Only switch sheet if we're within bounds
+        if (this.animationState.currentFrame <= this.sheets.length) {
+            this.selectSheet(this.animationState.currentFrame);
+        }
+        
+        this.updateAnimationUI();
+    }
+
+    goToLastFrame() {
+        this.animationState.currentFrame = this.sheets.length;
+        this.selectSheet(this.sheets.length);
+        this.updateAnimationUI();
+    }
+
+    goToFrame(frameNumber) {
+        if (frameNumber >= 1 && frameNumber <= this.sheets.length) {
+            this.animationState.currentFrame = frameNumber;
+            this.selectSheet(frameNumber);
+            this.updateAnimationUI();
+        }
+    }
+
+    updateAnimationUI() {
+        // Safety check for sheets
+        if (!this.sheets || !Array.isArray(this.sheets)) return;
+        
+        // Update frame counter
+        const frameCounter = document.getElementById('frame-counter');
+        if (frameCounter) {
+            frameCounter.textContent = `${this.animationState.currentFrame} / ${this.sheets.length}`;
+        }
+
+        // Update speed input display
+        const speedInput = document.getElementById('animation-speed');
+        if (speedInput) {
+            speedInput.value = this.animationState.speed;
+        }
+
+        // Update button states
+        const playBtn = document.getElementById('play-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const stopBtn = document.getElementById('stop-btn');
+
+        if (playBtn) {
+            playBtn.disabled = this.animationState.isPlaying;
+        }
+        if (pauseBtn) {
+            pauseBtn.disabled = !this.animationState.isPlaying;
+        }
+        if (stopBtn) {
+            stopBtn.disabled = !this.animationState.isPlaying && !this.animationState.isPaused;
+        }
+
+        // Timeline removed - no longer needed
+        // this.updateTimeline();
+    }
+
+    updateTimeline() {
+        const timelineTrack = document.getElementById('timeline-track');
+        if (!timelineTrack) return;
+        
+        // Safety check for sheets
+        if (!this.sheets || !Array.isArray(this.sheets)) return;
+
+        // Clear existing timeline frames
+        timelineTrack.innerHTML = '';
+
+        // Create timeline frames for each sheet
+        this.sheets.forEach((sheet, index) => {
+            const frameElement = document.createElement('div');
+            frameElement.className = 'timeline-frame';
+            frameElement.textContent = index + 1;
+            
+            // Mark current frame
+            if (index + 1 === this.animationState.currentFrame) {
+                frameElement.classList.add('current');
+            }
+
+            // Add click listener to jump to frame
+            frameElement.addEventListener('click', () => {
+                this.goToFrame(index + 1);
+            });
+
+            timelineTrack.appendChild(frameElement);
+        });
+    }
+
+    // ===== ONION SKINNING METHODS =====
+
+    debouncedUpdateOnionSkinning() {
+        // Clear previous timeout
+        if (this.onionSkinningUpdateTimeout) {
+            clearTimeout(this.onionSkinningUpdateTimeout);
+        }
+        
+        // Set new timeout for delayed update (improves performance during rapid pan/zoom)
+        this.onionSkinningUpdateTimeout = setTimeout(() => {
+            this.updateOnionSkinning();
+        }, 50); // 50ms delay
+    }
+
+    updateOnionSkinning() {
+        if (!this.animationState.onionSkinning) {
+            // Clear onion skin layers
+            this.clearOnionSkinning();
+            return;
+        }
+
+        // Show onion skinning for previous and next frames
+        this.renderOnionSkinning();
+    }
+
+    clearOnionSkinning() {
+        // Remove any existing onion skin overlay
+        const existingOverlay = document.getElementById('onion-skin-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+    }
+
+    renderOnionSkinning() {
+        this.clearOnionSkinning();
+
+        if (this.sheets.length <= 1) return;
+
+        // Create overlay canvas
+        const canvas = document.getElementById('bitmap-canvas');
+        if (!canvas) {
+            console.error('Bitmap canvas not found');
+            return;
+        }
+        
+        // Get canvas computed style and transform to match exact positioning
+        const canvasStyle = window.getComputedStyle(canvas);
+        
+        // Ensure canvas parent has relative positioning
+        const parent = canvas.parentNode;
+        if (window.getComputedStyle(parent).position === 'static') {
+            parent.style.position = 'relative';
+        }
+        
+        const overlay = document.createElement('canvas');
+        overlay.id = 'onion-skin-overlay';
+        
+        // Match canvas dimensions exactly
+        overlay.width = canvas.width;
+        overlay.height = canvas.height;
+        
+        // Position and styling
+        overlay.style.position = 'absolute';
+        overlay.style.top = canvas.offsetTop + 'px';
+        overlay.style.left = canvas.offsetLeft + 'px';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.zIndex = '10';
+        overlay.style.imageRendering = 'pixelated';
+        overlay.style.border = canvasStyle.border; // Match border if any
+        
+        // Match CSS dimensions for zoom effect
+        overlay.style.width = canvasStyle.width;
+        overlay.style.height = canvasStyle.height;
+        
+        // Copy canvas transform (pan) to overlay
+        overlay.style.transform = canvasStyle.transform;
+        overlay.style.transformOrigin = canvasStyle.transformOrigin;
+        
+        console.log('Creating onion skin overlay:', overlay.width, 'x', overlay.height, 'at', overlay.style.left, overlay.style.top);
+        console.log('Canvas transform:', canvasStyle.transform);
+        console.log('Canvas style width/height:', canvasStyle.width, canvasStyle.height);
+        console.log('Canvas actual width/height:', canvas.width, canvas.height);
+        console.log('Canvas clientWidth/Height:', canvas.clientWidth, canvas.clientHeight);
+        console.log('Editor zoom level:', this.editor.zoom);
+        parent.appendChild(overlay);
+        
+        const ctx = overlay.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        // Render previous frame only (light gray, 40% opacity)
+        const prevFrameIndex = this.animationState.currentFrame - 2; // 0-based
+        if (prevFrameIndex >= 0 && prevFrameIndex < this.sheets.length) {
+            console.log(`Onion skin: Current frame ${this.animationState.currentFrame}, showing frame ${prevFrameIndex + 1}`);
+            const prevSheet = this.sheets[prevFrameIndex];
+            console.log('Previous sheet data:', prevSheet);
+            this.renderOnionFrame(ctx, prevSheet, '#808080', 0.4);
+        } else {
+            console.log(`No previous frame to show (current: ${this.animationState.currentFrame}, sheets: ${this.sheets.length})`);
+        }
+    }
+
+    renderOnionFrame(ctx, sheet, color, opacity) {
+        if (!sheet || !sheet.layers) {
+            console.log('No sheet or layers to render');
+            return;
+        }
+
+        console.log('=== ONION SKIN DEBUG ===');
+        console.log('Sheet ID:', sheet.id, 'Size:', sheet.width, 'x', sheet.height);
+        console.log('Layers count:', sheet.layers.length);
+        
+        // Debug: Check each layer
+        sheet.layers.forEach((layer, index) => {
+            if (layer && layer.pixels) {
+                const blackPixels = layer.pixels.reduce((count, pixel) => count + (pixel === 1 ? 1 : 0), 0);
+                const alphaPixels = layer.alpha ? layer.alpha.reduce((count, alpha) => count + (alpha > 0 ? 1 : 0), 0) : 0;
+                const drawnPixels = layer.pixels.reduce((count, pixel, idx) => {
+                    return count + ((pixel === 1 && layer.alpha && layer.alpha[idx] > 0) ? 1 : 0);
+                }, 0);
+                console.log(`Layer ${index}: visible=${layer.visible}, black=${blackPixels}, alpha=${alphaPixels}, drawn=${drawnPixels}/${layer.pixels.length}`);
+            } else {
+                console.log(`Layer ${index}: INVALID - no pixels array`);
+            }
+        });
+
+        // Clear the overlay first
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        
+        // Get current zoom level for proper scaling
+        const currentZoom = this.editor ? this.editor.zoom : 1;
+        
+        // Create image data for pixel-level control at current zoom level
+        const scaledWidth = sheet.width * currentZoom;
+        const scaledHeight = sheet.height * currentZoom;
+        const imageData = ctx.createImageData(scaledWidth, scaledHeight);
+        const data = imageData.data;
+        
+        // Parse the color to RGB values
+        const grayValue = parseInt(color.substring(1, 3), 16); // Extract gray value from #808080
+        
+        let pixelsRendered = 0;
+        let totalPixelsChecked = 0;
+        
+        console.log(`Onion skin: Rendering at zoom ${currentZoom}x (${sheet.width}x${sheet.height} -> ${scaledWidth}x${scaledHeight})`);
+        
+        // For BitsDraw, drawing happens on layer 0, so we need to show it
+        // but distinguish between background and actual drawing
+        const layersToRender = [];
+        
+        sheet.layers.forEach((layer, layerIndex) => {
+            if (!layer || !layer.visible || !layer.pixels) return;
+            
+            const totalPixels = layer.pixels.length;
+            const blackPixels = layer.pixels.reduce((count, pixel) => count + (pixel === 1 ? 1 : 0), 0);
+            // Count ACTUAL drawn pixels (any alpha > 0, regardless of color)
+            const actualDrawnPixels = layer.alpha ? layer.alpha.reduce((count, alpha) => count + (alpha > 0 ? 1 : 0), 0) : 0;
+            
+            // Also separately count black vs white drawn pixels
+            const blackDrawnPixels = layer.pixels.reduce((count, pixel, idx) => {
+                return count + ((pixel === 1 && layer.alpha && layer.alpha[idx] > 0) ? 1 : 0);
+            }, 0);
+            const whiteDrawnPixels = layer.pixels.reduce((count, pixel, idx) => {
+                return count + ((pixel === 0 && layer.alpha && layer.alpha[idx] > 0) ? 1 : 0);
+            }, 0);
+            
+            console.log(`Sheet ${sheet.id} Layer ${layerIndex}: ${actualDrawnPixels} drawn pixels (${blackDrawnPixels} black + ${whiteDrawnPixels} white), total black: ${blackPixels}`);
+            
+            // Simplified approach: Check if layer matches the expected project background pattern
+            if (layerIndex === 0) {
+                // For background layer (layer 0), check if it exactly matches project background
+                let isProjectBackgroundLayer = false;
+                
+                if (this.projectBackgroundType === 'transparent') {
+                    // Transparent: all pixels=0, all alpha=0
+                    isProjectBackgroundLayer = (blackPixels === 0 && layer.alpha.every(a => a === 0));
+                } else if (this.projectBackgroundType === 'white') {
+                    // White: all pixels=0, all alpha=1
+                    isProjectBackgroundLayer = (blackPixels === 0 && layer.alpha.every(a => a === 1));
+                } else if (this.projectBackgroundType === 'black') {
+                    // Black: all pixels=1, all alpha=1
+                    isProjectBackgroundLayer = (blackPixels === totalPixels && layer.alpha.every(a => a === 1));
+                }
+                
+                if (isProjectBackgroundLayer) {
+                    console.log(`Skipping layer ${layerIndex} - matches project background type (${this.projectBackgroundType})`);
+                } else {
+                    layersToRender.push(layer);
+                    console.log(`Including layer ${layerIndex} for onion skin - contains modifications from background`);
+                }
+            } else if (actualDrawnPixels > 0) {
+                layersToRender.push(layer);
+                console.log(`Including layer ${layerIndex} for onion skin - has ${actualDrawnPixels} drawn pixels`);
+            } else {
+                console.log(`Skipping layer ${layerIndex} - no drawn pixels`);
+            }
+        });
+        
+        console.log(`Will render ${layersToRender.length} layers for onion skin`);
+        
+        // Check if this is showing a different sheet than current
+        const currentSheet = this.sheets.find(s => s.id === this.currentSheetId);
+        const isDifferentSheet = sheet.id !== this.currentSheetId;
+        console.log(`Onion skin: Different sheet? ${isDifferentSheet}, Current: ${this.currentSheetId}, Showing: ${sheet.id}`);
+
+        // Composite selected layers to create the onion skin with zoom support
+        for (let y = 0; y < sheet.height; y++) {
+            for (let x = 0; x < sheet.width; x++) {
+                const index = y * sheet.width + x;
+                totalPixelsChecked++;
+                
+                let pixelSet = false;
+                
+                // Check selected layers for this pixel
+                layersToRender.forEach((layer) => {
+                    // Check if pixel is drawn in this layer (any alpha > 0, regardless of color)
+                    if (layer.alpha && layer.alpha[index] > 0) {
+                        pixelSet = true;
+                    }
+                });
+                
+                if (pixelSet) {
+                    // Draw zoomed pixel (currentZoom x currentZoom square)
+                    for (let zy = 0; zy < currentZoom; zy++) {
+                        for (let zx = 0; zx < currentZoom; zx++) {
+                            const scaledX = x * currentZoom + zx;
+                            const scaledY = y * currentZoom + zy;
+                            
+                            // Bounds check for scaled coordinates
+                            if (scaledX < scaledWidth && scaledY < scaledHeight) {
+                                const scaledIndex = (scaledY * scaledWidth + scaledX) * 4;
+                                
+                                data[scaledIndex] = grayValue;     // Red
+                                data[scaledIndex + 1] = grayValue; // Green
+                                data[scaledIndex + 2] = grayValue; // Blue
+                                data[scaledIndex + 3] = Math.floor(255 * opacity); // Alpha
+                            }
+                        }
+                    }
+                    pixelsRendered++;
+                }
+            }
+        }
+        
+        // Put the image data on the canvas
+        ctx.putImageData(imageData, 0, 0);
+        
+        console.log(`Onion skin result: ${pixelsRendered}/${totalPixelsChecked} pixels rendered`);
+        console.log('=== END ONION SKIN DEBUG ===');
     }
 
     /**
@@ -5719,44 +7569,7 @@ class BitsDraw {
         }
     }
 
-    showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            border-radius: 5px;
-            color: white;
-            font-weight: bold;
-            z-index: 1000;
-            animation: slideIn 0.3s ease;
-        `;
-        
-        switch (type) {
-            case 'success':
-                notification.style.backgroundColor = '#27ae60';
-                break;
-            case 'error':
-                notification.style.backgroundColor = '#e74c3c';
-                break;
-            default:
-                notification.style.backgroundColor = '#3498db';
-        }
-        
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
-        }, 2000);
-    }
+    // showNotification method moved to enhanced version at line 9113
 
     // ===== COLOR OVERRIDE PATTERN =====
     
@@ -5985,6 +7798,9 @@ class BitsDraw {
         
         // Update guide positions
         this.renderGuides();
+        
+        // Update onion skinning overlay for new pan position (debounced)
+        this.debouncedUpdateOnionSkinning();
         
         e.preventDefault();
     }
@@ -6482,6 +8298,111 @@ class BitsDraw {
         this.renderGuides();
     }
 
+    // Enhanced Guide Management Methods
+    editGuideName(guideId) {
+        const guide = this.guides.find(g => g.id === guideId);
+        if (!guide) return;
+        
+        const newName = prompt('Enter new guide name:', guide.name);
+        if (newName && newName.trim() !== '' && newName !== guide.name) {
+            guide.name = newName.trim();
+            this.updateGuidesPanel();
+            this.showNotification(`Guide renamed to "${guide.name}"`, 'success');
+        }
+    }
+
+    changeGuideColor(guideId) {
+        const guide = this.guides.find(g => g.id === guideId);
+        if (!guide) return;
+        
+        // Create color picker dropdown
+        this.showGuideColorPicker(guide);
+    }
+
+    showGuideColorPicker(guide) {
+        // Remove any existing color picker
+        const existingPicker = document.querySelector('.guide-color-picker');
+        if (existingPicker) {
+            existingPicker.remove();
+        }
+        
+        // Create color picker popup
+        const picker = document.createElement('div');
+        picker.className = 'guide-color-picker';
+        picker.innerHTML = `
+            <div class="guide-color-picker-header">
+                <span>Choose Color</span>
+                <button class="guide-color-picker-close">\u00d7</button>
+            </div>
+            <div class="guide-color-picker-colors">
+                ${this.guideColors.map((color, index) => 
+                    `<div class="guide-color-option ${color === guide.color ? 'selected' : ''}" 
+                          style="background-color: ${color}" 
+                          data-color="${color}"></div>`
+                ).join('')}
+            </div>
+            <div class="guide-color-picker-custom">
+                <input type="color" id="guide-custom-color" value="${guide.color}">
+                <label for="guide-custom-color">Custom Color</label>
+            </div>
+        `;
+        
+        // Position near the guide item
+        const guideItem = document.querySelector(`[onclick*="${guide.id}"]`)?.closest('.guide-item');
+        if (guideItem) {
+            const rect = guideItem.getBoundingClientRect();
+            picker.style.position = 'fixed';
+            picker.style.left = (rect.right + 10) + 'px';
+            picker.style.top = rect.top + 'px';
+            picker.style.zIndex = '1000';
+        }
+        
+        document.body.appendChild(picker);
+        
+        // Add event handlers
+        picker.addEventListener('click', (e) => {
+            if (e.target.classList.contains('guide-color-option')) {
+                const newColor = e.target.dataset.color;
+                this.updateGuideColor(guide, newColor);
+                picker.remove();
+            } else if (e.target.classList.contains('guide-color-picker-close')) {
+                picker.remove();
+            }
+        });
+        
+        // Custom color input
+        const customColorInput = picker.querySelector('#guide-custom-color');
+        customColorInput.addEventListener('change', (e) => {
+            this.updateGuideColor(guide, e.target.value);
+            picker.remove();
+        });
+        
+        // Close on outside click
+        setTimeout(() => {
+            document.addEventListener('click', (e) => {
+                if (!picker.contains(e.target)) {
+                    picker.remove();
+                }
+            }, { once: true });
+        }, 100);
+    }
+
+    updateGuideColor(guide, newColor) {
+        guide.color = newColor;
+        this.updateGuidesPanel();
+        this.renderGuides();
+        this.showNotification(`Guide color updated`, 'success');
+    }
+
+    toggleGuideSort() {
+        this.guideSortEnabled = !this.guideSortEnabled;
+        this.updateGuidesPanel();
+        this.showNotification(
+            `Guide sorting ${this.guideSortEnabled ? 'enabled' : 'disabled'}`, 
+            'success'
+        );
+    }
+
     exportGuides(format = 'txt') {
         if (this.guides.length === 0) {
             this.showNotification('No guides to export', 'error');
@@ -6489,6 +8410,7 @@ class BitsDraw {
         }
         
         let content = '';
+        let mimeType = 'text/plain';
         
         if (format === 'txt') {
             this.guides.forEach(guide => {
@@ -6500,13 +8422,22 @@ class BitsDraw {
                 x: guide.x,
                 y: guide.y,
                 w: guide.w,
-                h: guide.h
+                h: guide.h,
+                color: guide.color
             }));
             content = JSON.stringify(guidesData, null, 2);
+            mimeType = 'application/json';
+        } else if (format === 'csv') {
+            // CSV format with color information
+            content = 'name,x,y,width,height,color\n';
+            this.guides.forEach(guide => {
+                content += `"${guide.name}",${guide.x},${guide.y},${guide.w},${guide.h},"${guide.color}"\n`;
+            });
+            mimeType = 'text/csv';
         }
         
         // Create and download file
-        const blob = new Blob([content], { type: 'text/plain' });
+        const blob = new Blob([content], { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -6517,6 +8448,153 @@ class BitsDraw {
         URL.revokeObjectURL(url);
         
         this.showNotification(`Guides exported as ${format.toUpperCase()}`, 'success');
+    }
+
+    showImportGuidesDialog() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.txt,.json,.csv';
+        input.style.display = 'none';
+        
+        input.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const content = event.target.result;
+                    const extension = file.name.split('.').pop().toLowerCase();
+                    
+                    if (extension === 'json') {
+                        this.importGuides(content, 'json');
+                    } else if (extension === 'txt') {
+                        this.importGuides(content, 'txt');
+                    } else if (extension === 'csv') {
+                        this.importGuides(content, 'csv');
+                    } else {
+                        this.showNotification('Unsupported file format. Please use .json, .txt, or .csv files.', 'error');
+                    }
+                } catch (error) {
+                    this.showNotification('Error reading file: ' + error.message, 'error');
+                }
+            };
+            
+            reader.readAsText(file);
+            document.body.removeChild(input);
+        });
+        
+        document.body.appendChild(input);
+        input.click();
+    }
+
+    importGuides(content, format) {
+        try {
+            let guidesToImport = [];
+            
+            if (format === 'json') {
+                const parsed = JSON.parse(content);
+                if (Array.isArray(parsed)) {
+                    guidesToImport = parsed;
+                } else {
+                    throw new Error('Invalid JSON format: expected array of guides');
+                }
+            } else if (format === 'txt') {
+                const lines = content.split('\n').filter(line => line.trim());
+                guidesToImport = lines.map((line, index) => {
+                    const parts = line.trim().split(/\s+/);
+                    if (parts.length < 5) {
+                        throw new Error(`Invalid line ${index + 1}: expected format "name x y w h"`);
+                    }
+                    return {
+                        name: parts[0],
+                        x: parseInt(parts[1]),
+                        y: parseInt(parts[2]),
+                        w: parseInt(parts[3]),
+                        h: parseInt(parts[4])
+                    };
+                });
+            } else if (format === 'csv') {
+                const lines = content.split('\n').filter(line => line.trim());
+                if (lines.length === 0) {
+                    throw new Error('CSV file is empty');
+                }
+                
+                // Skip header line if it exists
+                const dataLines = lines[0].toLowerCase().includes('name') ? lines.slice(1) : lines;
+                
+                guidesToImport = dataLines.map((line, index) => {
+                    // Simple CSV parsing (handles quoted fields)
+                    const fields = [];
+                    let current = '';
+                    let inQuotes = false;
+                    
+                    for (let i = 0; i < line.length; i++) {
+                        const char = line[i];
+                        if (char === '"') {
+                            inQuotes = !inQuotes;
+                        } else if (char === ',' && !inQuotes) {
+                            fields.push(current.trim());
+                            current = '';
+                        } else {
+                            current += char;
+                        }
+                    }
+                    fields.push(current.trim());
+                    
+                    if (fields.length < 5) {
+                        throw new Error(`Invalid CSV line ${index + 2}: expected at least 5 columns (name,x,y,width,height)`);
+                    }
+                    
+                    return {
+                        name: fields[0].replace(/^"|"$/g, ''), // Remove quotes
+                        x: parseInt(fields[1]),
+                        y: parseInt(fields[2]),
+                        w: parseInt(fields[3]),
+                        h: parseInt(fields[4]),
+                        color: fields[5] ? fields[5].replace(/^"|"$/g, '') : undefined
+                    };
+                });
+            }
+            
+            // Validate and import guides
+            let importedCount = 0;
+            guidesToImport.forEach((guideData, index) => {
+                if (this.validateGuideData(guideData)) {
+                    const guide = {
+                        id: 'guide_' + Date.now() + '_' + index,
+                        name: guideData.name || `Imported Guide ${this.guides.length + 1}`,
+                        x: Math.max(0, Math.min(guideData.x, this.editor.width)),
+                        y: Math.max(0, Math.min(guideData.y, this.editor.height)),
+                        w: Math.max(1, guideData.w),
+                        h: Math.max(1, guideData.h),
+                        color: guideData.color || this.guideColors[this.guideColorIndex % this.guideColors.length]
+                    };
+                    
+                    this.guides.push(guide);
+                    this.guideColorIndex++;
+                    importedCount++;
+                }
+            });
+            
+            if (importedCount > 0) {
+                this.updateGuidesPanel();
+                this.renderGuides();
+                this.showNotification(`Successfully imported ${importedCount} guide(s)`, 'success');
+            } else {
+                this.showNotification('No valid guides found to import', 'error');
+            }
+        } catch (error) {
+            this.showNotification('Import failed: ' + error.message, 'error');
+        }
+    }
+
+    validateGuideData(data) {
+        return data && 
+               typeof data.x === 'number' && !isNaN(data.x) &&
+               typeof data.y === 'number' && !isNaN(data.y) &&
+               typeof data.w === 'number' && !isNaN(data.w) && data.w > 0 &&
+               typeof data.h === 'number' && !isNaN(data.h) && data.h > 0;
     }
 
     setupGuidesPanel() {
@@ -6563,6 +8641,35 @@ class BitsDraw {
             });
         } else {
             console.error('Export guides button not found');
+        }
+        
+        // Import guides button
+        const importBtn = document.getElementById('import-guides-btn');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => {
+                this.showImportGuidesDialog();
+            });
+        } else {
+            console.error('Import guides button not found');
+        }
+        
+        // Sort guides button
+        const sortBtn = document.getElementById('sort-guides-btn');
+        if (sortBtn) {
+            sortBtn.addEventListener('click', () => {
+                this.toggleGuideSort();
+                // Update icon based on sort state
+                const icon = sortBtn.querySelector('i');
+                if (this.guideSortEnabled) {
+                    icon.className = 'ph ph-sort-descending';
+                    sortBtn.title = 'Disable Sort';
+                } else {
+                    icon.className = 'ph ph-sort-ascending';
+                    sortBtn.title = 'Enable Sort by Name';
+                }
+            });
+        } else {
+            console.error('Sort guides button not found');
         }
         
         // Clear all guides button
@@ -6769,14 +8876,23 @@ class BitsDraw {
         
         const jsonItem = document.createElement('div');
         jsonItem.className = 'dropdown-item';
-        jsonItem.innerHTML = '<i class="ph ph-download"></i> Download as .json';
+        jsonItem.innerHTML = '<i class="ph ph-download"></i> Download as .json (with colors)';
         jsonItem.addEventListener('click', () => {
             this.exportGuides('json');
             dropdown.remove();
         });
         
+        const csvItem = document.createElement('div');
+        csvItem.className = 'dropdown-item';
+        csvItem.innerHTML = '<i class="ph ph-download"></i> Download as .csv (with colors)';
+        csvItem.addEventListener('click', () => {
+            this.exportGuides('csv');
+            dropdown.remove();
+        });
+        
         dropdown.appendChild(txtItem);
         dropdown.appendChild(jsonItem);
+        dropdown.appendChild(csvItem);
         
         document.body.appendChild(dropdown);
         
@@ -7632,21 +9748,8 @@ class BitsDraw {
             }
             
         } else if (tool === 'pencil') {
-            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
-                <div class="option-group">
-                    <button class="btn-toggle ${this.smoothDrawing ? 'active' : ''}" id="pencil-smooth-bar">
-                        <i class="ph ph-sneaker-move"></i>
-                    </button>
-                </div>
-            `;
-            
-            const pencilSmoothBar = document.getElementById('pencil-smooth-bar');
-            if (pencilSmoothBar) {
-                pencilSmoothBar.addEventListener('click', () => {
-                    this.smoothDrawing = !this.smoothDrawing;
-                    pencilSmoothBar.classList.toggle('active', this.smoothDrawing);
-                });
-            }
+            // Pencil tool - simple with no options
+            this.toolOptionsBar.innerHTML = activeToolIndicatorHTML;
             
         } else if (tool === 'eraser') {
             this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
@@ -7703,45 +9806,59 @@ class BitsDraw {
                 });
             }
             
-        } else if (tool === 'rect' || tool === 'circle') {
-            const borderChecked = (tool === 'rect') ? this.drawBorder : this.circleDrawBorder;
-            const fillChecked = (tool === 'rect') ? this.drawFill : this.circleDrawFill;
-            
+        } else if (tool === 'shapes') {
             this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
-                    <button class="btn-toggle ${borderChecked ? 'active' : ''}" id="shape-border-bar">
+                    <button class="btn-toggle ${this.currentShapeMode === 'rectangle' ? 'active' : ''}" id="shape-rectangle-bar" title="Rectangle">
+                        <i class="ph ph-rectangle"></i>
+                    </button>
+                    <button class="btn-toggle ${this.currentShapeMode === 'circle' ? 'active' : ''}" id="shape-circle-bar" title="Circle">
+                        <i class="ph ph-circle"></i>
+                    </button>
+                </div>
+                <div class="option-group">
+                    <button class="btn-toggle ${this.unifiedShapeBorder ? 'active' : ''}" id="shape-border-bar" title="Border">
                         <i class="ph ph-selection-background"></i>
                     </button>
-                    <button class="btn-toggle ${fillChecked ? 'active' : ''}" id="shape-fill-bar">
+                    <button class="btn-toggle ${this.unifiedShapeFill ? 'active' : ''}" id="shape-fill-bar" title="Fill">
                         <i class="ph ph-paint-bucket"></i>
                     </button>
                 </div>
             `;
             
+            // Shape mode selection event handlers
+            const shapeRectangleBar = document.getElementById('shape-rectangle-bar');
+            const shapeCircleBar = document.getElementById('shape-circle-bar');
             const shapeBorderBar = document.getElementById('shape-border-bar');
             const shapeFillBar = document.getElementById('shape-fill-bar');
             
+            if (shapeRectangleBar) {
+                shapeRectangleBar.addEventListener('click', () => {
+                    this.currentShapeMode = 'rectangle';
+                    shapeRectangleBar.classList.add('active');
+                    if (shapeCircleBar) shapeCircleBar.classList.remove('active');
+                });
+            }
+            
+            if (shapeCircleBar) {
+                shapeCircleBar.addEventListener('click', () => {
+                    this.currentShapeMode = 'circle';
+                    shapeCircleBar.classList.add('active');
+                    if (shapeRectangleBar) shapeRectangleBar.classList.remove('active');
+                });
+            }
+            
             if (shapeBorderBar) {
                 shapeBorderBar.addEventListener('click', () => {
-                    if (tool === 'rect') {
-                        this.drawBorder = !this.drawBorder;
-                        shapeBorderBar.classList.toggle('active', this.drawBorder);
-                    } else {
-                        this.circleDrawBorder = !this.circleDrawBorder;
-                        shapeBorderBar.classList.toggle('active', this.circleDrawBorder);
-                    }
+                    this.unifiedShapeBorder = !this.unifiedShapeBorder;
+                    shapeBorderBar.classList.toggle('active', this.unifiedShapeBorder);
                 });
             }
             
             if (shapeFillBar) {
                 shapeFillBar.addEventListener('click', () => {
-                    if (tool === 'rect') {
-                        this.drawFill = !this.drawFill;
-                        shapeFillBar.classList.toggle('active', this.drawFill);
-                    } else {
-                        this.circleDrawFill = !this.circleDrawFill;
-                        shapeFillBar.classList.toggle('active', this.circleDrawFill);
-                    }
+                    this.unifiedShapeFill = !this.unifiedShapeFill;
+                    shapeFillBar.classList.toggle('active', this.unifiedShapeFill);
                 });
             }
             
@@ -7897,38 +10014,18 @@ class BitsDraw {
             
             this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
                 <div class="option-group">
-                    <label>Font:</label>
-                    <select id="text-font-select" title="Text Font">
-                        <option value="bitmap-5x7" ${currentFont === 'bitmap-5x7' ? 'selected' : ''}>5×7</option>
-                        <option value="bitmap-3x5" ${currentFont === 'bitmap-3x5' ? 'selected' : ''}>3×5</option>
-                        <option value="bitmap-7x9" ${currentFont === 'bitmap-7x9' ? 'selected' : ''}>7×9</option>
-                    </select>
+                    <div class="text-tool-info">
+                        <span class="text-info-label">Current:</span>
+                        <span class="text-info-value">${currentFont.replace('bitmap-', '')} @ ${currentSize}×</span>
+                    </div>
                 </div>
                 <div class="option-group">
-                    <label>Size:</label>
-                    <select id="text-size-select" title="Text Size">
-                        <option value="1" ${currentSize === 1 ? 'selected' : ''}>1×</option>
-                        <option value="2" ${currentSize === 2 ? 'selected' : ''}>2×</option>
-                        <option value="3" ${currentSize === 3 ? 'selected' : ''}>3×</option>
-                        <option value="4" ${currentSize === 4 ? 'selected' : ''}>4×</option>
-                    </select>
+                    <div class="text-tool-instruction">
+                        <i class="ph ph-info"></i>
+                        <span>Click canvas to place text • Double-click to edit</span>
+                    </div>
                 </div>
             `;
-            
-            const textFontSelect = document.getElementById('text-font-select');
-            const textSizeSelect = document.getElementById('text-size-select');
-            
-            if (textFontSelect) {
-                textFontSelect.addEventListener('change', (e) => {
-                    TextRenderer.setCurrentFont(e.target.value);
-                });
-            }
-            
-            if (textSizeSelect) {
-                textSizeSelect.addEventListener('change', (e) => {
-                    TextRenderer.setCurrentSize(parseInt(e.target.value));
-                });
-            }
             
         } else if (tool === 'select-rect' || tool === 'select-circle') {
             this.toolOptionsBar.innerHTML = activeToolIndicatorHTML + `
@@ -8580,6 +10677,7 @@ class BitsDraw {
                     projectName = projectNameElement.value;
                 }
             }
+            
             const editorBitmapData = this.editor.getBitmapData();
             const bitmapData = {
                 width: this.editor.width,
@@ -8607,74 +10705,23 @@ class BitsDraw {
     /**
      * Export to SVG with options dialog
      */
-    async exportSVG(options = {}) {
-        const defaultOptions = {
-            pixelSize: 4,
-            fillColor: '#000000',
-            backgroundColor: '#FFFFFF',
-            optimize: true
-        };
-        return await this.exportToFormat('svg', { ...defaultOptions, ...options });
-    }
+    // SVG export removed
 
-    /**
-     * Export to WebP format
-     */
-    async exportWebP(options = {}) {
-        const defaultOptions = {
-            scale: 4,
-            fillColor: '#000000',
-            backgroundColor: '#FFFFFF'
-        };
-        return await this.exportToFormat('webp', { ...defaultOptions, ...options });
-    }
+    // WebP export removed
 
     /**
      * Export to JSON format
      */
-    async exportJSON(options = {}) {
-        const defaultOptions = {
-            format: 'array',
-            includeMetadata: true
-        };
-        return await this.exportToFormat('json', { ...defaultOptions, ...options });
-    }
+    // JSON export removed
 
-    /**
-     * Export to ASCII Art
-     */
-    async exportASCII(options = {}) {
-        const defaultOptions = {
-            charSet: '██',
-            emptyChar: '  ',
-            lineNumbers: false,
-            border: true
-        };
-        return await this.exportToFormat('ascii', { ...defaultOptions, ...options });
-    }
+    // ASCII Art export removed
 
     /**
      * Export to CSS format
      */
-    async exportCSS(options = {}) {
-        const defaultOptions = {
-            format: 'dataurl',
-            pixelSize: '1px',
-            scale: 2
-        };
-        return await this.exportToFormat('css', { ...defaultOptions, ...options });
-    }
+    // CSS export removed
 
-    /**
-     * Export to Raw Binary format
-     */
-    async exportRawBinary(options = {}) {
-        const defaultOptions = {
-            format: 'bits',
-            packed: true
-        };
-        return await this.exportToFormat('raw', { ...defaultOptions, ...options });
-    }
+    // Raw Binary export removed
 
     /**
      * Show export format selection dialog
@@ -8730,10 +10777,11 @@ class BitsDraw {
      */
     startAutoSave() {
         if (this.autoSaveTimer) {
-            clearInterval(this.autoSaveTimer);
+            this.clearTimer(this.autoSaveTimer);
+            this.autoSaveTimer = null;
         }
 
-        this.autoSaveTimer = setInterval(() => {
+        this.autoSaveTimer = this.createInterval(() => {
             if (this.autoSaveEnabled && this.changesSinceLastSave && this.projectManager) {
                 this.performAutoSave();
             }
@@ -8902,7 +10950,7 @@ class BitsDraw {
             this.showNotification('Auto-save enabled', 'info');
         } else {
             if (this.autoSaveTimer) {
-                clearInterval(this.autoSaveTimer);
+                this.clearTimer(this.autoSaveTimer);
                 this.autoSaveTimer = null;
             }
             this.showNotification('Auto-save disabled', 'info');
@@ -8925,9 +10973,9 @@ class BitsDraw {
     }
 
     /**
-     * Show notification to user
+     * Show notification to user (enhanced version)
      */
-    showNotification(message, type = 'info') {
+    showNotification(message, type = 'info', options = {}) {
         // Create or update notification element
         let notification = document.getElementById('app-notification');
         if (!notification) {
@@ -8960,7 +11008,23 @@ class BitsDraw {
             info: '#3b82f6'
         };
         notification.style.backgroundColor = colors[type] || colors.info;
-        notification.textContent = message;
+        
+        // Enhanced notification with icon support
+        const icons = {
+            success: 'ph-check-circle',
+            error: 'ph-warning-circle',
+            warning: 'ph-warning',
+            info: 'ph-info'
+        };
+        
+        if (options.showIcon !== false) {
+            notification.innerHTML = `
+                <i class="ph ${icons[type] || icons.info} notification-icon"></i>
+                <span>${message}</span>
+            `;
+        } else {
+            notification.textContent = message;
+        }
 
         // Animate in
         setTimeout(() => {
@@ -8968,7 +11032,8 @@ class BitsDraw {
             notification.style.opacity = '1';
         }, 50);
 
-        // Auto-hide after 3 seconds
+        // Auto-hide with configurable duration
+        const duration = options.duration || (type === 'error' ? 5000 : 3000);
         setTimeout(() => {
             notification.style.transform = 'translateX(100%)';
             notification.style.opacity = '0';
@@ -8977,7 +11042,395 @@ class BitsDraw {
                     notification.parentNode.removeChild(notification);
                 }
             }, 300);
-        }, 3000);
+        }, duration);
+    }
+
+    // ===============================
+    // Memory Management Methods
+    // ===============================
+
+    /**
+     * Add global event listener and track for cleanup
+     */
+    addGlobalEventListener(target, event, handler) {
+        target.addEventListener(event, handler);
+        
+        if (!this.globalEventListeners.has(target)) {
+            this.globalEventListeners.set(target, new Map());
+        }
+        this.globalEventListeners.get(target).set(event, handler);
+        
+        DEBUG.log(`Added global event listener: ${event} on ${target.constructor.name}`);
+    }
+
+    /**
+     * Remove specific global event listener
+     */
+    removeGlobalEventListener(target, event) {
+        if (this.globalEventListeners.has(target)) {
+            const targetListeners = this.globalEventListeners.get(target);
+            if (targetListeners.has(event)) {
+                const handler = targetListeners.get(event);
+                target.removeEventListener(event, handler);
+                targetListeners.delete(event);
+                
+                if (targetListeners.size === 0) {
+                    this.globalEventListeners.delete(target);
+                }
+                
+                DEBUG.log(`Removed global event listener: ${event} from ${target.constructor.name}`);
+            }
+        }
+    }
+
+    /**
+     * Track timers for cleanup
+     */
+    addTimer(timer) {
+        this.timers.add(timer);
+        return timer;
+    }
+
+    /**
+     * Clear tracked timer
+     */
+    clearTimer(timer) {
+        if (this.timers.has(timer)) {
+            if (timer.type === 'interval') {
+                clearInterval(timer.id);
+            } else {
+                clearTimeout(timer.id);
+            }
+            this.timers.delete(timer);
+        }
+    }
+
+    /**
+     * Create tracked timeout
+     */
+    createTimeout(callback, delay) {
+        const timer = {
+            id: setTimeout(callback, delay),
+            type: 'timeout'
+        };
+        return this.addTimer(timer);
+    }
+
+    /**
+     * Create tracked interval
+     */
+    createInterval(callback, delay) {
+        const timer = {
+            id: setInterval(callback, delay),
+            type: 'interval'
+        };
+        return this.addTimer(timer);
+    }
+
+    /**
+     * Initialize managers for proper cleanup tracking
+     */
+    initializeManagers() {
+        // Initialize UI managers
+        this.dialogs = new DialogManager(this);
+        this.windows = new WindowManager(this);
+        this.menuManager = new MenuManager(this);
+        
+        // Initialize enhanced error handling
+        this.errorHandler = new ErrorHandler(this);
+        
+        DEBUG.log('UI managers initialized');
+    }
+
+    /**
+     * Comprehensive cleanup method to prevent memory leaks
+     */
+    dispose() {
+        DEBUG.log('Starting BitsDraw cleanup...');
+        
+        // 1. Remove all global event listeners
+        for (const [target, targetListeners] of this.globalEventListeners) {
+            for (const [event, handler] of targetListeners) {
+                target.removeEventListener(event, handler);
+                DEBUG.log(`Cleaned up event listener: ${event}`);
+            }
+        }
+        this.globalEventListeners.clear();
+
+        // 2. Clear all timers
+        for (const timer of this.timers) {
+            if (timer.type === 'interval') {
+                clearInterval(timer.id);
+            } else {
+                clearTimeout(timer.id);
+            }
+        }
+        this.timers.clear();
+
+        // 3. Clear auto-save timer specifically
+        if (this.autoSaveTimer) {
+            clearInterval(this.autoSaveTimer);
+            this.autoSaveTimer = null;
+        }
+
+        // 4. Clear submenu timeouts
+        if (this.submenuTimeouts) {
+            for (const timeout of this.submenuTimeouts.values()) {
+                clearTimeout(timeout);
+            }
+            this.submenuTimeouts.clear();
+        }
+
+        // 5. Cleanup editor and canvas contexts
+        if (this.editor) {
+            // Let OptimizedBitmapEditor handle its own cleanup if it has a dispose method
+            if (typeof this.editor.dispose === 'function') {
+                this.editor.dispose();
+            }
+            this.editor = null;
+        }
+
+        // 6. Cleanup large object references
+        this.canvas = null;
+        this.previewCanvas = null;
+        this.selection = null;
+        this.selectionClipboard = null;
+        this.guides = null;
+        this.layers = null;
+
+        // 7. Cleanup managers
+        if (this.projectManager && typeof this.projectManager.dispose === 'function') {
+            this.projectManager.dispose();
+        }
+        this.projectManager = null;
+
+        if (this.legacyAdapter && typeof this.legacyAdapter.dispose === 'function') {
+            this.legacyAdapter.dispose();
+        }
+        this.legacyAdapter = null;
+        this.unitManager = null;
+
+        // 8. Cleanup UI managers
+        if (this.dialogs && typeof this.dialogs.dispose === 'function') {
+            this.dialogs.dispose();
+        }
+        this.dialogs = null;
+        
+        if (this.windows && typeof this.windows.dispose === 'function') {
+            this.windows.dispose();
+        }
+        this.windows = null;
+        
+        this.tools = null;
+        this.menus = null;
+
+        DEBUG.log('BitsDraw cleanup completed');
+    }
+
+    /**
+     * Get memory usage statistics
+     */
+    getMemoryStats() {
+        return {
+            globalListeners: this.globalEventListeners.size,
+            activeTimers: this.timers.size,
+            hasAutoSaveTimer: !!this.autoSaveTimer,
+            submenuTimeouts: this.submenuTimeouts ? this.submenuTimeouts.size : 0,
+            canvasSize: this.editor ? `${this.editor.width}x${this.editor.height}` : 'N/A',
+            hasSelection: !!this.selection,
+            hasClipboard: !!this.selectionClipboard,
+            guidesCount: this.guides ? this.guides.length : 0
+        };
+    }
+
+    // ===== ENHANCED KEYBOARD SHORTCUTS METHODS =====
+
+    /**
+     * Clear current selection
+     */
+    clearSelection() {
+        this.selection = null;
+        this.isDraggingSelection = false;
+        this.isDraggingSelectionGraphics = false;
+        this.selectionDragStart = null;
+        this.editor.redraw();
+        this.showNotification('Selection cleared', 'info');
+    }
+
+    /**
+     * Increase brush size
+     */
+    increaseBrushSize() {
+        if (this.currentTool === 'brush' || this.currentTool === 'eraser') {
+            const maxSize = 10;
+            let currentSize, toolName;
+            
+            if (this.currentTool === 'brush') {
+                currentSize = this.brushSize;
+                toolName = 'Brush';
+            } else {
+                currentSize = this.eraserSize;
+                toolName = 'Eraser';
+            }
+            
+            if (currentSize < maxSize) {
+                if (this.currentTool === 'brush') {
+                    this.brushSize++;
+                } else {
+                    this.eraserSize++;
+                }
+                this.updateToolOptionsBar();
+                this.showNotification(`${toolName} size: ${currentSize + 1}`, 'info');
+            }
+        } else if (this.currentTool === 'spray') {
+            if (this.sprayRadius < 20) {
+                this.sprayRadius++;
+                this.updateToolOptionsBar();
+                this.showNotification(`Spray radius: ${this.sprayRadius}`, 'info');
+            }
+        }
+    }
+
+    /**
+     * Decrease brush size
+     */
+    decreaseBrushSize() {
+        if (this.currentTool === 'brush' || this.currentTool === 'eraser') {
+            let currentSize, toolName;
+            
+            if (this.currentTool === 'brush') {
+                currentSize = this.brushSize;
+                toolName = 'Brush';
+            } else {
+                currentSize = this.eraserSize;
+                toolName = 'Eraser';
+            }
+            
+            if (currentSize > 1) {
+                if (this.currentTool === 'brush') {
+                    this.brushSize--;
+                } else {
+                    this.eraserSize--;
+                }
+                this.updateToolOptionsBar();
+                this.showNotification(`${toolName} size: ${currentSize - 1}`, 'info');
+            }
+        } else if (this.currentTool === 'spray') {
+            if (this.sprayRadius > 1) {
+                this.sprayRadius--;
+                this.updateToolOptionsBar();
+                this.showNotification(`Spray radius: ${this.sprayRadius}`, 'info');
+            }
+        }
+    }
+
+    /**
+     * Swap primary and secondary colors
+     */
+    swapPrimarySecondaryColors() {
+        const temp = this.primaryColor;
+        this.primaryColor = this.secondaryColor;
+        this.secondaryColor = temp;
+        
+        this.updateColorDisplay('primary');
+        this.updateColorDisplay('secondary');
+        this.showNotification('Colors swapped', 'info');
+    }
+
+    /**
+     * Reset to default colors (black primary, white secondary)
+     */
+    resetToDefaultColors() {
+        this.primaryColor = '#000000';
+        this.secondaryColor = '#ffffff';
+        
+        this.updateColorDisplay('primary');
+        this.updateColorDisplay('secondary');
+        this.showNotification('Colors reset to default', 'info');
+    }
+
+    /**
+     * Invert display mode
+     */
+    invertDisplayMode() {
+        this.editor.inverted = !this.editor.inverted;
+        this.editor.redraw();
+        this.showNotification(`Display ${this.editor.inverted ? 'inverted' : 'normal'}`, 'info');
+    }
+
+    /**
+     * Add new layer
+     */
+    addNewLayer() {
+        const layerCount = this.editor.layers.length;
+        const newLayerName = `Layer ${layerCount + 1}`;
+        this.editor.addLayer(newLayerName);
+        this.editor.setActiveLayer(this.editor.layers.length - 1);
+        this.updateLayerList();
+        this.showNotification(`Added ${newLayerName}`, 'success');
+    }
+
+    /**
+     * Duplicate active layer
+     */
+    duplicateActiveLayer() {
+        const activeLayer = this.editor.getActiveLayer();
+        if (activeLayer) {
+            const duplicatedName = activeLayer.name + ' Copy';
+            this.editor.duplicateLayer(this.editor.activeLayerIndex, duplicatedName);
+            this.updateLayerList();
+            this.showNotification(`Duplicated layer: ${duplicatedName}`, 'success');
+        }
+    }
+
+    /**
+     * Move to next layer (up in the list)
+     */
+    moveToNextLayer() {
+        const nextIndex = this.editor.activeLayerIndex + 1;
+        if (nextIndex < this.editor.layers.length) {
+            this.editor.setActiveLayer(nextIndex);
+            this.updateLayerList();
+            this.showNotification(`Switched to: ${this.editor.getActiveLayer().name}`, 'info');
+        }
+    }
+
+    /**
+     * Move to previous layer (down in the list)
+     */
+    moveToPreviousLayer() {
+        const prevIndex = this.editor.activeLayerIndex - 1;
+        if (prevIndex >= 0) {
+            this.editor.setActiveLayer(prevIndex);
+            this.updateLayerList();
+            this.showNotification(`Switched to: ${this.editor.getActiveLayer().name}`, 'info');
+        }
+    }
+
+    /**
+     * Move layer up in order (towards front)
+     */
+    moveLayerUp() {
+        const currentIndex = this.editor.activeLayerIndex;
+        if (currentIndex < this.editor.layers.length - 1) {
+            this.editor.moveLayer(currentIndex, currentIndex + 1);
+            this.editor.setActiveLayer(currentIndex + 1);
+            this.updateLayerList();
+            this.showNotification('Layer moved up', 'info');
+        }
+    }
+
+    /**
+     * Move layer down in order (towards back)
+     */
+    moveLayerDown() {
+        const currentIndex = this.editor.activeLayerIndex;
+        if (currentIndex > 0) {
+            this.editor.moveLayer(currentIndex, currentIndex - 1);
+            this.editor.setActiveLayer(currentIndex - 1);
+            this.updateLayerList();
+            this.showNotification('Layer moved down', 'info');
+        }
     }
 
 }
@@ -8987,6 +11440,25 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Expose app globally for refactor bridge
     window.bitsDraw = app;
+
+    // Setup automatic cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        console.log('Page unloading, cleaning up BitsDraw...');
+        app.dispose();
+    });
+
+    // Also cleanup on visibility change (page hidden)
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            // Page is being hidden, might be closed soon
+            console.log('Page hidden, performing preventive cleanup...');
+            // Don't dispose completely, just clear heavy resources
+            if (app.editor && app.editor.compositeCache) {
+                app.editor.compositeCache.pixels = null;
+                app.editor.compositeCache.alpha = null;
+            }
+        }
+    });
     
     const style = document.createElement('style');
     style.textContent = `

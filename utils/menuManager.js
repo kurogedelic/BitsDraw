@@ -172,6 +172,9 @@ class MenuManager {
             case 'export-png':
                 this.app.exportPNG();
                 break;
+            case 'export-gif':
+                this.app.exportAnimationGIF();
+                break;
             case 'export-animation-gif':
                 this.app.exportAnimationGIF();
                 break;
@@ -181,24 +184,8 @@ class MenuManager {
             case 'export-sprite-sheet':
                 this.app.exportSpriteSheet();
                 break;
-            case 'export-svg':
-                this.app.exportSVG();
-                break;
-            case 'export-webp':
-                this.app.exportWebP();
-                break;
-            case 'export-json':
-                this.app.exportJSON();
-                break;
-            case 'export-ascii':
-                this.app.exportASCII();
-                break;
-            case 'export-css':
-                this.app.exportCSS();
-                break;
-            case 'export-raw':
-                this.app.exportRawBinary();
-                break;
+            // WebP export also removed as requested
+            // ASCII Art and Raw Binary export removed
             case 'export-formats':
                 this.app.showExportDialog();
                 break;
@@ -207,6 +194,21 @@ class MenuManager {
                 break;
             case 'import-cpp':
                 this.app.dialogs.showCppImportDialog();
+                break;
+            case 'import-text-objects':
+                if (this.app.textObjectManager) {
+                    this.app.textObjectManager.showImportDialog();
+                }
+                break;
+            case 'export-text-objects':
+                if (this.app.textObjectManager) {
+                    this.app.textObjectManager.exportTextObjectsToFile();
+                }
+                break;
+
+            // Image menu
+            case 'canvas-resize':
+                this.app.dialogs.showCanvasResizeDialog();
                 break;
 
             // Edit menu
@@ -270,6 +272,28 @@ class MenuManager {
                     this.app.updateLayersList();
                     this.app.updateOutput();
                 }
+                break;
+
+            // Layer-specific transformations (new Layer menu)
+            case 'layer-flip-horizontal':
+                this.app.editor.flipActiveLayerHorizontal();
+                this.app.updateOutput();
+                break;
+            case 'layer-flip-vertical':
+                this.app.editor.flipActiveLayerVertical();
+                this.app.updateOutput();
+                break;
+            case 'layer-rotate-90':
+                this.app.editor.rotateActiveLayer90();
+                this.app.updateOutput();
+                break;
+            case 'layer-rotate-180':
+                this.app.editor.rotateActiveLayer180();
+                this.app.updateOutput();
+                break;
+            case 'layer-rotate-270':
+                this.app.editor.rotateActiveLayer270();
+                this.app.updateOutput();
                 break;
 
             // Effects menu
@@ -366,5 +390,26 @@ class MenuManager {
                 }
             }
         });
+        
+        // Update Export GIF menu item state
+        this.updateExportGifMenuState();
+    }
+
+    updateExportGifMenuState() {
+        const exportGifMenu = document.getElementById('export-gif-menu');
+        if (!exportGifMenu) return;
+        
+        // Enable GIF export only when there are multiple sheets
+        const hasMultipleSheets = this.app.sheets && this.app.sheets.length > 1;
+        
+        if (hasMultipleSheets) {
+            exportGifMenu.classList.remove('disabled');
+            exportGifMenu.style.opacity = '1';
+            exportGifMenu.style.pointerEvents = 'auto';
+        } else {
+            exportGifMenu.classList.add('disabled');
+            exportGifMenu.style.opacity = '0.5';
+            exportGifMenu.style.pointerEvents = 'none';
+        }
     }
 }
