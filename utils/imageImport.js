@@ -151,7 +151,7 @@ class ImageImporter {
         });
     }
 
-    static async processImageAtSize(imageData, targetWidth, targetHeight, options = {}) {
+    static async processImageAtSize(imageData, targetWidth, targetHeight, options = {}, progressCallback = null) {
         const {
             threshold = 128,
             alphaHandling = 'blend',
@@ -167,8 +167,16 @@ class ImageImporter {
             canvas.width = targetWidth;
             canvas.height = targetHeight;
             
+            if (progressCallback) {
+                progressCallback(10, 'Scaling image...');
+            }
+            
             // Draw image scaled to target size
             ctx.drawImage(imageData.image, 0, 0, targetWidth, targetHeight);
+            
+            if (progressCallback) {
+                progressCallback(30, 'Reading pixel data...');
+            }
             
             // Get image data
             const canvasImageData = ctx.getImageData(0, 0, targetWidth, targetHeight);
@@ -178,6 +186,9 @@ class ImageImporter {
             const grayscaleData = new Float32Array(targetWidth * targetHeight);
             const alphaData = new Uint8Array(targetWidth * targetHeight);
             
+            const totalPixels = targetWidth * targetHeight;
+            let processedPixels = 0;
+            
             for (let y = 0; y < targetHeight; y++) {
                 for (let x = 0; x < targetWidth; x++) {
                     const index = (y * targetWidth + x) * 4;
@@ -186,6 +197,14 @@ class ImageImporter {
                     const g = data[index + 1];
                     const b = data[index + 2];
                     const alpha = data[index + 3];
+                    
+                    processedPixels++;
+                    
+                    // Update progress for large images
+                    if (progressCallback && totalPixels > 10000 && processedPixels % 1000 === 0) {
+                        const progress = 30 + (processedPixels / totalPixels) * 40; // 30-70%
+                        progressCallback(progress, `Processing pixels ${processedPixels.toLocaleString()} / ${totalPixels.toLocaleString()}`);
+                    }
                     
                     // Store original alpha
                     alphaData[pixelIndex] = alpha;
@@ -220,12 +239,20 @@ class ImageImporter {
                 }
             }
             
+            if (progressCallback) {
+                progressCallback(70, 'Applying dithering...');
+            }
+            
             // Apply dithering or threshold
             let bitmapData;
             if (ditherMethod === 'threshold') {
                 bitmapData = this.applyThreshold(grayscaleData, targetWidth, targetHeight, threshold / 255);
             } else {
                 bitmapData = this.applyDithering(grayscaleData, targetWidth, targetHeight, ditherMethod);
+            }
+            
+            if (progressCallback) {
+                progressCallback(85, 'Converting to bitmap format...');
             }
             
             // Convert to final pixel and alpha arrays
@@ -270,6 +297,10 @@ class ImageImporter {
                     
                     resultAlpha[y][x] = finalAlpha;
                 }
+            }
+            
+            if (progressCallback) {
+                progressCallback(100, 'Image processing complete!');
             }
             
             resolve({

@@ -36,7 +36,13 @@ This is a **pure static web application** using vanilla HTML5, CSS3, and JavaScr
   │     ├── windowManager.js     # Window management
   │     ├── toolManager.js       # Tool selection and management
   │     ├── dialogManager.js     # Dialog systems
-  │     └── textRenderer.js      # Text rendering
+  │     ├── textRenderer.js      # Basic text rendering
+  │     ├── textObjectManager.js # Advanced text object management
+  │     ├── multilineTextRenderer.js # Multi-line text rendering
+  │     ├── customFontManager.js # Custom font loading and management
+  │     ├── errorHandler.js      # Enhanced error handling system
+  │     ├── gifEncoder.js        # GIF animation export
+  │     └── animationExporter.js # Animation export utilities
   └── /src                       # Refactored architecture (in progress)
 ```
 
@@ -63,7 +69,7 @@ This is a **static web application** that requires no build process:
 - **Selection Tools**: Rectangle and circle selection with copy/paste/cut operations
 - **Shape Tools**: Rectangle, circle/oval, line with border/fill options and modifier key support (Shift for perfect circles, Alt for center mode)
 - **Spray Tool**: Configurable radius and density
-- **Text Tool**: Bitmap text rendering
+- **Advanced Text System**: Complete text object management with post-placement editing, multi-line text support, custom fonts, and advanced typography controls
 - **Move Tool**: Move graphics with loop wrapping option
 - **Guide Tool**: Create visual guides for positioning
 
@@ -76,6 +82,12 @@ This is a **static web application** that requires no build process:
 - **Zoom System**: 1x to 32x zoom with pixel-perfect rendering
 - **Grid Display**: Toggle grid overlay for precise editing
 - **Undo/Redo**: Complete history system
+- **Animation System**: Multi-sheet animation with playback controls, GIF export, and timeline
+- **Onion Skinning**: Previous frame overlay for animation reference (with pan support)
+- **Text Object Management**: Post-placement text editing with selection, movement, copy/paste, and layer management
+- **Multi-line Text Rendering**: Advanced text layouts with word wrapping, alignment (left/center/right), and line spacing controls
+- **Custom Font System**: Upload and manage custom bitmap fonts with preview and validation
+- **Enhanced Error Handling**: Comprehensive error categorization, user-friendly dialogs, and recovery suggestions
 
 ### Import/Export
 - **Image Import**: PNG/JPG import with advanced processing options:
@@ -83,9 +95,11 @@ This is a **static web application** that requires no build process:
   - Color inversion (black/white swapping)
   - Advanced alpha channel handling (white-to-alpha, black-to-alpha, preserve, force opaque)
   - Real-time preview with resize handles
-- **CPP Export**: U8G2, Adafruit GFX, Playdate PDI, Game Boy 2BPP formats
-- **PNG Export**: Direct PNG file export
+- **CPP Export**: U8G2, Adafruit GFX, Game Boy 2BPP formats with optimized encoding
+- **PNG Export**: Direct PNG file export with high-quality rendering
+- **GIF Animation Export**: Multi-strategy animated GIF export with quality settings and fallback mechanisms
 - **Guide Export**: Export guides as reference data
+- **Text Objects Export**: Import/export text objects for project templates and sharing
 
 ## Key Technical Implementation
 
@@ -127,6 +141,29 @@ This is a **static web application** that requires no build process:
 - **Custom Pattern Support**: Users can create and manage custom patterns
 - **LocalStorage Persistence**: Custom patterns saved automatically
 - **Pattern Management UI**: [+] and [-] buttons in header with visual feedback
+
+### Advanced Text System Architecture
+- **Text Object Management**: Post-placement text editing with TextObjectManager class
+- **Multi-line Rendering**: Word wrapping, character wrapping, and manual line breaks
+- **Text Alignment**: Left, center, right alignment with proper spacing calculations
+- **Custom Font Support**: JSON-based bitmap font loading with validation and preview
+- **Font Management**: Upload, preview, organize, and export custom fonts
+- **Context Menus**: Right-click editing, duplication, layer management for text objects
+- **Drag and Drop**: Move text objects with visual feedback and canvas boundary constraints
+
+### Enhanced Error Handling System
+- **Error Categorization**: File import/export, canvas operations, tool errors, system errors
+- **User-Friendly Dialogs**: Contextual error messages with recovery suggestions
+- **Validation Helpers**: Pre-validation for canvas sizes, file types, and operations
+- **Error History**: Tracking and reporting for debugging and improvement
+- **Recovery Actions**: Automated and user-guided error recovery workflows
+
+### GIF Animation Export System
+- **Multi-Strategy Encoding**: @pencil.js/canvas-gif-encoder with gif.js fallback
+- **Quality Settings**: Fast, Balanced, and Best quality modes with optimization
+- **Frame Processing**: Canvas-to-pixel data conversion with proper color mapping
+- **Error Handling**: Comprehensive fallback system with user guidance for failures
+- **Format Support**: GIF, PNG sequence, WebM with format-specific optimizations
 
 ## Development Guidelines
 
@@ -175,69 +212,48 @@ const unsigned char my_bitmap[] PROGMEM = {
 }
 ```
 
-## Future Development Tasks
+## Advanced Text System (Fully Implemented)
 
-### Text Tool Enhancement (Priority: Low - Basic Implementation Complete)
+### Complete Implementation Status
+The text system has been fully implemented with all advanced features:
 
-#### Current Implementation Status
-The text tool has been significantly enhanced with modern functionality:
+**✅ Core Text Features:**
+- **Multi-Font System**: 3 built-in bitmap fonts (5×7, 3×5, 7×9) with scalable rendering (1×-4× sizes)
+- **Modern Modal Interface**: Contemporary dialog system with live preview
+- **Enhanced Character Set**: Full A-Z, 0-9, symbols, and punctuation support
+- **Pattern Integration**: Complete pattern application support for styled text effects
+- **Layer System**: Full layer integration with proper alpha channel support
 
-**✅ Recently Completed Features:**
-- **Multi-Font System**: 3 bitmap fonts (5×7, 3×5, 7×9) with different character densities
-- **Scalable Rendering**: 1×-4× size scaling for all fonts with pixel-perfect rendering
-- **Modern Modal Interface**: Replaced speech bubble with contemporary dialog system
-- **Live Preview**: Real-time font and size preview with visual feedback
-- **Enhanced Character Set**: A-Z, 0-9, space (37 characters) with uppercase conversion
-- **Pattern Integration**: Full pattern application support for styled text
-- **Layer System**: Text renders to active layer with proper alpha channel support
-- **Click-to-Configure**: Streamlined workflow with modal appearing at click location
+**✅ Advanced Text Object Management:**
+- **Post-Placement Editing**: Click to select and edit any text object after placement
+- **Text Object Selection**: Visual selection with context menus and keyboard shortcuts
+- **Movement and Transformation**: Drag text objects with boundary constraints and visual feedback
+- **Copy/Paste System**: Duplicate and move text objects between locations
+- **Layer Management**: Text objects integrate fully with layer visibility and priority
+- **Import/Export**: Save and load text object collections for project templates
 
-**✅ Current Capabilities:**
-- Professional font selection interface with live preview
-- Scalable text rendering from 1× to 4× sizes
-- Pattern application for textured text effects
-- Canvas boundary checking and validation
-- Undo/redo system integration
-- Layer-based text rendering with transparency
+**✅ Multi-line Text Rendering:**
+- **Word Wrapping**: Intelligent word boundaries with overflow handling
+- **Character Wrapping**: Character-level wrapping for maximum space utilization  
+- **Manual Line Breaks**: Support for explicit line breaks (\n) in text
+- **Text Alignment**: Left, center, right alignment with proper spacing calculations
+- **Line Spacing Controls**: Adjustable line height and character spacing
+- **Preview Generation**: Real-time preview with different layout options
 
-**❌ Remaining Enhancement Opportunities:**
-1. **Extended Character Set**: Lowercase letters, symbols, punctuation, international characters
-2. **Advanced Text Features**: Multi-line support, text alignment options, character spacing
-3. **Text Object Management**: Post-placement editing, selection, movement, deletion
-4. **Typography Controls**: Line height, character spacing, text bounding boxes
-5. **Custom Fonts**: User-uploadable bitmap font support
+**✅ Custom Font System:**
+- **Font Upload Interface**: Drag-and-drop font file upload with validation
+- **Multiple Format Support**: BitsDraw JSON, BMF JSON, and Simple Bitmap Array formats
+- **Font Preview**: Real-time font rendering preview with sample text
+- **Font Management**: Organize, rename, export, and delete custom fonts
+- **Format Validation**: Comprehensive validation with user-friendly error messages
+- **Integration**: Custom fonts automatically appear in all font selection interfaces
 
-#### Future Enhancement Phases (Lower Priority)
-
-**Phase 1: Extended Character Set**
-- Add lowercase letters (a-z) to all three font families
-- Include common symbols: `!@#$%^&*()_+-=[]{}|;':\",./<>?`
-- Add punctuation and special characters
-- Implement fallback character rendering for unsupported glyphs
-
-**Phase 2: Advanced Typography**
-- Multi-line text support with line breaks and wrapping
-- Text alignment options (left, center, right, justified)
-- Character spacing and line height controls
-- Text bounding box visualization and editing
-
-**Phase 3: Text Object System**
-- Convert text to editable objects after placement
-- Text selection, movement, and transformation tools
-- Post-placement font and size modification
-- Text-specific layers with independent management
-
-**Phase 4: Enhanced Font System**
-- Custom bitmap font loading capability
-- Variable-width font support for improved readability
-- Font style variations (bold, italic, condensed)
-- Font management and organization system
-
-**Technical Implementation Notes:**
-- Current TextRenderer class at `/utils/textRenderer.js` with multi-font architecture
-- Font data stored as optimized 2D arrays with metadata
-- Modal integration in main.js with click-to-configure workflow
-- Modern dialog styling in style.css with comprehensive form controls
+**Technical Architecture:**
+- **TextObjectManager** (`/utils/textObjectManager.js`): Complete text object lifecycle management
+- **MultilineTextRenderer** (`/utils/multilineTextRenderer.js`): Advanced text layout engine
+- **CustomFontManager** (`/utils/customFontManager.js`): Font loading and management system
+- **Enhanced TextRenderer** (`/utils/textRenderer.js`): Core text rendering with multi-font support
+- **Full UI Integration**: Context menus, dialogs, and keyboard shortcuts throughout
 
 ## Testing and Development
 
@@ -377,6 +393,74 @@ When making changes, verify functionality with:
 - `utils/menuManager.js` - Updated menu handler to show About modal instead of window
 - `style.css` - Added coffee link styling and enhanced about section theme integration
 
+### v1.0.6 Animation System & Onion Skinning Implementation
+
+**Complete Animation Control System:**
+- **Multi-Sheet Animation**: Support for multiple sheets as animation frames
+- **Playback Controls**: Play, pause, stop, and frame navigation (first, previous, next, last)
+- **Speed Control**: Variable animation speed from 1-30 FPS with number input controls
+- **Loop Control**: Toggle button for loop animation with repeat icon
+- **Frame Counter**: Live display of current frame / total frames
+- **Timeline Integration**: Visual frame representation with click-to-navigate
+
+**Advanced Onion Skinning:**
+- **Previous Frame Overlay**: Shows previous animation frame in light gray (40% opacity)
+- **Smart Background Detection**: Automatically distinguishes between project background and actual drawing content
+- **Multi-Layer Support**: Correctly renders content from all drawing layers
+- **Color-Independent Rendering**: Displays both black and white drawn pixels (alpha > 0)
+- **Pan Support**: Onion skin overlay follows Hand tool and middle-mouse panning operations
+- **Performance Optimized**: Debounced updates during rapid pan operations
+
+**Project Background Management:**
+- **Background Type Detection**: Automatically detects transparent, white, or black project backgrounds
+- **Consistent Sheet Creation**: New sheets inherit the project's background type
+- **Smart Filtering**: Onion skinning excludes uniform background layers while preserving actual drawing content
+
+**UI/UX Enhancements:**
+- **Animation Footer**: Compact animation controls in sheet panel footer
+- **Modern Button Design**: Unified styling matching guides-controls aesthetic
+- **Responsive Layout**: Left/right control groups with optimal spacing
+- **Icon Integration**: Phosphor icons for intuitive interface
+
+**Technical Implementation:**
+- **Sheet System Integration**: Seamless integration with existing multi-sheet functionality
+- **Transform Synchronization**: Overlay canvas inherits main canvas transforms for accurate positioning
+- **Memory Management**: Efficient overlay creation/destruction with proper cleanup
+- **Event System**: Comprehensive update triggers for zoom, pan, and sheet switching operations
+
+**Files Enhanced:**
+- `main.js` - Complete animation system, onion skinning engine, background detection
+- `index.html` - Animation footer UI with modern control layout
+- `style.css` - Unified button styling and animation control aesthetics
+
+### v1.0.7 Coordinate System Transformation Fixes
+
+**Brush Cursor Positioning Fix:**
+- **Double-Offset Correction**: Fixed coordinate system where pan transforms were being applied twice
+- **Accurate Cursor Positioning**: Brush, pencil, and tool cursors now position correctly during zoom and pan operations
+- **Simplified Coordinate Logic**: Removed redundant `canvasOffset` calculations in cursor positioning methods
+
+**Text Tool Positioning Fix:**
+- **Modal Dialog Positioning**: Fixed text configuration modal positioning during zoom and pan
+- **Preview Text Overlay**: Corrected text preview overlay positioning for accurate placement visualization
+- **Consistent Coordinate Handling**: Unified coordinate transformation approach across all text-related positioning
+
+**Technical Implementation:**
+- **Core Coordinate Method**: `getCanvasCoordinates()` in `utils/optimizedBitmap.js` properly accounts for CSS transform pan offsets
+- **Eliminated Double Compensation**: Removed manual `canvasOffset.x/y` additions in `updateBrushCursor()` and text positioning methods
+- **Transform Matrix Parsing**: Accurate CSS transform matrix parsing to extract pan translation values
+- **Zoom-Aware Calculations**: Proper pixel-to-screen coordinate conversion maintaining accuracy at all zoom levels
+
+**Files Modified:**
+- `main.js` - Fixed `updateBrushCursor()` method (lines 2670-2688) and text positioning methods (lines 3585-3586, 3883-3884)
+- `utils/optimizedBitmap.js` - Enhanced `getCanvasCoordinates()` method with pan transform parsing (lines 1801-1828)
+
+**Resolution Summary:**
+- ✅ **Brush Cursor Alignment**: No more cursor offset during zoom operations
+- ✅ **Pan Operation Support**: Cursor follows correctly during Hand tool panning
+- ✅ **Text Tool Accuracy**: Modal dialogs and text previews position precisely
+- ✅ **Coordinate System Unification**: Single source of truth for coordinate transformations
+
 ### Previous Major Features
 
 ### PNG Reading Optimization
@@ -397,3 +481,60 @@ When making changes, verify functionality with:
 - **Applied to Both**: Circle tool and Circle Select tool use same modifier system
 
 **Result**: Professional bitmap editor with MacPaint-inspired workflow and modern web technology
+
+### v1.1.0 Advanced Text System & Enhanced Error Handling
+
+**Complete Text Object Management System:**
+- **TextObjectManager Integration**: Full post-placement text editing with selection, movement, and transformation
+- **Multi-line Text Support**: Word wrapping, character wrapping, and manual line breaks with alignment controls
+- **Custom Font System**: Upload, validate, and manage custom bitmap fonts with real-time preview
+- **Text Object Import/Export**: Save and load text object collections for project templates
+- **Context Menu System**: Right-click editing, duplication, layer management, and deletion
+- **Keyboard Shortcuts**: Full keyboard support for text object manipulation (Delete, Enter, Escape, Ctrl+C/V)
+
+**Enhanced Error Handling System:**
+- **Comprehensive Error Categories**: File import/export, canvas operations, tool errors, and system errors
+- **User-Friendly Error Dialogs**: Contextual error messages with specific recovery suggestions and actions
+- **Validation Framework**: Pre-validation for canvas sizes, file types, and operations to prevent errors
+- **Error History Tracking**: Maintain error logs for debugging and application improvement
+- **Recovery Action System**: Automated and user-guided error recovery workflows
+
+**GIF Animation Export Enhancement:**
+- **Multi-Strategy Encoding**: Primary @pencil.js/canvas-gif-encoder with gif.js fallback system
+- **Quality Settings**: Fast, Balanced, and Best quality modes with frame rate and optimization controls
+- **Comprehensive Error Handling**: Robust fallback mechanisms with user guidance for encoding failures
+- **Format Support**: GIF, PNG sequence, and WebM export options with format-specific optimizations
+
+**Technical Implementation:**
+- **Advanced Architecture**: Modular system with TextObjectManager, MultilineTextRenderer, CustomFontManager, and ErrorHandler classes
+- **Memory Management**: Efficient text object storage with cleanup and garbage collection
+- **Event System Integration**: Full integration with existing event management and cleanup systems
+- **UI/UX Enhancements**: Modern dialogs, context menus, and visual feedback throughout
+
+**Files Enhanced:**
+- `utils/textObjectManager.js` - Complete text object lifecycle management system
+- `utils/multilineTextRenderer.js` - Advanced text layout and rendering engine  
+- `utils/customFontManager.js` - Font loading, validation, and management system
+- `utils/errorHandler.js` - Enhanced error handling with categorization and recovery
+- `main.js` - Integration of all advanced systems with existing application architecture
+- `index.html` - Advanced text system and error dialog UI components
+
+## Known Issues & Future Improvements
+
+### Animation System
+1. **Onion Skinning Zoom Support**: Currently onion skin overlay follows pan operations correctly but zoom synchronization needs refinement
+   - Pan operations (Hand tool, middle-mouse) work perfectly
+   - Zoom operations need overlay scaling adjustment
+   - Priority: Medium (pan support covers most use cases)
+
+2. **Timeline Panel**: Basic timeline removed in favor of animation footer
+   - Consider re-implementing enhanced timeline for complex animations
+   - Visual frame thumbnails for better navigation
+
+### Planned Enhancements
+1. **Sprite Sheet Export**: Export animations as sprite sheets for game development
+2. **Enhanced Zoom**: Perfect onion skinning zoom synchronization  
+3. **Animation Easing**: Transition effects between frames
+4. **Frame Copying**: Duplicate frame content for animation workflows
+5. **Advanced Typography**: Justified text alignment and advanced spacing controls
+6. **Font Style Variations**: Bold, italic, and condensed font rendering

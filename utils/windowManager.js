@@ -4,6 +4,7 @@
 class WindowManager {
     constructor(bitsDraw) {
         this.app = bitsDraw;
+        this.globalListeners = new Map(); // Track global listeners
         this.setupWindowManagement();
     }
 
@@ -48,7 +49,7 @@ class WindowManager {
             }
         });
 
-        document.addEventListener('mousemove', (e) => {
+        const mouseMoveHandler = (e) => {
             if (!isDragging) return;
             
             const newLeft = e.clientX - offsetX;
@@ -56,14 +57,18 @@ class WindowManager {
             
             window.style.left = newLeft + 'px';
             window.style.top = newTop + 'px';
-        });
+        };
 
-        document.addEventListener('mouseup', () => {
+        const mouseUpHandler = () => {
             if (isDragging) {
                 this.saveWindowStates();
             }
             isDragging = false;
-        });
+        };
+
+        // Track listeners for cleanup
+        this.addGlobalListener(document, 'mousemove', mouseMoveHandler, window.id);
+        this.addGlobalListener(document, 'mouseup', mouseUpHandler, window.id);
     }
 
     setupWindowControls(window) {
@@ -210,5 +215,43 @@ class WindowManager {
         } catch (error) {
             console.warn('Failed to load window states:', error);
         }
+    }
+
+    /**
+     * Add global event listener and track for cleanup
+     */
+    addGlobalListener(target, event, handler, windowId) {
+        target.addEventListener(event, handler);
+        
+        if (!this.globalListeners.has(windowId)) {
+            this.globalListeners.set(windowId, []);
+        }
+        this.globalListeners.get(windowId).push({ target, event, handler });
+    }
+
+    /**
+     * Remove global listeners for a specific window
+     */
+    removeWindowListeners(windowId) {
+        if (this.globalListeners.has(windowId)) {
+            const listeners = this.globalListeners.get(windowId);
+            listeners.forEach(({ target, event, handler }) => {
+                target.removeEventListener(event, handler);
+            });
+            this.globalListeners.delete(windowId);
+        }
+    }
+
+    /**
+     * Dispose of all global listeners and cleanup resources
+     */
+    dispose() {
+        for (const [windowId, listeners] of this.globalListeners) {
+            listeners.forEach(({ target, event, handler }) => {
+                target.removeEventListener(event, handler);
+            });
+        }
+        this.globalListeners.clear();
+        this.app = null;
     }
 }

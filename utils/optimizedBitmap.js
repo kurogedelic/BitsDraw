@@ -33,6 +33,20 @@ class OptimizedBitmapEditor {
         this.renderScheduled = false;
         this.compositeCache = null;
         this.compositeCacheDirty = true;
+        this.throttleTimer = null;
+        
+        // Viewport culling for performance
+        this.viewportCulling = true;
+        this.lastViewportCheck = 0;
+        
+        // Performance statistics
+        this.performanceStats = {
+            frameCount: 0,
+            lastFpsUpdate: 0,
+            currentFps: 0,
+            averageRenderTime: 0,
+            renderTimes: []
+        };
         
         // History for undo/redo
         this.history = [];
@@ -59,6 +73,70 @@ class OptimizedBitmapEditor {
             backgroundLayer.alpha.fill(1);  // 1 = fully opaque
             this.markCompositeDirty();
         }
+    }
+
+    fillBackgroundWithColor(color) {
+        // Fill the Background layer (index 0) with specified color
+        if (this.layers.length > 0) {
+            const backgroundLayer = this.layers[0];
+            
+            switch (color) {
+                case 'black':
+                    backgroundLayer.pixels.fill(0); // 0 = black
+                    backgroundLayer.alpha.fill(1);  // 1 = fully opaque
+                    break;
+                case 'white':
+                    backgroundLayer.pixels.fill(1); // 1 = white  
+                    backgroundLayer.alpha.fill(1);  // 1 = fully opaque
+                    break;
+                case 'transparent':
+                default:
+                    backgroundLayer.pixels.fill(0); // 0 = black (doesn't matter for transparent)
+                    backgroundLayer.alpha.fill(0);  // 0 = fully transparent
+                    break;
+            }
+            
+            this.markCompositeDirty();
+        }
+    }
+
+    /**
+     * Create a completely new canvas with specified dimensions
+     * This initializes everything from scratch without preserving existing content
+     */
+    createNew(newWidth, newHeight, backgroundColor = 'white') {
+        // Clear history first
+        this.history = [];
+        this.historyIndex = -1;
+        
+        // Update dimensions
+        this.width = newWidth;
+        this.height = newHeight;
+        
+        // Clear all layers
+        this.layers = [];
+        this.activeLayerIndex = 0;
+        this.layerIdCounter = 1;
+        
+        // Recreate initial layers
+        this.addLayer('Background');
+        this.fillBackgroundWithColor(backgroundColor); // Fill background layer with specified color
+        this.addLayer('Layer 1');
+        this.setActiveLayer(1); // Make Layer 1 active (index 1, Background is index 0)
+        
+        // Reset other state
+        this.compositeCacheDirty = true;
+        this.compositeCache = null;
+        this.dirtyRects = [];
+        this.batchOperations = [];
+        
+        // Setup canvas with new dimensions
+        this.setupCanvas();
+        this.markCompositeDirty();
+        this.scheduleRender();
+        
+        // Save initial state
+        this.saveState();
     }
     
     createEmptyBitmap() {
@@ -1079,25 +1157,88 @@ class OptimizedBitmapEditor {
         if (this.renderScheduled) return;
         
         this.renderScheduled = true;
-        requestAnimationFrame(() => {
+        
+        // Performance optimization: Throttle rendering for high zoom levels
+        const shouldThrottle = this.zoom >= 16;
+        const renderFunction = () => {
             this.processBatchOperations();
             this.render();
             this.renderScheduled = false;
-        });
+            
+            // Notify for thumbnail updates
+            if (this.onRenderComplete) {
+                this.onRenderComplete();
+            }
+        };
+        
+        if (shouldThrottle) {
+            // Throttle to ~30fps for very high zoom levels
+            if (this.throttleTimer) {
+                clearTimeout(this.throttleTimer);
+            }
+            this.throttleTimer = setTimeout(() => {
+                requestAnimationFrame(renderFunction);
+                this.throttleTimer = null;
+            }, 33); // ~30fps
+        } else {
+            requestAnimationFrame(renderFunction);
+        }
+    }
+
+    // Set callback for render completion
+    setRenderCompleteCallback(callback) {
+        this.onRenderComplete = callback;
     }
 
     render() {
+        const renderStart = performance.now();
+        
         const dirtyRect = this.mergeDirtyRects();
         this.clearDirtyRects();
         
         if (!dirtyRect) {
             // Full redraw if no dirty rects
             this.renderFull();
-            return;
+        } else {
+            // Partial render for dirty areas
+            this.renderPartial(dirtyRect);
         }
         
-        // Partial render for dirty areas
-        this.renderPartial(dirtyRect);
+        // Update performance statistics
+        this.updatePerformanceStats(renderStart);
+    }
+
+    updatePerformanceStats(renderStart) {
+        const renderTime = performance.now() - renderStart;
+        const stats = this.performanceStats;
+        
+        // Track render times for averaging
+        stats.renderTimes.push(renderTime);
+        if (stats.renderTimes.length > 60) { // Keep last 60 frames
+            stats.renderTimes.shift();
+        }
+        
+        // Calculate average render time
+        stats.averageRenderTime = stats.renderTimes.reduce((a, b) => a + b, 0) / stats.renderTimes.length;
+        
+        // Update FPS calculation
+        const now = performance.now();
+        stats.frameCount++;
+        
+        if (now - stats.lastFpsUpdate > 1000) { // Update FPS every second
+            stats.currentFps = Math.round(stats.frameCount * 1000 / (now - stats.lastFpsUpdate));
+            stats.frameCount = 0;
+            stats.lastFpsUpdate = now;
+            
+            // Log performance warnings for development
+            if (stats.currentFps < 30 && this.zoom >= 16) {
+                console.log(`BitsDraw Performance: ${stats.currentFps}fps, avg render: ${stats.averageRenderTime.toFixed(2)}ms`);
+            }
+        }
+    }
+
+    getPerformanceStats() {
+        return { ...this.performanceStats };
     }
 
     renderFull() {
@@ -1113,6 +1254,15 @@ class OptimizedBitmapEditor {
     }
 
     renderPartial(dirtyRect) {
+        // Viewport culling: Skip rendering if outside visible area
+        if (this.viewportCulling && this.zoom >= 8) {
+            const clippedRect = this.clipToViewport(dirtyRect);
+            if (!clippedRect || clippedRect.width <= 0 || clippedRect.height <= 0) {
+                return; // Completely outside viewport
+            }
+            dirtyRect = clippedRect;
+        }
+        
         const composite = this.compositeAllLayers();
         
         // Clear dirty area
@@ -1132,7 +1282,54 @@ class OptimizedBitmapEditor {
         }
     }
 
+    clipToViewport(rect) {
+        // Get canvas container bounds for viewport culling
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const containerRect = this.canvas.parentElement?.getBoundingClientRect();
+        
+        if (!containerRect) return rect; // No container, render everything
+        
+        // Calculate visible canvas area in bitmap coordinates
+        const scrollX = Math.max(0, containerRect.left - canvasRect.left) / this.zoom;
+        const scrollY = Math.max(0, containerRect.top - canvasRect.top) / this.zoom;
+        const visibleWidth = Math.min(containerRect.width, canvasRect.width) / this.zoom;
+        const visibleHeight = Math.min(containerRect.height, canvasRect.height) / this.zoom;
+        
+        // Add small buffer to prevent edge artifacts
+        const buffer = 2;
+        const viewportRect = {
+            x: Math.floor(scrollX) - buffer,
+            y: Math.floor(scrollY) - buffer,
+            width: Math.ceil(visibleWidth) + buffer * 2,
+            height: Math.ceil(visibleHeight) + buffer * 2
+        };
+        
+        // Intersect dirty rect with viewport
+        const intersectionX = Math.max(rect.x, viewportRect.x);
+        const intersectionY = Math.max(rect.y, viewportRect.y);
+        const intersectionRight = Math.min(rect.x + rect.width, viewportRect.x + viewportRect.width);
+        const intersectionBottom = Math.min(rect.y + rect.height, viewportRect.y + viewportRect.height);
+        
+        if (intersectionX >= intersectionRight || intersectionY >= intersectionBottom) {
+            return null; // No intersection
+        }
+        
+        return {
+            x: intersectionX,
+            y: intersectionY,
+            width: intersectionRight - intersectionX,
+            height: intersectionBottom - intersectionY
+        };
+    }
+
     renderPixels(composite, startX, startY, width, height) {
+        // High zoom optimization: Use ImageData for better performance at 8x+ zoom
+        if (this.zoom >= 8 && !this.showCheckerboard) {
+            this.renderPixelsOptimized(composite, startX, startY, width, height);
+            return;
+        }
+        
+        // Standard rendering for lower zoom levels or with checkerboard
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const pixelX = startX + x;
@@ -1165,6 +1362,74 @@ class OptimizedBitmapEditor {
                 }
             }
         }
+    }
+
+    renderPixelsOptimized(composite, startX, startY, width, height) {
+        // High-performance rendering using ImageData for large zoom levels
+        const canvasWidth = width * this.zoom;
+        const canvasHeight = height * this.zoom;
+        
+        // Create ImageData buffer for the rendered area
+        const imageData = this.ctx.createImageData(canvasWidth, canvasHeight);
+        const data = imageData.data;
+        
+        // Parse colors once
+        const drawColor = this.hexToRgb(this.drawColor) || { r: 0, g: 0, b: 0 };
+        const bgColor = this.hexToRgb(this.backgroundColor) || { r: 255, g: 255, b: 255 };
+        
+        // Fill ImageData buffer
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const pixelX = startX + x;
+                const pixelY = startY + y;
+                
+                if (pixelX >= this.width || pixelY >= this.height) continue;
+                
+                const index = this.getPixelIndex(pixelX, pixelY);
+                const alphaValue = composite.alpha[index];
+                const pixelValue = composite.pixels[index];
+                
+                // Determine final color
+                let color;
+                if (alphaValue === 0) {
+                    color = bgColor; // Transparent pixels use background color
+                } else {
+                    const displayValue = this.inverted ? (1 - pixelValue) : pixelValue;
+                    color = displayValue ? drawColor : bgColor;
+                }
+                
+                // Fill all pixels for this bitmap pixel in the zoomed area
+                for (let zy = 0; zy < this.zoom; zy++) {
+                    for (let zx = 0; zx < this.zoom; zx++) {
+                        const canvasX = x * this.zoom + zx;
+                        const canvasY = y * this.zoom + zy;
+                        
+                        if (canvasX < canvasWidth && canvasY < canvasHeight) {
+                            const dataIndex = (canvasY * canvasWidth + canvasX) * 4;
+                            data[dataIndex] = color.r;     // R
+                            data[dataIndex + 1] = color.g; // G
+                            data[dataIndex + 2] = color.b; // B
+                            data[dataIndex + 3] = 255;     // A (fully opaque)
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Draw ImageData to canvas
+        const canvasX = startX * this.zoom;
+        const canvasY = startY * this.zoom;
+        this.ctx.putImageData(imageData, canvasX, canvasY);
+    }
+
+    hexToRgb(hex) {
+        // Convert hex color to RGB object
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : null;
     }
 
     renderCheckerboard(x, y, width, height) {
@@ -1334,10 +1599,231 @@ class OptimizedBitmapEditor {
         return null;
     }
 
+    // ===== LAYER TRANSFORMATION METHODS =====
+
+    flipActiveLayerHorizontal() {
+        const activeLayer = this.getActiveLayer();
+        if (!activeLayer) return;
+
+        this.saveState();
+        
+        // Create new pixel and alpha arrays
+        const newPixels = new Uint8Array(this.width * this.height);
+        const newAlpha = new Uint8Array(this.width * this.height);
+        
+        // Flip horizontally - reverse each row
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const sourceIndex = this.getPixelIndex(x, y);
+                const targetIndex = this.getPixelIndex(this.width - 1 - x, y);
+                newPixels[targetIndex] = activeLayer.pixels[sourceIndex];
+                newAlpha[targetIndex] = activeLayer.alpha[sourceIndex];
+            }
+        }
+        
+        // Update the layer
+        activeLayer.pixels = newPixels;
+        activeLayer.alpha = newAlpha;
+        
+        this.markCompositeDirty();
+        this.scheduleRender();
+    }
+
+    flipActiveLayerVertical() {
+        const activeLayer = this.getActiveLayer();
+        if (!activeLayer) return;
+
+        this.saveState();
+        
+        // Create new pixel and alpha arrays
+        const newPixels = new Uint8Array(this.width * this.height);
+        const newAlpha = new Uint8Array(this.width * this.height);
+        
+        // Flip vertically - reverse each column
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const sourceIndex = this.getPixelIndex(x, y);
+                const targetIndex = this.getPixelIndex(x, this.height - 1 - y);
+                newPixels[targetIndex] = activeLayer.pixels[sourceIndex];
+                newAlpha[targetIndex] = activeLayer.alpha[sourceIndex];
+            }
+        }
+        
+        // Update the layer
+        activeLayer.pixels = newPixels;
+        activeLayer.alpha = newAlpha;
+        
+        this.markCompositeDirty();
+        this.scheduleRender();
+    }
+
+    rotateActiveLayer90() {
+        const activeLayer = this.getActiveLayer();
+        if (!activeLayer) return;
+
+        this.saveState();
+        
+        // Create new pixel and alpha arrays
+        const newPixels = new Uint8Array(this.width * this.height);
+        const newAlpha = new Uint8Array(this.width * this.height);
+        
+        // Rotate 90 degrees clockwise
+        // For square canvases: new_x = old_y, new_y = width - 1 - old_x
+        // For rectangular canvases, we need to handle differently based on aspect ratio
+        
+        if (this.width === this.height) {
+            // Square canvas - standard rotation
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const sourceIndex = this.getPixelIndex(x, y);
+                    const newX = y;
+                    const newY = this.width - 1 - x;
+                    const targetIndex = this.getPixelIndex(newX, newY);
+                    newPixels[targetIndex] = activeLayer.pixels[sourceIndex];
+                    newAlpha[targetIndex] = activeLayer.alpha[sourceIndex];
+                }
+            }
+        } else {
+            // Rectangular canvas - rotate within bounds (crop if necessary)
+            const minDim = Math.min(this.width, this.height);
+            const offsetX = Math.floor((this.width - minDim) / 2);
+            const offsetY = Math.floor((this.height - minDim) / 2);
+            
+            for (let y = 0; y < minDim; y++) {
+                for (let x = 0; x < minDim; x++) {
+                    const sourceX = x + offsetX;
+                    const sourceY = y + offsetY;
+                    const sourceIndex = this.getPixelIndex(sourceX, sourceY);
+                    
+                    const newX = y + offsetX;
+                    const newY = minDim - 1 - x + offsetY;
+                    
+                    if (newX < this.width && newY < this.height) {
+                        const targetIndex = this.getPixelIndex(newX, newY);
+                        newPixels[targetIndex] = activeLayer.pixels[sourceIndex];
+                        newAlpha[targetIndex] = activeLayer.alpha[sourceIndex];
+                    }
+                }
+            }
+        }
+        
+        // Update the layer
+        activeLayer.pixels = newPixels;
+        activeLayer.alpha = newAlpha;
+        
+        this.markCompositeDirty();
+        this.scheduleRender();
+    }
+
+    rotateActiveLayer180() {
+        const activeLayer = this.getActiveLayer();
+        if (!activeLayer) return;
+
+        this.saveState();
+        
+        // Create new pixel and alpha arrays
+        const newPixels = new Uint8Array(this.width * this.height);
+        const newAlpha = new Uint8Array(this.width * this.height);
+        
+        // Rotate 180 degrees - reverse both x and y
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const sourceIndex = this.getPixelIndex(x, y);
+                const targetIndex = this.getPixelIndex(this.width - 1 - x, this.height - 1 - y);
+                newPixels[targetIndex] = activeLayer.pixels[sourceIndex];
+                newAlpha[targetIndex] = activeLayer.alpha[sourceIndex];
+            }
+        }
+        
+        // Update the layer
+        activeLayer.pixels = newPixels;
+        activeLayer.alpha = newAlpha;
+        
+        this.markCompositeDirty();
+        this.scheduleRender();
+    }
+
+    rotateActiveLayer270() {
+        const activeLayer = this.getActiveLayer();
+        if (!activeLayer) return;
+
+        this.saveState();
+        
+        // Create new pixel and alpha arrays
+        const newPixels = new Uint8Array(this.width * this.height);
+        const newAlpha = new Uint8Array(this.width * this.height);
+        
+        // Rotate 270 degrees clockwise (90 degrees counter-clockwise)
+        if (this.width === this.height) {
+            // Square canvas - standard rotation
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const sourceIndex = this.getPixelIndex(x, y);
+                    const newX = this.height - 1 - y;
+                    const newY = x;
+                    const targetIndex = this.getPixelIndex(newX, newY);
+                    newPixels[targetIndex] = activeLayer.pixels[sourceIndex];
+                    newAlpha[targetIndex] = activeLayer.alpha[sourceIndex];
+                }
+            }
+        } else {
+            // Rectangular canvas - rotate within bounds
+            const minDim = Math.min(this.width, this.height);
+            const offsetX = Math.floor((this.width - minDim) / 2);
+            const offsetY = Math.floor((this.height - minDim) / 2);
+            
+            for (let y = 0; y < minDim; y++) {
+                for (let x = 0; x < minDim; x++) {
+                    const sourceX = x + offsetX;
+                    const sourceY = y + offsetY;
+                    const sourceIndex = this.getPixelIndex(sourceX, sourceY);
+                    
+                    const newX = minDim - 1 - y + offsetX;
+                    const newY = x + offsetY;
+                    
+                    if (newX < this.width && newY < this.height) {
+                        const targetIndex = this.getPixelIndex(newX, newY);
+                        newPixels[targetIndex] = activeLayer.pixels[sourceIndex];
+                        newAlpha[targetIndex] = activeLayer.alpha[sourceIndex];
+                    }
+                }
+            }
+        }
+        
+        // Update the layer
+        activeLayer.pixels = newPixels;
+        activeLayer.alpha = newAlpha;
+        
+        this.markCompositeDirty();
+        this.scheduleRender();
+    }
+
     getCanvasCoordinates(mouseX, mouseY) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = Math.floor((mouseX - rect.left) / this.zoom);
-        const y = Math.floor((mouseY - rect.top) / this.zoom);
+        
+        // Get canvas transform to account for panning
+        const canvasStyle = window.getComputedStyle(this.canvas);
+        const transform = canvasStyle.transform;
+        
+        let panOffsetX = 0;
+        let panOffsetY = 0;
+        
+        // Parse transform matrix to get pan offset
+        if (transform && transform !== 'none') {
+            const matrixMatch = transform.match(/matrix\(([^)]+)\)/);
+            if (matrixMatch) {
+                const values = matrixMatch[1].split(', ').map(Number);
+                if (values.length >= 6) {
+                    panOffsetX = values[4]; // translateX
+                    panOffsetY = values[5]; // translateY
+                }
+            }
+        }
+        
+        // Calculate coordinates considering pan offset
+        const x = Math.floor((mouseX - rect.left - panOffsetX) / this.zoom);
+        const y = Math.floor((mouseY - rect.top - panOffsetY) / this.zoom);
+        
         return { x, y };
     }
 
@@ -2082,5 +2568,66 @@ class OptimizedBitmapEditor {
         this.markCompositeDirty();
         this.scheduleRender();
         return true;
+    }
+
+    /**
+     * Dispose of resources and cleanup memory
+     */
+    dispose() {
+        // Clear any pending render requests
+        if (this.renderTimeoutId) {
+            clearTimeout(this.renderTimeoutId);
+            this.renderTimeoutId = null;
+        }
+
+        // Clear canvas context
+        if (this.ctx) {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+
+        // Clear large arrays
+        if (this.layers) {
+            this.layers.forEach(layer => {
+                if (layer.pixels) {
+                    layer.pixels = null;
+                }
+                if (layer.alpha) {
+                    layer.alpha = null;
+                }
+            });
+            this.layers = null;
+        }
+
+        if (this.compositeCache) {
+            this.compositeCache.pixels = null;
+            this.compositeCache.alpha = null;
+            this.compositeCache = null;
+        }
+
+        // Clear references
+        this.canvas = null;
+        this.ctx = null;
+        this.dirtyRegions = null;
+        this.layerHistory = null;
+
+        console.log('OptimizedBitmapEditor disposed');
+    }
+
+    // ===== CANVAS STATE MANAGEMENT FOR LIVE PREVIEW =====
+
+    /**
+     * Get current canvas image data for preview state management
+     * @returns {ImageData} Current canvas image data
+     */
+    getCanvasImageData() {
+        return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    /**
+     * Restore canvas from saved image data
+     * @param {ImageData} imageData - Previously saved image data
+     */
+    restoreCanvasImageData(imageData) {
+        this.ctx.putImageData(imageData, 0, 0);
     }
 }

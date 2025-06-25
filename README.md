@@ -1,70 +1,146 @@
-# [BitsDraw v1.0.4](https://kurogedelic.github.io/BitsDraw/)
+# BitsDraw
 
-A professional web-based bitmap editor designed specifically for creating graphics compatible with U8G2 monochrome displays. Perfect for Arduino, ESP32, and embedded display projects.
+A web-based bitmap editor specifically designed to generate U8G2-compatible bitmap data in `.h` file format for OLED displays and embedded systems.
 
-## Overview
+## 🎯 Features
 
-BitsDraw eliminates the need for external tools like image2cpp by providing a complete in-browser solution for creating and converting bitmap graphics for embedded displays. Features professional drawing tools, multiple dithering algorithms, advanced image import capabilities, authentic MacPaint-style patterns, and multi-format export options optimized for embedded development.
+### Core Drawing Tools
+- **Pencil Tool**: Precise pixel drawing with smooth curves
+- **Brush Tool**: Variable size drawing with multiple patterns
+- **Shape Tools**: Rectangle, circle, and line tools with modifier key support
+- **Selection Tools**: Rectangle and circle selection with copy/paste operations
+- **Advanced Text System**: Complete text object management with post-placement editing, multi-line support, and custom fonts
+- **Bucket Fill**: Smart fill with contiguous area detection
+- **Move Tool**: Layer movement with loop wrapping
+- **Guide Tool**: Visual guides for precise positioning
 
-**Key Features:**
-- Professional drawing tools with smooth spline interpolation
-- Advanced image import with 7 dithering algorithms
-- Multi-layer bitmap editor with alpha channel support
-- MacPaint-inspired pattern system with 9 authentic patterns
-- Real-time preview with viewport navigation
-- Export to U8G2, Adafruit GFX, Playdate PDI, and Game Boy 2BPP formats
-- Streamlined flat interface optimized for drawing workflows
+### Animation System 🎬
+- **Multi-Sheet Animation**: Create frame-by-frame animations
+- **Playback Controls**: Play, pause, stop, and frame navigation
+- **Onion Skinning**: Previous frame overlay for animation reference
+- **Variable Speed**: 1-30 FPS animation speed control
+- **Loop Animation**: Seamless loop playback option
+- **GIF Export**: Multi-strategy animated GIF export with quality settings
 
-## Live Demo
+### Advanced Features
+- **Layer System**: Multiple layers with visibility and blending controls
+- **Zoom & Pan**: 1x to 32x zoom with Hand tool navigation
+- **Pattern System**: MacPaint-inspired patterns with custom pattern support
+- **Display Modes**: Multiple color themes (LCD, night mode, amber, etc.)
+- **Grid & Guides**: Visual aids for precise editing
+- **Undo/Redo**: Complete history system
+- **Text Object Management**: Post-placement text editing with selection and movement
+- **Custom Font System**: Upload and manage custom bitmap fonts
+- **Enhanced Error Handling**: User-friendly error dialogs with recovery suggestions
 
-🎨 **[Try BitsDraw Online](https://kurogedelic.github.io/BitsDraw/)**
+### Import/Export
+- **Image Import**: PNG/JPG with advanced dithering (7 algorithms)
+- **U8G2 Export**: Generate C header files for Arduino/ESP32
+- **Multiple Formats**: Adafruit GFX, Game Boy 2BPP with optimized encoding
+- **PNG Export**: Direct image file export with high-quality rendering
+- **GIF Animation Export**: Multi-strategy animated GIF export with quality settings
+- **Text Objects**: Import/export text object collections for project templates
+- **Custom Fonts**: Import/export custom bitmap font collections
+- **Project Management**: Save/load complete BitsDraw project files
 
-## Quick Start
+## 🚀 Quick Start
 
-1. **Local Usage**: Download and open `index.html` in any modern browser
-2. **GitHub Pages**: Visit the live demo link above
-3. **No installation required** - Pure static web application
+### Online Version
+Visit [BitsDraw on GitHub Pages](https://your-username.github.io/BitsDraw) to start drawing immediately.
 
-## Recent Updates (v1.0.4)
+### Local Development
+1. Clone this repository
+2. Open `index.html` in any modern browser
+3. Start creating bitmap art!
 
-### ✨ New Features
-- **MacPaint Pattern System**: 9 authentic patterns (solid black/white, checkerboard, stripes, bricks, dots)
-- **Pattern Management**: Add/remove custom patterns with [+] and [-] header buttons
-- **Viewport Navigation**: Red frame preview with drag-to-scroll functionality
-- **Streamlined Interface**: Flat canvas window without decorative chrome
+No build process or server required - BitsDraw is a pure static web application.
 
-### 🐛 Fixes
-- Fixed dithering effect dialog preview generation
-- Corrected viewport frame alignment with centered canvas
-- Resolved pattern drawing color mapping issues
-- Improved layer compositing with proper priority handling
+## 🎨 Animation Workflow
 
-### 🎨 UI Improvements
-- Removed unnecessary UI clutter (column handles, redundant controls)
-- Enhanced pattern panel with 3-column grid layout
-- Improved color panel design with primary/secondary indicators
-- Added visual feedback for pattern management buttons
+1. **Create Frames**: Use "Add Sheet" to create animation frames
+2. **Draw Content**: Create different content on each sheet/frame
+3. **Preview Animation**: Use playback controls to test your animation
+4. **Onion Skinning**: Enable to see previous frame while drawing
+5. **Export**: Generate C code or export as images
 
-## License
+## 💻 System Requirements
 
-MIT License
+- Modern web browser (Chrome 60+, Firefox 55+, Safari 12+, Edge 79+)
+- No installation required
+- Works offline after initial load
 
-Copyright (c) 2024 kurogedelic
+## 🛠️ Technical Details
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+### Architecture
+- **Pure Static Web App**: HTML5, CSS3, vanilla JavaScript
+- **No Dependencies**: No frameworks or build tools required
+- **Canvas API**: Hardware-accelerated bitmap rendering
+- **Pixel-Perfect**: Optimized for pixel art creation
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+### Data Format
+- Internal format: `Uint8Array` where 0=white, 1=black
+- U8G2 compatible: LSB first, XBM format
+- Layer support: Multiple drawing layers with alpha channels
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+### Browser Compatibility
+- ✅ Chrome 60+
+- ✅ Firefox 55+
+- ✅ Safari 12+
+- ✅ Edge 79+
+
+## 📝 Version History
+
+### v1.1.0 - Advanced Text System & Enhanced Error Handling
+- Complete text object management with post-placement editing
+- Multi-line text rendering with word wrapping and alignment
+- Custom font system with upload, validation, and management
+- Enhanced error handling with user-friendly dialogs and recovery
+- GIF animation export with multi-strategy encoding and quality settings
+- Text object import/export for project templates
+
+### v1.0.7 - Coordinate System Fixes
+- Fixed brush cursor positioning during zoom and pan operations
+- Corrected text tool modal and preview positioning
+- Unified coordinate transformation system
+- Eliminated double-offset calculations
+
+### v1.0.6 - Animation System & Onion Skinning
+- Complete animation control system with playback
+- Advanced onion skinning with smart background detection
+- Pan support for onion skin overlay
+- Project background management
+
+### v1.0.5 - Pixel-Perfect Shape Tools
+- Zoom-aware pixel-perfect preview for shape tools
+- Modern About dialog with support links
+- Enhanced UI consistency
+
+### v1.0.4 - Text Tool Enhancement
+- Multi-font support (5×7, 3×5, 7×9)
+- Modern modal dialog system
+- Live text preview
+
+### v1.0.3 - MacPaint Pattern System
+- Authentic MacPaint patterns
+- Viewport navigation with red frame preview
+- Streamlined interface
+
+## 🤝 Contributing
+
+This project welcomes contributions! Areas for improvement:
+- Additional export formats
+- More drawing tools
+- Enhanced animation features
+- Performance optimizations
+
+## 📄 License
+
+Copyright © 2025 Leo Kuroshita. All rights reserved.
+
+## 🙏 Acknowledgments
+
+Tribute to Bill Atkinson and Susan Kare for their pioneering work in bitmap graphics and user interface design.
+
+## ☕ Support
+
+If you find BitsDraw useful, consider [buying me a coffee](https://www.buymeacoffee.com/kurogek)!

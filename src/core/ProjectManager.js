@@ -717,6 +717,23 @@ class ProjectManager {
 
         return stats;
     }
+
+    /**
+     * Dispose of resources and cleanup memory
+     */
+    dispose() {
+        // Clear current project reference
+        this.currentProject = null;
+        
+        // Clear project history
+        this.projectHistory = [];
+        
+        // Clear manager references
+        this.unitManager = null;
+        this.legacyAdapter = null;
+        
+        console.log('ProjectManager disposed');
+    }
 }
 
 // Export for module usage
