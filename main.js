@@ -6828,127 +6828,55 @@ class BitsDraw {
         modal.innerHTML = `
             <div class="dialog animation-export-dialog">
                 <div class="dialog-header">
-                    <h3><i class="ph ph-play-circle"></i> Export Animation</h3>
+                    <h3>Export Animation</h3>
                     <button class="dialog-close" id="animation-export-close">
                         <i class="ph ph-x"></i>
                     </button>
                 </div>
                 <div class="dialog-content">
-                    <div class="control-group">
-                        <label><i class="ph ph-file-arrow-down"></i> Export Format</label>
-                        <div class="format-options">
-                            <div class="format-card">
-                                <label class="format-option">
-                                    <input type="radio" name="export-format" value="gif" checked>
-                                    <div class="format-content">
-                                        <div class="format-header">
-                                            <i class="ph ph-gif"></i>
-                                            <span class="format-name">Animated GIF</span>
-                                        </div>
-                                        <div class="format-description">Universal format - works everywhere</div>
-                                    </div>
-                                </label>
-                            </div>
-                            <div class="format-card">
-                                <label class="format-option">
-                                    <input type="radio" name="export-format" value="png-sequence">
-                                    <div class="format-content">
-                                        <div class="format-header">
-                                            <i class="ph ph-images"></i>
-                                            <span class="format-name">PNG Sequence</span>
-                                        </div>
-                                        <div class="format-description">Most reliable - includes GIF creation instructions</div>
-                                    </div>
-                                </label>
-                            </div>
-                            <div class="format-card">
-                                <label class="format-option">
-                                    <input type="radio" name="export-format" value="webm">
-                                    <div class="format-content">
-                                        <div class="format-header">
-                                            <i class="ph ph-video-camera"></i>
-                                            <span class="format-name">WebM Video</span>
-                                        </div>
-                                        <div class="format-description">Modern format - high quality, smaller file size</div>
-                                    </div>
-                                </label>
-                            </div>
+                    <div class="export-formats">
+                        <button class="format-btn active" data-format="gif">
+                            <i class="ph ph-gif"></i>
+                            <span>GIF</span>
+                        </button>
+                        <button class="format-btn" data-format="png-sequence">
+                            <i class="ph ph-images"></i>
+                            <span>PNG</span>
+                        </button>
+                        <button class="format-btn" data-format="webm">
+                            <i class="ph ph-video-camera"></i>
+                            <span>WebM</span>
+                        </button>
+                    </div>
+                    
+                    <div class="export-settings">
+                        <div class="setting-row">
+                            <label>FPS: <span id="fps-display">${frameRate}</span></label>
+                            <input type="range" id="fps-slider" min="1" max="30" value="${frameRate}">
+                        </div>
+                        <div class="setting-row">
+                            <label>Name:</label>
+                            <input type="text" id="project-name" value="animation" placeholder="filename">
                         </div>
                     </div>
                     
-                    <div class="control-group">
-                        <label><i class="ph ph-gear"></i> Animation Settings</label>
-                        <div class="settings-grid">
-                            <div class="setting-item">
-                                <label for="fps-slider">Frame Rate: <span id="fps-display" class="fps-value">${frameRate}</span> FPS</label>
-                                <input type="range" id="fps-slider" min="1" max="30" value="${frameRate}" class="fps-slider">
-                            </div>
-                            <div class="setting-item">
-                                <label for="project-name">Project Name:</label>
-                                <input type="text" id="project-name" value="BitsDraw Animation" placeholder="Animation name" class="project-name-input">
-                            </div>
+                    <div id="gif-quality-section" class="quality-section">
+                        <div class="quality-buttons">
+                            <button class="quality-btn" data-quality="fast">Fast</button>
+                            <button class="quality-btn active" data-quality="balanced">Balanced</button>
+                            <button class="quality-btn" data-quality="best">Best</button>
                         </div>
                     </div>
                     
-                    <div id="gif-quality-section" class="control-group">
-                        <label><i class="ph ph-sliders"></i> GIF Quality</label>
-                        <div class="quality-options">
-                            <label class="quality-option">
-                                <input type="radio" name="gif-quality" value="fast">
-                                <div class="quality-content">
-                                    <span class="quality-name">Fast</span>
-                                    <span class="quality-description">Quick export, larger file size</span>
-                                </div>
-                            </label>
-                            <label class="quality-option">
-                                <input type="radio" name="gif-quality" value="balanced" checked>
-                                <div class="quality-content">
-                                    <span class="quality-name">Balanced</span>
-                                    <span class="quality-description">Good quality and reasonable speed</span>
-                                </div>
-                            </label>
-                            <label class="quality-option">
-                                <input type="radio" name="gif-quality" value="best">
-                                <div class="quality-content">
-                                    <span class="quality-name">Best Quality</span>
-                                    <span class="quality-description">Highest quality, slower export</span>
-                                </div>
-                            </label>
-                        </div>
-                        <div class="info-text">
-                            <i class="ph ph-info"></i>
-                            <div>
-                                <strong>Export Method:</strong> Uses multiple encoding strategies for reliability<br>
-                                <small>1st: @pencil.js/canvas-gif-encoder → 2nd: gif.js → 3rd: PNG sequence fallback</small>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="control-group animation-info">
-                        <label><i class="ph ph-chart-bar"></i> Animation Details</label>
-                        <div class="info-grid">
-                            <div class="info-item">
-                                <span class="info-label">Frames</span>
-                                <span class="info-value">${this.sheets.length}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Dimensions</span>
-                                <span class="info-value">${this.editor.width} × ${this.editor.height}</span>
-                            </div>
-                            <div class="info-item">
-                                <span class="info-label">Duration</span>
-                                <span class="info-value" id="duration-display">${(this.sheets.length / frameRate).toFixed(1)}s</span>
-                            </div>
-                        </div>
+                    <div class="export-info">
+                        <span>${this.sheets.length} frames</span>
+                        <span>${this.editor.width}×${this.editor.height}</span>
+                        <span id="duration-display">${(this.sheets.length / frameRate).toFixed(1)}s</span>
                     </div>
                 </div>
                 <div class="dialog-footer">
-                    <button class="dialog-btn dialog-btn-cancel" id="animation-export-cancel">
-                        <i class="ph ph-x"></i> Cancel
-                    </button>
-                    <button class="dialog-btn dialog-btn-primary" id="animation-export-ok">
-                        <i class="ph ph-download"></i> Export
-                    </button>
+                    <button class="dialog-btn dialog-btn-cancel" id="animation-export-cancel">Cancel</button>
+                    <button class="dialog-btn dialog-btn-primary" id="animation-export-ok">Export</button>
                 </div>
             </div>
         `;
@@ -6959,22 +6887,40 @@ class BitsDraw {
         const fpsSlider = modal.querySelector('#fps-slider');
         const fpsDisplay = modal.querySelector('#fps-display');
         const durationDisplay = modal.querySelector('#duration-display');
-        const formatRadios = modal.querySelectorAll('input[name="export-format"]');
+        const formatBtns = modal.querySelectorAll('.format-btn');
+        const qualityBtns = modal.querySelectorAll('.quality-btn');
         const gifQualitySection = modal.querySelector('#gif-quality-section');
+        
+        let selectedFormat = 'gif';
+        let selectedQuality = 'balanced';
         
         fpsSlider.addEventListener('input', () => {
             fpsDisplay.textContent = fpsSlider.value;
             durationDisplay.textContent = `${(this.sheets.length / fpsSlider.value).toFixed(1)}s`;
         });
 
-        // Show/hide GIF quality section based on format selection
-        formatRadios.forEach(radio => {
-            radio.addEventListener('change', () => {
-                if (radio.value === 'gif' && radio.checked) {
+        // Format selection
+        formatBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                formatBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedFormat = btn.dataset.format;
+                
+                // Show/hide quality section for GIF
+                if (selectedFormat === 'gif') {
                     gifQualitySection.style.display = 'block';
                 } else {
                     gifQualitySection.style.display = 'none';
                 }
+            });
+        });
+
+        // Quality selection
+        qualityBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                qualityBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedQuality = btn.dataset.quality;
             });
         });
 
@@ -6994,23 +6940,13 @@ class BitsDraw {
             });
 
             modal.querySelector('#animation-export-ok').addEventListener('click', async () => {
-                const format = modal.querySelector('input[name="export-format"]:checked').value;
                 const finalFrameRate = parseInt(fpsSlider.value);
-                const projectName = modal.querySelector('#project-name').value || 'BitsDraw Animation';
-                
-                // Get GIF quality if GIF format is selected
-                let quality = 'balanced';
-                if (format === 'gif') {
-                    const qualityRadio = modal.querySelector('input[name="gif-quality"]:checked');
-                    if (qualityRadio) {
-                        quality = qualityRadio.value;
-                    }
-                }
+                const projectName = modal.querySelector('#project-name').value || 'animation';
 
                 cleanup();
 
                 try {
-                    await this.performAnimationExport(format, finalFrameRate, projectName, quality);
+                    await this.performAnimationExport(selectedFormat, finalFrameRate, projectName, selectedQuality);
                     resolve(true);
                 } catch (error) {
                     reject(error);
