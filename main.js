@@ -1,5 +1,5 @@
 // Debug utility - automatically detects dev vs production
-// Cache buster: v1.0.5-pixel-perfect-feedback
+// Cache buster: v1.1.0-gif-export-fix
 const DEBUG = {
     // Auto-detect development environment
     isDev: () => {
@@ -6795,10 +6795,25 @@ class BitsDraw {
         return this.exportToFormat('png', options);
     }
 
+    exportGIF() {
+        // Use the same options as PNG for consistency
+        const options = {
+            scale: 4, // 4x scale for better visibility
+            fillColor: this.displayModes[this.currentDisplayMode].draw_color,
+            backgroundColor: this.displayModes[this.currentDisplayMode].background_color
+        };
+        
+        return this.exportToFormat('gif', options);
+    }
+
     /**
      * Export animation as GIF (Phase 5)
      */
     async exportAnimationGIF() {
+        // GIF export is currently disabled
+        alert('GIF export is currently disabled.');
+        return;
+        
         // Check if we have multiple sheets for animation
         if (!this.sheets || this.sheets.length <= 1) {
             alert('Animation export requires multiple sheets. Please create additional sheets to use this feature.');
@@ -6821,6 +6836,9 @@ class BitsDraw {
      * Show animation export dialog with format options
      */
     async showAnimationExportDialog(frameRate, loop) {
+        // Animation system is disabled
+        alert('Animation export is currently disabled.');
+        return;
         // Create modal dialog
         const modal = document.createElement('div');
         modal.className = 'dialog-overlay';
@@ -6940,15 +6958,22 @@ class BitsDraw {
             });
 
             modal.querySelector('#animation-export-ok').addEventListener('click', async () => {
+                console.log('🚀 Export button clicked!');
+                
                 const finalFrameRate = parseInt(fpsSlider.value);
                 const projectName = modal.querySelector('#project-name').value || 'animation';
+                
+                console.log(`📋 Export settings: format=${selectedFormat}, fps=${finalFrameRate}, name=${projectName}, quality=${selectedQuality}`);
 
                 cleanup();
 
                 try {
+                    console.log('🎬 Starting performAnimationExport...');
                     await this.performAnimationExport(selectedFormat, finalFrameRate, projectName, selectedQuality);
+                    console.log('✅ Export completed successfully');
                     resolve(true);
                 } catch (error) {
+                    console.error('❌ Export failed with error:', error);
                     reject(error);
                 }
             });
@@ -6959,9 +6984,19 @@ class BitsDraw {
      * Perform the actual animation export
      */
     async performAnimationExport(format, frameRate, projectName, quality = 'balanced') {
+        console.log('🔧 performAnimationExport called with:', { format, frameRate, projectName, quality });
+        
+        // Show loading indicator
+        this.showExportLoading(`Exporting ${format.toUpperCase()}...`);
+        console.log('📢 Loading indicator shown');
+        
+        console.log('🔍 Checking AnimationExporter availability...');
         if (!window.AnimationExporter) {
+            console.error('❌ AnimationExporter not found on window object');
+            this.hideExportLoading();
             throw new Error('Animation Exporter not available');
         }
+        console.log('✅ AnimationExporter found');
 
         const exporter = new AnimationExporter();
         
@@ -7004,9 +7039,11 @@ class BitsDraw {
                 successMessage += `\nQuality: ${result.quality}`;
             }
             
+            this.hideExportLoading();
             alert(successMessage);
             
         } catch (error) {
+            this.hideExportLoading();
             console.error('Export failed:', error);
             
             // More detailed error message
@@ -7014,6 +7051,91 @@ class BitsDraw {
             alert(`Export failed: ${errorMessage}`);
             throw error;
         }
+    }
+
+    /**
+     * Show export loading indicator
+     */
+    showExportLoading(message) {
+        // Remove any existing loading indicator
+        this.hideExportLoading();
+        
+        // Create loading toast
+        const loadingToast = document.createElement('div');
+        loadingToast.id = 'export-loading-toast';
+        loadingToast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-primary);
+            border-radius: 10px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 4px 12px var(--shadow-color);
+            z-index: 10000;
+            font-size: 14px;
+            color: var(--text-primary);
+            min-width: 200px;
+        `;
+        
+        // Add spinner
+        const spinner = document.createElement('div');
+        spinner.style.cssText = `
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--border-primary);
+            border-top: 3px solid var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        `;
+        
+        // Add spinner animation if not already defined
+        if (!document.querySelector('#spinner-animation-style')) {
+            const style = document.createElement('style');
+            style.id = 'spinner-animation-style';
+            style.textContent = `
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        const messageSpan = document.createElement('span');
+        messageSpan.textContent = message;
+        
+        loadingToast.appendChild(spinner);
+        loadingToast.appendChild(messageSpan);
+        document.body.appendChild(loadingToast);
+        
+        // Store reference for updates
+        this.exportLoadingToast = loadingToast;
+        this.exportLoadingMessage = messageSpan;
+    }
+    
+    /**
+     * Update export loading message
+     */
+    updateExportLoading(message) {
+        if (this.exportLoadingMessage) {
+            this.exportLoadingMessage.textContent = message;
+        }
+    }
+    
+    /**
+     * Hide export loading indicator
+     */
+    hideExportLoading() {
+        const existingToast = document.getElementById('export-loading-toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+        this.exportLoadingToast = null;
+        this.exportLoadingMessage = null;
     }
 
     /**
@@ -7043,6 +7165,10 @@ class BitsDraw {
      * Export animation as APNG (Phase 5)
      */
     exportAnimationAPNG() {
+        // Animation export temporarily disabled
+        alert('APNG export is temporarily unavailable. Please use GIF export instead.');
+        return;
+        
         if (this.legacyAdapter) {
             this.legacyAdapter.exportAnimationAPNG();
         } else {

@@ -226,9 +226,13 @@
 					<i class="ph ph-image"></i>
 					<span>PNG Image</span>
 				</div>
-				<div class="menu-dropdown-item" data-action="export-gif" id="export-gif-menu">
+				<div class="menu-dropdown-item" data-action="export-static-gif">
+					<i class="ph ph-file-image"></i>
+					<span>GIF Image</span>
+				</div>
+				<div class="menu-dropdown-item disabled" data-action="export-gif" id="export-gif-menu" title="GIF export temporarily disabled">
 					<i class="ph ph-play-circle"></i>
-					<span>Animation</span>
+					<span>Animation (Disabled)</span>
 				</div>
 				<!-- WebP export removed -->
 				
@@ -1656,7 +1660,7 @@
 
 		<!-- Core utilities -->
 		<script src="utils/optimizedBitmap.js"></script>
-		<script src="utils/export.js"></script>
+		<script src="utils/export.js?v=debug-png-data"></script>
 		<script src="utils/imageImport.js"></script>
 		<script src="utils/patterns.js"></script>
 		<script src="utils/textRenderer.js"></script>
@@ -1669,7 +1673,7 @@
 		<!-- Refactored managers -->
 		<!-- Progress Manager removed -->
 		<script src="utils/dialogManager.js"></script>
-		<script src="utils/menuManager.js"></script>
+		<script src="utils/menuManager.js?v=static-gif"></script>
 		<script src="utils/windowManager.js"></script>
 		<script src="utils/toolManager.js"></script>
 		<script src="utils/imagePlacementDialog.js"></script>
@@ -1689,12 +1693,14 @@
 
 		<!-- Animation Export (Phase 5) -->
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-		<script src="https://cdn.jsdelivr.net/npm/@pencil.js/canvas-gif-encoder@2.1.0/dist/canvas-gif-encoder.min.js"></script>
-		<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
-		<script src="utils/gifEncoder.js"></script>
+		<!-- PencilJS CDN temporarily disabled due to 404/MIME type issues -->
+		<!-- <script src="https://cdn.jsdelivr.net/npm/@pencil.js/canvas-gif-encoder@2.1.0/dist/canvas-gif-encoder.min.js"></script> -->
+		<!-- WorkingGifEncoder - Corrected LZW implementation -->
+		<script src="utils/workingGifEncoder.js?v=working-final"></script>
 		<script src="utils/animationExporter.js"></script>
-		<script src="src/export/AnimationExporter.js"></script>
-		<script src="src/ui/AnimationExportDialog.js"></script>
+		<!-- Temporarily disabled to avoid duplicate AnimationExporter class -->
+		<!-- <script src="src/export/AnimationExporter.js"></script> -->
+		<!-- <script src="src/ui/AnimationExportDialog.js"></script> -->
 
 		<!-- Project Management (Phase 6) -->
 		<script src="src/core/ProjectManager.js"></script>
@@ -1708,6 +1714,6 @@
 		<script src="utils/errorHandler.js"></script>
 
 		<!-- Main application -->
-		<script src="main.js"></script>
+		<script src="main.js?v=static-gif"></script>
 	</body>
 </html>

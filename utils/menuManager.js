@@ -172,11 +172,18 @@ class MenuManager {
             case 'export-png':
                 this.app.exportPNG();
                 break;
+            case 'export-static-gif':
+                this.app.exportGIF();
+                break;
             case 'export-gif':
-                this.app.exportAnimationGIF();
+                console.log('GIF export is currently disabled');
+                return;
+                // this.app.exportAnimationGIF();
                 break;
             case 'export-animation-gif':
-                this.app.exportAnimationGIF();
+                console.log('GIF export is currently disabled');
+                return;
+                // this.app.exportAnimationGIF();
                 break;
             case 'export-animation-apng':
                 this.app.exportAnimationAPNG();
