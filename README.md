@@ -1,4 +1,4 @@
-# BitsDraw
+# [BitsDraw](https://kurogedelic.github.io/BitsDraw/)
 
 A web-based bitmap editor specifically designed to generate U8G2-compatible bitmap data in `.h` file format for OLED displays and embedded systems.
 
@@ -46,7 +46,7 @@ A web-based bitmap editor specifically designed to generate U8G2-compatible bitm
 ## 🚀 Quick Start
 
 ### Online Version
-Visit [BitsDraw on GitHub Pages](https://your-username.github.io/BitsDraw) to start drawing immediately.
+Visit [BitsDraw on GitHub Pages](https://kurogedelic.github.io/BitsDraw/) to start drawing immediately.
 
 ### Local Development
 1. Clone this repository
